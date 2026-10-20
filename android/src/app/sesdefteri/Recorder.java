@@ -1,0 +1,146 @@
+package app.sesdefteri;
+
+import android.content.Context;
+import android.content.Intent;
+import android.media.AudioManager;
+import android.media.MediaRecorder;
+import android.os.Build;
+import android.os.ParcelFileDescriptor;
+
+import org.json.JSONObject;
+
+/** Native recorder: AAC in an .m4a file inside Music/Ses Defteri, kept alive by RecordService. */
+final class Recorder {
+    private static MediaRecorder mr;
+    private static MediaLib.Target target;
+    private static ParcelFileDescriptor pfd;
+    private static String state = "idle";
+
+    private Recorder() { }
+
+    static synchronized String start(Context c, String mode, String displayName) {
+        JSONObject res = new JSONObject();
+        try {
+            if (!"idle".equals(state)) { res.put("ok", false); res.put("error", "busy"); return res.toString(); }
+            boolean music = mode.startsWith("music");
+            target = MediaLib.create(c, displayName, "audio/mp4");
+            mr = Build.VERSION.SDK_INT >= 31 ? new MediaRecorder(c) : new MediaRecorder();
+            int source = MediaRecorder.AudioSource.MIC;
+            if ("music".equals(mode)) {
+                AudioManager am = (AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
+                String unp = am != null ? am.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED) : null;
+                source = "true".equals(unp) ? MediaRecorder.AudioSource.UNPROCESSED : MediaRecorder.AudioSource.CAMCORDER;
+            }
+            mr.setAudioSource(source);
+            mr.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            mr.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+            mr.setAudioSamplingRate(music ? 48000 : 44100);
+            mr.setAudioEncodingBitRate(music ? 256000 : 128000);
+            mr.setAudioChannels(music ? 2 : 1);
+            if (target.uri != null) {
+                pfd = c.getContentResolver().openFileDescriptor(target.uri, "rw");
+                if (pfd == null) throw new IllegalStateException("fd");
+                mr.setOutputFile(pfd.getFileDescriptor());
+            } else {
+                mr.setOutputFile(target.file.getAbsolutePath());
+            }
+            mr.prepare();
+            mr.start();
+            state = "rec";
+            startService(c, true);
+            res.put("ok", true);
+            res.put("name", target.name);
+        } catch (Exception e) {
+            cleanup(c, true);
+            // some phones refuse the unprocessed/camcorder source: retry with the plain microphone
+            if ("music".equals(mode)) return start(c, "music-mic", displayName);
+            try { res.put("ok", false); res.put("error", String.valueOf(e.getMessage())); } catch (Exception ignored) { }
+        }
+        return res.toString();
+    }
+
+    static synchronized boolean pause() {
+        if (!"rec".equals(state) || mr == null) return false;
+        try { mr.pause(); state = "paused"; return true; } catch (Exception e) { return false; }
+    }
+
+    static synchronized boolean resume() {
+        if (!"paused".equals(state) || mr == null) return false;
+        try { mr.resume(); state = "rec"; return true; } catch (Exception e) { return false; }
+    }
+
+    /** Peak since the previous call, 0..1. */
+    static synchronized float level() {
+        if (mr == null || !"rec".equals(state)) return 0f;
+        try { return Math.min(1f, mr.getMaxAmplitude() / 32767f); } catch (Exception e) { return 0f; }
+    }
+
+    static synchronized String stop(Context c) {
+        JSONObject res = new JSONObject();
+        try {
+            if (mr == null) { res.put("ok", false); res.put("error", "idle"); return res.toString(); }
+            boolean ok = true;
+            try {
+                if ("paused".equals(state)) { try { mr.resume(); } catch (Exception ignored) { } }
+                mr.stop();
+            } catch (RuntimeException e) {
+                ok = false;
+            }
+            try { mr.release(); } catch (Exception ignored) { }
+            mr = null;
+            try { if (pfd != null) pfd.close(); } catch (Exception ignored) { }
+            pfd = null;
+            startService(c, false);
+            state = "idle";
+            if (!ok) {
+                MediaLib.discard(c, target);
+                target = null;
+                res.put("ok", false);
+                res.put("error", "empty");
+                return res.toString();
+            }
+            JSONObject item = MediaLib.publish(c, target);
+            target = null;
+            if (item == null) { res.put("ok", false); res.put("error", "publish"); return res.toString(); }
+            res.put("ok", true);
+            res.put("item", item);
+        } catch (Exception e) {
+            try { res.put("ok", false); res.put("error", String.valueOf(e.getMessage())); } catch (Exception ignored) { }
+        }
+        return res.toString();
+    }
+
+    static synchronized void cancel(Context c) {
+        cleanup(c, true);
+    }
+
+    static synchronized boolean active() {
+        return !"idle".equals(state);
+    }
+
+    private static void cleanup(Context c, boolean discard) {
+        if (mr != null) {
+            try { mr.stop(); } catch (Exception ignored) { }
+            try { mr.release(); } catch (Exception ignored) { }
+        }
+        mr = null;
+        try { if (pfd != null) pfd.close(); } catch (Exception ignored) { }
+        pfd = null;
+        if (discard && target != null) MediaLib.discard(c, target);
+        target = null;
+        state = "idle";
+        startService(c, false);
+    }
+
+    private static void startService(Context c, boolean on) {
+        Intent svc = new Intent(c, RecordService.class);
+        try {
+            if (on) {
+                if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(svc);
+                else c.startService(svc);
+            } else {
+                c.stopService(svc);
+            }
+        } catch (Exception ignored) { }
+    }
+}

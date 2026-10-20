@@ -1,0 +1,8 @@
+*.p12
+*.jks
+*.apk
+assets/
+android/out/
+vendor/
+*.onnx
+*.wav
