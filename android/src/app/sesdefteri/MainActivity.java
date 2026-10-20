@@ -679,7 +679,7 @@ public class MainActivity extends Activity implements Player.Listener {
             jobs.put(id, cancel);
             boolean bg = false;
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
-            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"restore".equals(kind);
+            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind);
             if (heavy) WorkService.begin(MainActivity.this);
             (bg ? bgPool : heavy ? studioPool : pool).execute(new Runnable() {
                 @Override
@@ -695,14 +695,6 @@ public class MainActivity extends Activity implements Player.Listener {
                                 @Override public void on(int from, byte[] data) { jobChunk(id, from, data); }
                             };
                             res = AudioTools.peaks(MainActivity.this, a.getJSONObject("src"), a.optLong("startMs", 0), p, ch, cancel);
-                        } else if ("render".equals(kind)) {
-                            JSONObject src = a.getJSONObject("src");
-                            res = AudioTools.render(MainActivity.this, src, a.getJSONArray("keep"), safeFileName(a.getString("name")), p, cancel);
-                            if (a.optBoolean("replace", false)) {
-                                final String srcStr = src.toString();
-                                runOnUiThread(new Runnable() { @Override public void run() { Player.I.releaseIfCurrentSrc(srcStr); } });
-                                res.put("replaced", MediaLib.deleteOwn(MainActivity.this, src));
-                            }
                         } else if ("commit".equals(kind)) {
                             // a file the page assembled with beginFile/appendFile → Music/Ses Defteri (re-encoded to .m4a)
                             String tok = a.getString("token");
@@ -724,20 +716,19 @@ public class MainActivity extends Activity implements Player.Listener {
                             } finally {
                                 f.delete();
                             }
-                        } else if ("enhance".equals(kind)) {
-                            res = Studio.enhance(MainActivity.this, a.getJSONObject("src"), a, p, cancel);
-                        } else if ("restore".equals(kind)) {
-                            res = Studio.restore(MainActivity.this, a.getJSONObject("src"), a.getJSONObject("origSrc"), a.optBoolean("origMoved", false));
+                        } else if ("wsInit".equals(kind)) {
+                            res = Workspace.init(MainActivity.this, a.getJSONObject("src"), p, cancel);
+                        } else if ("wsOp".equals(kind)) {
+                            res = Workspace.op(MainActivity.this, a, p, cancel);
+                        } else if ("wsSave".equals(kind)) {
+                            res = Workspace.save(MainActivity.this, a, p, cancel);
+                        } else if ("wsClean".equals(kind)) {
+                            Workspace.clean(MainActivity.this, a.optJSONArray("keep"));
+                            res = new JSONObject();
                         } else if ("transcribe".equals(kind)) {
                             res = Studio.transcribe(MainActivity.this, a.getJSONObject("src"), a.optString("lang", ""), p, cancel);
                         } else if ("beats".equals(kind)) {
                             res = Studio.beats(MainActivity.this, a.getJSONObject("src"), p, cancel);
-                        } else if ("timepitch".equals(kind)) {
-                            res = Studio.timePitch(MainActivity.this, a.getJSONObject("src"), a, p, cancel);
-                        } else if ("mix".equals(kind)) {
-                            res = Studio.mix(MainActivity.this, a.getJSONObject("src"), a, p, cancel);
-                        } else if ("export".equals(kind)) {
-                            res = Studio.export(MainActivity.this, a.getJSONObject("src"), a, p, cancel);
                         } else {
                             throw new IllegalArgumentException("unknown job");
                         }

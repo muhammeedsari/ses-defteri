@@ -12,7 +12,6 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.RandomAccessFile;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Android side of the sound studio: decoding into the pure-Java processing chains, encoding, saving. */
@@ -147,83 +146,10 @@ final class Studio {
         return a;
     }
 
-    /** output node for a target: resample down when the platform wants a lower rate, then AAC */
-    static Node[] encoderFor(File out, int fs, Enhancer.Target t, boolean voice) {
-        int rate = Math.min(fs, t.maxRate);
-        EncNode enc = new EncNode(out, rate, voice ? t.bitrateVoice : t.bitrateMusic);
-        if (rate == fs) return new Node[] { enc, enc };
-        return new Node[] { new ChannelAdaptiveResampler(fs, rate, enc), enc };
-    }
-
-    /** resampler that adopts the channel count of the first block */
-    static final class ChannelAdaptiveResampler extends Node {
-        final int from, to;
-        final Node out;
-        Resampler r;
-
-        ChannelAdaptiveResampler(int from, int to, Node out) { this.from = from; this.to = to; this.out = out; }
-
-        @Override public void push(float[][] b, int n) throws Exception {
-            if (r == null) { r = new Resampler(b.length, from, to); r.to(out); }
-            r.push(b, n);
-        }
-
-        @Override public void end() throws Exception { if (r != null) r.end(); else out.end(); }
-    }
-
-    static File cacheFile(Context c, String sub, String ext) {
-        File d = new File(c.getCacheDir(), sub);
-        if (!d.exists()) d.mkdirs();
-        return new File(d, "sd-" + System.nanoTime() + ext);
-    }
-
     static String safe(String n) {
         String s = n == null ? "" : n.replaceAll("[\\\\/:*?\"<>|]+", " ").replaceAll("\\s+", " ").trim();
         if (s.length() > 80) s = s.substring(0, 80).trim();
         return s.isEmpty() ? "Ses Defteri" : s;
-    }
-
-    /* ---------- automatic enhancement ---------- */
-
-    static JSONObject enhance(Context c, JSONObject src, JSONObject a, final AudioTools.Progress prog, AtomicBoolean cancel) throws Exception {
-        Fmt f = probe(c, src);
-        Enhancer.Options o = new Enhancer.Options();
-        o.target = a.optString("target", "youtube");
-        o.voice = a.optBoolean("voice", true);
-        o.learnedBands = doubles(a.optJSONArray("learned"));
-        Enhancer.Target t = Enhancer.Target.of(o.target);
-        File temp = cacheFile(c, "work", ".pcm"), out = cacheFile(c, "work", ".m4a");
-        Node[] enc = encoderFor(out, f.rate, t, o.voice);
-        Pipeline.Result r;
-        try {
-            r = Pipeline.enhance(source(c, src, f, prog, new double[][] { { 0, 0.25 }, { 0.25, 0.7 } }, cancel), f.ch, f.rate, o, temp, enc[0],
-                new Pipeline.Progress() { @Override public void on(double x) { if (x >= 0.7) prog.on(x); } });
-        } catch (Exception e) {
-            ((EncNode) enc[1]).abort();
-            temp.delete();
-            throw e;
-        }
-        try {
-            String name = safe(a.optString("name", "Ses")) + ".m4a";
-            MediaLib.Target tg = MediaLib.create(c, name, "audio/mp4");
-            JSONObject item = MediaLib.copyInTarget(c, tg, out);
-            if (item == null) { MediaLib.discard(c, tg); throw new IllegalStateException("publish"); }
-            JSONObject res = new JSONObject();
-            res.put("item", item);
-            res.put("report", new JSONObject(r.json));
-            res.put("tone", json(r.toneAfter));
-            res.put("trimStart", (double) r.plan.trimStart / r.plan.fs);
-            JSONObject moved = a.optBoolean("keepOriginal", true) ? MediaLib.moveOwn(c, src, true) : null;
-            res.put("origSrc", moved != null ? moved : src);
-            res.put("origMoved", moved != null);
-            if (!o.voice) {
-                Beats b = Beats.track(r.plan.analysis.onset, r.plan.analysis.onsetRate);
-                res.put("beats", beatsJson(b, r.plan.trimStart / (double) r.plan.fs - r.plan.analysis.fftSize / 2.0 / r.plan.fs));
-            }
-            return res;
-        } finally {
-            out.delete();
-        }
     }
 
     static JSONObject beatsJson(Beats b, double shift) throws Exception {
@@ -234,19 +160,6 @@ final class Studio {
         if (b.confidence >= 0.35) for (double x : b.times) { double v = x - shift; if (v >= 0) t.put(Math.round(v * 1000) / 1000.0); }
         o.put("times", t);
         return o;
-    }
-
-    /** undo: delete the enhanced copy, put the original back */
-    static JSONObject restore(Context c, JSONObject enhancedSrc, JSONObject origSrc, boolean moved) throws Exception {
-        JSONObject back = moved ? MediaLib.moveOwn(c, origSrc, false) : origSrc;
-        if (back == null) back = origSrc;
-        JSONObject item = MediaLib.itemFor(c, back);
-        if (item == null) throw new IllegalStateException("original missing");
-        boolean del = MediaLib.deleteOwn(c, enhancedSrc);
-        JSONObject res = new JSONObject();
-        res.put("item", item);
-        res.put("deleted", del);
-        return res;
     }
 
     /* ---------- beats only ---------- */
@@ -301,97 +214,4 @@ final class Studio {
         }
     }
 
-    /* ---------- speed / pitch ---------- */
-
-    static JSONObject timePitch(Context c, JSONObject src, JSONObject a, AudioTools.Progress prog, AtomicBoolean cancel) throws Exception {
-        Fmt f = probe(c, src);
-        double speed = Math.max(0.5, Math.min(2.0, a.optDouble("speed", 1)));
-        double st = Math.max(-12, Math.min(12, a.optDouble("semitones", 0)));
-        boolean formant = a.optBoolean("formant", true);
-        File out = cacheFile(c, "work", ".m4a");
-        EncNode enc = new EncNode(out, f.rate, f.ch > 1 ? 192000 : 128000);
-        TimePitch tp = new TimePitch(f.ch, f.rate, speed, st, formant);
-        tp.to(enc);
-        try {
-            source(c, src, f, prog, new double[][] { { 0, 0.98 } }, cancel).run(tp);
-            MediaLib.Target tg = MediaLib.create(c, safe(a.optString("name", "Ses")) + ".m4a", "audio/mp4");
-            JSONObject item = MediaLib.copyInTarget(c, tg, out);
-            if (item == null) { MediaLib.discard(c, tg); throw new IllegalStateException("publish"); }
-            JSONObject res = new JSONObject();
-            res.put("item", item);
-            return res;
-        } catch (Exception e) {
-            enc.abort();
-            throw e;
-        } finally {
-            out.delete();
-        }
-    }
-
-    /* ---------- background music with ducking ---------- */
-
-    static JSONObject mix(Context c, JSONObject src, JSONObject a, final AudioTools.Progress prog, AtomicBoolean cancel) throws Exception {
-        Fmt fv = probe(c, src);
-        JSONObject msrc = a.getJSONObject("music");
-        Fmt fm = probe(c, msrc);
-        File mtemp = cacheFile(c, "work", ".pcm"), temp = cacheFile(c, "work", ".pcm"), out = cacheFile(c, "work", ".m4a");
-        Pipeline.FileTemp mt = new Pipeline.FileTemp(mtemp, fm.ch);
-        try {
-            Node head = mt;
-            if (fm.rate != fv.rate) { Resampler r = new Resampler(fm.ch, fm.rate, fv.rate); r.to(mt); head = r; }
-            source(c, msrc, fm, prog, new double[][] { { 0, 0.15 } }, cancel).run(head);
-            String target = a.optString("target", "youtube");
-            Enhancer.Target t = Enhancer.Target.of(target);
-            Node[] enc = encoderFor(out, fv.rate, t, false);
-            Pipeline.mix(source(c, src, fv, prog, new double[][] { { 0.15, 0.25 }, { 0.25, 0.7 } }, cancel), fv.ch, fv.rate, mt,
-                a.optDouble("bedDb", -6), a.optDouble("duckDb", -14), target, temp, enc[0],
-                new Pipeline.Progress() { @Override public void on(double x) { if (x >= 0.7) prog.on(x); } });
-            MediaLib.Target tg = MediaLib.create(c, safe(a.optString("name", "Ses")) + ".m4a", "audio/mp4");
-            JSONObject item = MediaLib.copyInTarget(c, tg, out);
-            if (item == null) { MediaLib.discard(c, tg); throw new IllegalStateException("publish"); }
-            JSONObject res = new JSONObject();
-            res.put("item", item);
-            return res;
-        } finally {
-            mt.delete();
-            temp.delete();
-            out.delete();
-        }
-    }
-
-    /* ---------- export for a platform (or lossless WAV) ---------- */
-
-    static JSONObject export(Context c, JSONObject src, JSONObject a, final AudioTools.Progress prog, AtomicBoolean cancel) throws Exception {
-        Fmt f = probe(c, src);
-        String fmt = a.optString("format", "youtube");
-        String name = safe(a.optString("name", "Ses"));
-        File dir = new File(c.getCacheDir(), "export");
-        dir.mkdirs();
-        File[] old = dir.listFiles();
-        if (old != null) for (File x : old) x.delete();
-        File out;
-        if ("wav".equals(fmt)) {
-            out = new File(dir, name + ".wav");
-            WavNode w = new WavNode(out, f.rate);
-            source(c, src, f, prog, new double[][] { { 0, 0.98 } }, cancel).run(w);
-        } else {
-            Enhancer.Options o = new Enhancer.Options();
-            o.target = fmt;
-            o.voice = a.optBoolean("voice", true);
-            o.trim = o.denoise = o.deess = o.eq = o.clicks = o.plosives = o.compress = false;
-            String suffix = "whatsapp".equals(fmt) ? " (WhatsApp)" : "podcast".equals(fmt) ? " (Podcast)" : " (YouTube)";
-            out = new File(dir, name + suffix + ".m4a");
-            File temp = cacheFile(c, "work", ".pcm");
-            Node[] enc = encoderFor(out, f.rate, Enhancer.Target.of(fmt), o.voice);
-            Pipeline.enhance(source(c, src, f, prog, new double[][] { { 0, 0.3 }, { 0.3, 0.7 } }, cancel), f.ch, f.rate, o, temp, enc[0],
-                new Pipeline.Progress() { @Override public void on(double x) { if (x >= 0.7) prog.on(x); } });
-        }
-        JSONObject res = new JSONObject();
-        JSONObject s = new JSONObject();
-        s.put("path", out.getAbsolutePath());
-        res.put("src", s);
-        res.put("mime", "wav".equals(fmt) ? "audio/wav" : "audio/mp4");
-        res.put("name", out.getName());
-        return res;
-    }
 }

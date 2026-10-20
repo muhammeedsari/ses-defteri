@@ -88,3 +88,25 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mix-song.on{border-color:var(--accent);background:var(--accent-soft)}
 [dir="rtl"] .mix-song{text-align:right}
 .sel-full{width:100%;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:0 12px;font:inherit;font-size:16px}
+
+/* edit sound tab */
+#editTab{padding-bottom:24px}
+.ws-intro{margin:16px 0 12px}
+.ws-intro b{font-size:17px}
+.ws-intro p{margin:6px 0 0;color:var(--muted);font-size:14px}
+.ws-list{margin-top:12px}
+.ws-head{display:flex;align-items:center;gap:10px;margin-top:14px}
+.ws-head>div{flex:1;display:grid;gap:2px}
+.ws-head b{font-size:17px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-head .tc{font-size:12.5px;color:var(--muted)}
+.ws-group{margin-top:18px}
+.ws-group>h4{margin:0 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.ws-tools{display:flex;flex-wrap:wrap;gap:8px}
+.ws-tools .tool:disabled{opacity:.45}
+.ws-steps{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px}
+.ws-steps button{width:100%;display:grid;gap:2px;text-align:start;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface)}
+.ws-steps b{font-weight:600;font-size:14.5px}
+.ws-steps span{font-size:13px;color:var(--muted)}
+.ws-steps li.on button{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.ws-steps li.later button{opacity:.55}
+[dir="rtl"] .ws-steps button{text-align:right}

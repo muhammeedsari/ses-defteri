@@ -436,6 +436,28 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mix-song.on{border-color:var(--accent);background:var(--accent-soft)}
 [dir="rtl"] .mix-song{text-align:right}
 .sel-full{width:100%;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:0 12px;font:inherit;font-size:16px}
+
+/* edit sound tab */
+#editTab{padding-bottom:24px}
+.ws-intro{margin:16px 0 12px}
+.ws-intro b{font-size:17px}
+.ws-intro p{margin:6px 0 0;color:var(--muted);font-size:14px}
+.ws-list{margin-top:12px}
+.ws-head{display:flex;align-items:center;gap:10px;margin-top:14px}
+.ws-head>div{flex:1;display:grid;gap:2px}
+.ws-head b{font-size:17px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-head .tc{font-size:12.5px;color:var(--muted)}
+.ws-group{margin-top:18px}
+.ws-group>h4{margin:0 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.ws-tools{display:flex;flex-wrap:wrap;gap:8px}
+.ws-tools .tool:disabled{opacity:.45}
+.ws-steps{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px}
+.ws-steps button{width:100%;display:grid;gap:2px;text-align:start;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface)}
+.ws-steps b{font-weight:600;font-size:14.5px}
+.ws-steps span{font-size:13px;color:var(--muted)}
+.ws-steps li.on button{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.ws-steps li.later button{opacity:.55}
+[dir="rtl"] .ws-steps button{text-align:right}
 </style>
 
 <div class="wrap" id="app">
@@ -456,6 +478,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   <div class="tabs" id="tabs" role="tablist" hidden>
     <button type="button" role="tab" data-tab="rec" aria-selected="true"><span id="tabRecIc"></span><span data-t="tabRec"></span></button>
     <button type="button" role="tab" data-tab="music" aria-selected="false"><span id="tabMusicIc"></span><span data-t="tabMusic"></span></button>
+    <button type="button" role="tab" data-tab="edit" aria-selected="false"><span id="tabEditIc"></span><span data-t="tabEdit"></span></button>
   </div>
 
   <div class="notice" id="micNote" hidden>
@@ -486,6 +509,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
   <div id="list"></div>
   <div id="music" hidden></div>
+  <div id="editTab" hidden></div>
   <div class="empty" id="empty" hidden></div>
   <p class="foot" id="foot"></p>
 </div>
@@ -579,16 +603,6 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       <button class="tool mark" id="plMark" type="button"></button>
       <button class="tool" id="plEdit2" type="button" hidden></button>
     </div>
-    <section class="block studio" id="studio" hidden>
-      <h2 data-t="studio"></h2>
-      <div class="st-card" id="stEnh"></div>
-      <div class="st-card" id="stBeat" hidden></div>
-      <div class="st-tools">
-        <button class="tool" id="stSpeed" type="button"></button>
-        <button class="tool" id="stMix" type="button"></button>
-        <button class="tool" id="stExport" type="button"></button>
-      </div>
-    </section>
     <section class="block">
       <h2><span data-t="bookmarks"></span> <span class="n" id="bmCount"></span></h2>
       <ol class="bms" id="bmList"></ol>
@@ -613,49 +627,6 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   </div>
 </section>
 
-<!-- editor -->
-<section class="sheet" id="editor" hidden>
-  <div class="sheet-inner">
-    <div class="sheet-head">
-      <button class="icon-btn" id="edClose" type="button" data-ta="close"></button>
-      <h2 data-t="edit"></h2>
-      <span class="spacer"></span>
-      <button class="btn primary sm" id="edSave" type="button" data-t="save"></button>
-    </div>
-    <p class="ed-sum" id="edSum"></p>
-    <canvas class="ed-wave" id="edWave" data-ta="edWaveAria"></canvas>
-    <canvas class="ed-nav" id="edNav" data-ta="edNavAria"></canvas>
-    <div class="ed-row">
-      <button class="btn sm" id="edZoomOut" type="button" data-ta="zoomOut">−</button>
-      <button class="btn sm" id="edZoomIn" type="button" data-ta="zoomIn">+</button>
-      <button class="btn sm" id="edFit" type="button" data-t="fit"></button>
-      <span class="spacer"></span>
-      <button class="ctl" id="edPlay" type="button" data-ta="preview" style="width:46px;height:46px"></button>
-      <span class="tc" id="edTime">0:00</span>
-    </div>
-    <p class="ed-sel" id="edSel"></p>
-    <div class="ed-row">
-      <button class="btn sm" id="edSetA" type="button" data-t="setA"></button>
-      <button class="btn sm" id="edSetB" type="button" data-t="setB"></button>
-    </div>
-    <div class="ed-row">
-      <button class="btn danger" id="edCut" type="button"></button>
-      <button class="btn" id="edKeep" type="button"></button>
-    </div>
-    <div class="ed-card">
-      <h3 data-t="silTitle"></h3>
-      <p data-t="silDesc"></p>
-      <div class="slider"><span data-t="silThr"></span><input type="range" id="edThr" min="-60" max="-20" step="1" value="-40"><span class="tc" id="edThrV">−40 dB</span></div>
-      <div class="slider"><span data-t="silGap"></span><input type="range" id="edGap" min="0.3" max="5" step="0.1" value="1"><span class="tc" id="edGapV"></span></div>
-      <div><button class="btn" id="edSilence" type="button" data-t="silRun"></button></div>
-    </div>
-    <div class="ed-row" style="margin-top:16px">
-      <button class="btn sm" id="edUndo" type="button" data-t="undo"></button>
-      <button class="btn sm" id="edReset" type="button" data-t="reset"></button>
-    </div>
-  </div>
-</section>
-
 <div class="modal" id="modal" hidden><div class="modal-card" id="modalCard" role="dialog" aria-modal="true"></div></div>
 <div class="toast" id="toast" role="status" hidden></div>
 
@@ -665,6 +636,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 <script src="https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.6/fix-webm-duration.js"></script>
 <script src="i18n.js"></script>
 <script src="i18n2.js"></script>
+<script src="i18n3.js"></script>
 <script>
 (() => {
 'use strict';
@@ -675,7 +647,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '1.3';
+const VERSION = '1.4';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1012,7 +984,7 @@ function readColors() {
   MONO = g('--f-mono') || 'monospace';
 }
 readColors();
-const redrawAll = () => { readColors(); drawPlayer(); drawLive(); drawEd(); };
+const redrawAll = () => { readColors(); drawPlayer(); drawLive(); drawWs(); };
 try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { redrawAll(); renderList(); }); } catch (e) {}
 new MutationObserver(redrawAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-accent', 'class'] });
 
@@ -1105,7 +1077,7 @@ const peakJobs = new Map();   // item id → { promise, jobId, bg }
 let storedPeakIds = new Set();
 const isComplete = pk => pk && !pk.partial && !pk.coarse;
 let chunkDrawT = 0;
-function scheduleDraw() { if (chunkDrawT) return; chunkDrawT = requestAnimationFrame(() => { chunkDrawT = 0; drawPlayer(); drawEd(); }); }
+function scheduleDraw() { if (chunkDrawT) return; chunkDrawT = requestAnimationFrame(() => { chunkDrawT = 0; drawPlayer(); drawWs(); }); }
 async function ensurePeaks(r, opts) {
   opts = opts || {};
   const have = S.peaks.get(r.id);
@@ -1211,7 +1183,7 @@ addEventListener('popstate', () => {
   if (top) closeOverlay(top, true);
   if (stack.length) arm();
 });
-const elOf = n => ({ rec: $('#recSheet'), player: $('#player'), modal: $('#modal'), coll: $('#coll'), editor: $('#editor') })[n];
+const elOf = n => ({ rec: $('#recSheet'), player: $('#player'), modal: $('#modal'), coll: $('#coll') })[n];
 function openOverlay(n) {
   const el = elOf(n);
   if (!stack.includes(n)) stack.push(n);
@@ -1229,14 +1201,12 @@ let modalOnClose = null;
 function closeOverlay(n, fromPop) {
   if (n === 'rec' && R.state !== 'idle') { if (fromPop) askCancelRec(); return false; }
   if (n === 'modal' && S.modalLocked) return false;
-  if (n === 'editor' && ED && ED.removed.length && !ED.confirmedClose) { askCloseEditor(); return false; }
   const i = stack.indexOf(n); if (i < 0) return false;
   stack.splice(i, 1);
   hideEl(elOf(n));
   if (n === 'rec') bars('page');
   if (n === 'modal') { const f = modalOnClose; modalOnClose = null; if (f) f(); }
   if (n === 'player') onPlayerClosed();
-  if (n === 'editor') onEditorClosed();
   if (!stack.length) document.body.classList.remove('locked');
   if (!fromPop && !stack.length) disarm();
   updateMini();
@@ -1297,11 +1267,9 @@ function openSettings() {
     <div class="set-sec"><h4>${esc(t('color'))}</h4>
       <div class="accents" role="radiogroup">${ACCENTS.map(([a, c]) => `<button type="button" role="radio" data-accent-v="${a}" aria-checked="${THEME.accent === a}" style="--c:${c}"><i></i>${esc(t('ac_' + a))}</button>`).join('')}</div></div>
     ${NATIVE ? `<div class="set-sec"><h4>${esc(t('setStudio'))}</h4>
-      <label class="switch"><input type="checkbox" id="setAuto"${S.autoEnh ? ' checked' : ''}><span>${esc(t('setAuto'))}<small>${esc(t('setAutoD'))}</small></span></label>
       <div class="set-sub"><span>${esc(t('setTarget'))}</span>
         <div class="seg2" role="radiogroup">${['youtube', 'podcast', 'whatsapp'].map(v => `<button type="button" role="radio" data-target-v="${v}" aria-checked="${S.target === v}">${esc(t('tg_' + v))}</button>`).join('')}</div></div>
-      ${CAPS.asr ? `<label class="switch"><input type="checkbox" id="setText"${S.autoText ? ' checked' : ''}><span>${esc(t('setText'))}<small>${esc(t('setTextD'))}</small></span></label>
-      <div class="set-sub"><span>${esc(t('setTextLang'))}</span><select id="setTextLang" class="sel-full"><option value="">${esc(t('langAuto'))}</option>${LANGS.map(([c, n]) => `<option value="${c}"${S.textLang === c ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>` : ''}
+      ${CAPS.asr ? `<div class="set-sub"><span>${esc(t('setTextLang'))}</span><select id="setTextLang" class="sel-full"><option value="">${esc(t('langAuto'))}</option>${LANGS.map(([c, n]) => `<option value="${c}"${S.textLang === c ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>` : ''}
       <label class="switch"><input type="checkbox" id="setLearn"${S.learnVoice ? ' checked' : ''}><span>${esc(t('setLearn'))}<small id="learnInfo"></small></span></label>
       <div><button class="btn sm" type="button" id="learnReset">${esc(t('setLearnReset'))}</button></div></div>
     <div class="set-sec"><label class="switch"><input type="checkbox" id="setPre"${S.precompute ? ' checked' : ''}><span>${esc(t('precompute'))}<small>${esc(t('precomputeDesc'))}</small></span></label></div>` : ''}
@@ -1334,7 +1302,7 @@ function openSettings() {
   const pre = card.querySelector('#setPre');
   if (pre) pre.onchange = () => { S.precompute = pre.checked; ls.set('precompute', S.precompute); if (S.precompute) scheduleBackground(300); };
   const bind = (id, key) => { const el = card.querySelector(id); if (el) el.onchange = () => { S[key] = el.type === 'checkbox' ? el.checked : el.value; ls.set(key, S[key]); }; };
-  bind('#setAuto', 'autoEnh'); bind('#setText', 'autoText'); bind('#setTextLang', 'textLang'); bind('#setLearn', 'learnVoice');
+  bind('#setTextLang', 'textLang'); bind('#setLearn', 'learnVoice');
   card.querySelectorAll('[data-target-v]').forEach(b => { b.onclick = () => { S.target = b.dataset.targetV; ls.set('target', S.target); card.querySelectorAll('[data-target-v]').forEach(x => x.setAttribute('aria-checked', x === b)); }; });
   const info = card.querySelector('#learnInfo');
   const showLearn = async () => { if (!info) return; const n = (await voiceProfiles()).length; info.textContent = n >= 3 ? t('setLearnD', { n }) : t('setLearnWait', { n, k: 3 }); };
@@ -1422,6 +1390,7 @@ function rowHTML(r) {
 }
 let listLimit = 120, musicLimit = 150;
 function renderList() {
+  if (S.tab === 'edit') return;
   if (S.tab === 'music' && NATIVE) return renderMusic();
   const recs = visibleRecs();
   const list = $('#list'), empty = $('#empty');
@@ -1485,9 +1454,11 @@ function renderTabs() {
   if (!NATIVE) return;
   $('#tabs').hidden = false;
   $('#tabs').querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === S.tab));
-  const music = S.tab === 'music';
-  $('#list').hidden = music; $('#music').hidden = !music;
+  const music = S.tab === 'music', edit = S.tab === 'edit';
+  $('#list').hidden = music || edit; $('#music').hidden = !music; $('#editTab').hidden = !edit;
+  document.querySelector('.toolbar').hidden = edit;
   $('#listbar').hidden = music;
+  if (edit) { $('#empty').hidden = true; renderEdit(); }
   $('#q').placeholder = t(music ? 'searchMusic' : 'searchRec');
   $('#libNote').hidden = music || S.media || ls.get('libNoteX', false);
 }
@@ -1663,7 +1634,7 @@ async function loadLibrary() {
     S.items.set(n.id, fromNative(n, prev ? metaOf(prev) : metaById.get(n.id)));
   }
   // drop phone files that disappeared; keep browser-stored recordings
-  for (const [id, it] of S.items) if (it.src && !seen.has(id)) S.items.delete(id);
+  for (const [id, it] of S.items) if (it.src && it.kind !== 'ws' && !seen.has(id)) S.items.delete(id);
 }
 let resumeT = 0;
 window.__sdResume = () => {
@@ -1793,7 +1764,7 @@ function togglePlay() {
   if (!audio.src) { const r = curRec(); if (r) loadAudio(r, true); return; }
   if (audio.paused) play(); else audio.pause();
 }
-function seek(v) { const d = curDur(); audio.currentTime = Math.max(0, Math.min(d ? d - 0.05 : v, v)); updateTimes(); drawPlayer(); updateNowBm(); if (ED) drawEd(); }
+function seek(v) { const d = curDur(); audio.currentTime = Math.max(0, Math.min(d ? d - 0.05 : v, v)); updateTimes(); drawPlayer(); updateNowBm(); drawWs(); }
 function setPlayIcons() {
   const p = !audio.paused;
   $('#plPlay').innerHTML = ic(p ? 'pause' : 'play'); $('#plPlay').setAttribute('aria-label', t(p ? 'pause' : 'play'));
@@ -1803,7 +1774,7 @@ function setPlayIcons() {
 function loopPlayer() {
   cancelAnimationFrame(plRaf);
   const tick = () => {
-    if (!fixing) { updateTimes(); if (!scrub) drawPlayer(); updateNowBm(); updateNowSeg(); updateMini(); if (ED) { edPreviewSkip(); drawEd(); } }
+    if (!fixing) { updateTimes(); if (!scrub) drawPlayer(); updateNowBm(); updateNowSeg(); updateMini(); drawWs(); }
     if (!audio.paused) plRaf = requestAnimationFrame(tick);
   };
   tick();
@@ -1821,7 +1792,7 @@ function updateTimes() {
     $('#plCur').textContent = d >= 3600 ? fmtHMS(ct) : fmt(ct);
     $('#plDur').textContent = d >= 3600 ? fmtHMS(d) : fmt(d);
   }
-  if (ED) $('#edTime').textContent = fmtT(ct);
+  const wt = $('#wsTime'); if (wt && S.tab === 'edit') wt.textContent = fmtT(ct);
 }
 
 /* scrolling waveform: the playhead stays in the middle and the recording slides under it */
@@ -1941,7 +1912,7 @@ async function ensurePeaksUI(r) {
   if (isComplete(pk) || (pk && pk.coarse)) st.hidden = true;
   else if (!pk && !(S.peaks.get(r.id) || {}).partial) { st.textContent = t('waveFail'); setTimeout(() => { st.hidden = true; }, 2500); }
   else st.hidden = true;
-  drawPlayer(); drawEd();
+  drawPlayer(); drawWs();
   if (kindOf(r) === 'rec' && S.tab !== 'music' && !plOpen()) renderList();
 }
 function renderBookmarks() {
@@ -1987,7 +1958,7 @@ function fillPlayer(r) {
   $('#plEdit').hidden = !NATIVE || !r.src; $('#plEdit2').hidden = !NATIVE || !r.src;
   $('#plWhere').textContent = NATIVE && r.src ? t('where', { p: `${r.folder || ''}${r.name || ''}` }) : '';
   renderBookmarks(); setPlayIcons(); updateTimes();
-  renderStudio(r); renderText(r); loadExtras(r);
+  renderText(r); loadExtras(r);
 }
 function updateQueueTools() {
   if (!NATIVE) return;
@@ -2070,13 +2041,13 @@ $('#plSpeed').addEventListener('click', () => {
   $('#plSpeed').innerHTML = `<span class="tc">${speedLabel(S.rate)}</span>`;
 });
 $('#plMark').addEventListener('click', addBookmarkNow);
-$('#plEdit').addEventListener('click', () => openEditor());
-$('#plEdit2').addEventListener('click', () => openEditor());
+$('#plEdit').addEventListener('click', () => openWorkspace(curRec()));
+$('#plEdit2').addEventListener('click', () => openWorkspace(curRec()));
 document.addEventListener('click', e => {
   const s = e.target.closest('[data-seek]'); if (s && (s.closest('#player'))) { seek(parseFloat(s.dataset.seek)); return; }
   const ed = e.target.closest('[data-edit]'); if (ed && ed.closest('#player')) editBookmark(ed.dataset.edit);
 });
-try { new ResizeObserver(() => { drawPlayer(); drawLive(); drawEd(); }).observe(document.body); } catch (e) { addEventListener('resize', () => { drawPlayer(); drawLive(); drawEd(); }); }
+try { new ResizeObserver(() => { drawPlayer(); drawLive(); drawWs(); }).observe(document.body); } catch (e) { addEventListener('resize', () => { drawPlayer(); drawLive(); drawWs(); }); }
 document.addEventListener('keydown', e => {
   if (e.target.closest('input,textarea,select,button')) return;
   if (stack[stack.length - 1] === 'player') {
@@ -2242,7 +2213,7 @@ function setBusy(id, kind, p) {
   if (kind && pill) pill.textContent = busyLabel(BUSY.get(id));
   else if (!kind || !pill) { if (S.tab !== 'music') renderList(); }
   const r = curRec();
-  if (r && r.id === id && plOpen()) { renderStudio(r); renderText(r); }
+  if (r && r.id === id && plOpen()) renderText(r);
 }
 async function studioJob(kind, it, args) {
   setBusy(it.id, kind, 0);
@@ -2256,7 +2227,7 @@ function errText(e) {
   if (m.includes('cancel')) return t('saveCancelled');
   if (m.includes('asr-unavailable')) return t('textNoAsr');
   if (m.includes('memory')) return t('textMem');
-  return t('errGeneric');
+  return t('errGeneric') + (m && m !== 'job' ? ' (' + m.slice(0, 120) + ')' : '');
 }
 const baseName = it => (it.name || it.title || 'Ses').replace(/\.[^.]+$/, '');
 const isVoice = it => !(it.mode === 'music' || kindOf(it) === 'music');
@@ -2277,83 +2248,6 @@ async function addVoiceProfile(tone) {
   await db.put('kv', { k: 'voiceProfiles', list: l }).catch(() => {});
 }
 
-async function autoProcess(it) {
-  if (!NATIVE || !it || !it.src) return;
-  let cur = it;
-  if (S.autoEnh) { const nu = await enhanceItem(it, true); if (nu) cur = nu; }
-  if (S.autoText && isVoice(cur) && CAPS.asr) await transcribeItem(cur, true);
-}
-
-async function enhanceItem(it, auto) {
-  if (!NATIVE || !it.src || BUSY.has(it.id)) return null;
-  const voice = isVoice(it);
-  const learned = S.learnVoice && voice ? await learnedProfile() : null;
-  let res;
-  try {
-    res = await studioJob('enhance', it, { voice, target: S.target, learned, name: baseName(it), keepOriginal: true });
-  } catch (e) { if (!auto || !String(e.message).includes('cancel')) toast(errText(e), 4000); return null; }
-  const nu = fromNative(res.item, null);
-  const shift = res.trimStart || 0;
-  Object.assign(nu, {
-    title: it.title, userTitle: true, autoTitle: it.autoTitle, created: it.created, notes: it.notes || '', categoryId: it.categoryId || null,
-    fav: !!it.fav, source: it.source, mode: it.mode, kind: kindOf(it), tags: it.tags, ttext: it.ttext,
-    enh: res.report, origId: it.id, origSrc: res.origSrc, origMoved: !!res.origMoved, trimShift: shift,
-    bookmarks: (it.bookmarks || []).map(b => Object.assign({}, b, { t: Math.max(0, b.t - shift) }))
-  });
-  const tx = await db.get('texts', it.id).catch(() => null);
-  if (tx) { const c = shiftText(tx, -shift); c.id = nu.id; await db.put('texts', c).catch(() => {}); S.texts.set(nu.id, c); }
-  if (res.beats) {
-    const b = { id: nu.id, bpm: res.beats.bpm, times: res.beats.times || [] };
-    await db.put('beats', b).catch(() => {}); S.beats.set(nu.id, b); nu.bpm = b.times.length ? b.bpm : 0;
-  }
-  if (voice && S.learnVoice && res.tone) await addVoiceProfile(res.tone);
-  if (it.pos) nu.pos = Math.max(0, it.pos - shift);
-  S.items.set(nu.id, nu); await saveRec(nu);
-  await saveRec(it);
-  if (S.cur === it.id) await swapCurrent(it, nu, shift);
-  render();
-  if (!auto) toast(t('enhDone'));
-  return nu;
-}
-
-function shiftText(tx, d) {
-  return Object.assign({}, tx, { segments: (tx.segments || []).map(s => [Math.max(0, s[0] + d), Math.max(0, s[1] + d), s[2]]), srt: null });
-}
-
-/** the player is showing one file and its replacement appears: continue on the new one at the same moment */
-async function swapCurrent(from, to, shift) {
-  const pos = Math.max(0, (audio.currentTime || 0) - shift), playing = !audio.paused;
-  if (playing) audio.pause();
-  S.cur = to.id;
-  to.pos = pos;
-  await loadAudio(to, playing);
-  if (NATIVE) { try { AND.plSeek(pos * 1000); } catch (e) {} }
-  if (plOpen()) { fillPlayer(to); ensurePeaksUI(to); }
-  updateMini();
-}
-
-async function restoreItem(nu) {
-  const ok = await confirmBox({ title: t('enhUndoQ'), text: t('enhUndoB'), ok: t('enhUndo') });
-  if (!ok) return;
-  let res;
-  audio.pause();
-  try { res = await studioJob('restore', nu, { origSrc: nu.origSrc, origMoved: !!nu.origMoved }); }
-  catch (e) { toast(errText(e)); return; }
-  const prev = S.items.get(nu.origId) || metaById.get(nu.origId) || {};
-  const o = fromNative(res.item, metaOf(prev));
-  const shift = nu.trimShift || 0;
-  Object.assign(o, { title: nu.title, userTitle: true, notes: nu.notes || '', categoryId: nu.categoryId || null, fav: !!nu.fav, tags: nu.tags, ttext: nu.ttext,
-    source: nu.source, mode: nu.mode, kind: kindOf(nu), bookmarks: (nu.bookmarks || []).map(b => Object.assign({}, b, { t: b.t + shift })) });
-  delete o.enh; delete o.origId;
-  const tx = await db.get('texts', nu.id).catch(() => null);
-  if (tx) { const c = shiftText(tx, shift); c.id = o.id; await db.put('texts', c).catch(() => {}); S.texts.set(o.id, c); }
-  if (o.id !== nu.id) await forgetItem(nu.id);
-  S.items.set(o.id, o); await saveRec(o);
-  if (S.cur === nu.id) await swapCurrent(nu, o, -shift);
-  render();
-  toast(t('enhUndone'));
-}
-
 async function transcribeItem(it, auto) {
   if (!NATIVE || !CAPS.asr || !it.src || BUSY.has(it.id)) { if (!auto && NATIVE && !CAPS.asr) toast(t('textNoAsr'), 4000); return; }
   let res;
@@ -2370,73 +2264,8 @@ async function transcribeItem(it, auto) {
   if (!auto) toast(rec.segments.length ? t('textDone') : t('textEmpty'));
 }
 
-async function beatsItem(it) {
-  if (!NATIVE || !it.src || BUSY.has(it.id)) return;
-  let res;
-  try { res = await studioJob('beats', it, {}); } catch (e) { toast(errText(e)); return; }
-  const b = { id: it.id, bpm: res.bpm, times: res.times || [] };
-  await db.put('beats', b).catch(() => {});
-  S.beats.set(it.id, b);
-  it.bpm = b.times.length ? b.bpm : 0;
-  await saveRec(it);
-  if (S.cur === it.id && plOpen()) { renderStudio(it); drawPlayer(); }
-}
-
 async function loadExtras(r) {
-  if (!S.beats.has(r.id)) { const b = await db.get('beats', r.id).catch(() => null); if (b) { S.beats.set(r.id, b); if (S.cur === r.id) { renderStudio(r); drawPlayer(); } } }
   if (!S.texts.has(r.id)) { const x = await db.get('texts', r.id).catch(() => null); if (x) { S.texts.set(r.id, x); if (S.cur === r.id) renderText(r); } }
-}
-
-function reportChips(e) {
-  const c = [];
-  if (!e) return c;
-  if (e.channels) c.push(t({ identical: 'chIdentical', 'left-silent': 'chSilent', 'right-silent': 'chSilent', 'left-broken': 'chBroken', 'right-broken': 'chBroken', inverted: 'chInverted', 'speech-mono': 'chMono', 'target-mono': 'chMono' }[e.channels] || 'chMono'));
-  if (e.trimStart > 0.05 || e.trimEnd > 0.05) c.push(t('rpTrim', { a: nf1.format(e.trimStart || 0), b: nf1.format(e.trimEnd || 0) }));
-  if (e.denoise > 0) c.push(t('rpDenoise', { d: Math.round(e.denoise) }));
-  if (e.hum > 0) c.push(t('rpHum', { hz: e.hum }));
-  if (e.clicks > 0) c.push(t('rpClicks', { n: e.clicks }));
-  if (e.plosives) c.push(t('rpPlosive'));
-  if (e.deess) c.push(t('rpDeess'));
-  if (e.eq) c.push(t('rpEq'));
-  if (e.level) c.push(t('rpLevel'));
-  c.push(t('rpLoud', { l: nf1.format(e.lufs).replace('-', '−'), t: t('tg_' + (e.target || 'youtube')) }));
-  return c;
-}
-
-function renderStudio(r) {
-  const box = $('#studio');
-  if (!NATIVE || !r || !r.src) { box.hidden = true; return; }
-  box.hidden = false;
-  const bz = BUSY.get(r.id);
-  let h = '';
-  if (bz && (bz.kind === 'enhance' || bz.kind === 'restore')) {
-    h = `<div class="st-head">${ic('spark', 1.6)}<b>${esc(busyLabel(bz))}</b></div><div class="prog"><i style="width:${Math.round(bz.p * 100)}%"></i></div>`;
-  } else if (r.enh) {
-    h = `<div class="st-head">${ic('spark', 1.6)}<b>${esc(t('enhAuto'))}</b></div>
-      <div class="st-chips">${reportChips(r.enh).map(x => `<span>${esc(x)}</span>`).join('')}</div>
-      <div class="st-acts"><button class="btn sm" type="button" data-st="orig">${ic('play')}${esc(t('enhOrig'))}</button>
-      <button class="btn sm" type="button" data-st="undo">${ic('undo')}${esc(t('enhUndo'))}</button></div>`;
-  } else {
-    h = `<div class="st-head">${ic('spark', 1.6)}<b>${esc(t('enhNone'))}</b></div>
-      <p class="st-desc">${esc(t('setAutoD'))}</p>
-      <div class="st-acts"><button class="btn sm primary" type="button" data-st="enhance" ${bz ? 'disabled' : ''}>${ic('spark')}${esc(t('enhRun'))}</button></div>`;
-  }
-  $('#stEnh').innerHTML = h;
-  const beatBox = $('#stBeat');
-  const b = S.beats.get(r.id);
-  const musicLike = !isVoice(r);
-  beatBox.hidden = !musicLike && !b;
-  if (!beatBox.hidden) {
-    if (bz && bz.kind === 'beats') beatBox.innerHTML = `<div class="st-head">${ic('beat', 1.6)}<b>${esc(busyLabel(bz))}</b></div>`;
-    else if (b && b.times && b.times.length) beatBox.innerHTML = `<div class="st-head">${ic('beat', 1.6)}<b>${esc(t('beatTitle'))}: ${esc(t('beatBpm', { b: nf1.format(b.bpm) }))}</b>
-        <label class="switch mini"><input type="checkbox" data-st="showBeats"${S.showBeats ? ' checked' : ''}><span>${esc(t('beatShow'))}</span></label></div>`;
-    else if (b) beatBox.innerHTML = `<div class="st-head">${ic('beat', 1.6)}<b>${esc(t('beatNone'))}</b></div>`;
-    else beatBox.innerHTML = `<div class="st-head">${ic('beat', 1.6)}<b>${esc(t('beatTitle'))}</b><button class="btn sm" type="button" data-st="beats" ${bz ? 'disabled' : ''}>${esc(t('beatRun'))}</button></div>`;
-  }
-  $('#stSpeed').innerHTML = ic('gauge') + esc(t('toolSpeed'));
-  $('#stMix').innerHTML = ic('mixer') + esc(t('toolMix'));
-  $('#stExport').innerHTML = ic('out') + esc(t('toolExport'));
-  ['#stSpeed', '#stMix', '#stExport'].forEach(q => { $(q).disabled = !!bz; });
 }
 
 function renderText(r) {
@@ -2471,18 +2300,6 @@ function updateNowSeg() {
   document.querySelectorAll('#segList li').forEach((li, i) => li.classList.toggle('now', i === idx));
 }
 
-$('#studio').addEventListener('click', async e => {
-  const r = curRec(); if (!r) return;
-  const b = e.target.closest('[data-st]'); if (!b || b.tagName === 'INPUT') return;
-  const k = b.dataset.st;
-  if (k === 'enhance') enhanceItem(r, false);
-  else if (k === 'undo') restoreItem(r);
-  else if (k === 'orig') openOriginal(r);
-  else if (k === 'beats') beatsItem(r);
-});
-$('#studio').addEventListener('change', e => {
-  if (e.target.matches('[data-st="showBeats"]')) { S.showBeats = e.target.checked; ls.set('showBeats', S.showBeats); drawPlayer(); }
-});
 $('#textBlock').addEventListener('click', e => {
   const r = curRec(); if (!r) return;
   const tg = e.target.closest('[data-tag]');
@@ -2497,249 +2314,355 @@ function srtOf(segs) {
   const ts = v => { const ms = Math.round(v * 1000); return `${p2(Math.floor(ms / 3600000))}:${p2(Math.floor(ms / 60000) % 60)}:${p2(Math.floor(ms / 1000) % 60)},${String(ms % 1000).padStart(3, '0')}`; };
   return segs.map((s, i) => `${i + 1}\n${ts(s[0])} --> ${ts(s[1])}\n${s[2]}\n`).join('\n');
 }
-function openOriginal(r) {
-  let o = S.items.get(r.origId);
-  if (!o && r.origSrc) {
-    o = fromNative({ id: r.origId || ('orig:' + r.id), src: r.origSrc, title: r.title, dur: Math.round((r.duration + (r.trimShift || 0)) * 1000), name: '', folder: '' }, null);
-    o.kind = kindOf(r);
-    S.items.set(o.id, o);
-  }
-  if (!o) return;
-  o.title = r.title + ' · ' + t('origBanner');
-  openPlayer(o.id, { autoplay: true });
+/* ---------- edit sound: every step is its own file you can play, compare and undo ---------- */
+const WS = { src: null, steps: [], i: -1, sel: null, v0: 0, v1: 0, busy: null, beats: null, saved: true, q: '', pos: 0 };
+const wsCur = () => WS.steps[WS.i];
+const wsDur = () => (wsCur() ? wsCur().dur / 1000 : 0);
+function wsItem(i) {
+  const st = WS.steps[i]; if (!st) return null;
+  const id = 'ws:' + st.path;
+  let it = S.items.get(id);
+  if (!it) { it = { id, src: st.src, title: (WS.src ? WS.src.title : '') + ' · ' + (i + 1), duration: st.dur / 1000, kind: 'ws', bookmarks: [], created: Date.now(), mime: 'audio/wav' }; S.items.set(id, it); }
+  return it;
+}
+const wsPlaying = () => { const it = S.cur && S.items.get(S.cur); return it && it.kind === 'ws' ? it : null; };
+const wsTime = () => { const p = wsPlaying(); return p && p.id === (wsItem(WS.i) || {}).id ? audio.currentTime : WS.pos; };
+
+function openWorkspace(r) {
+  if (!r || !NATIVE || !r.src) return;
+  closeOverlay('player');
+  S.tab = 'edit'; ls.set('tab', 'edit');
+  render(); scrollTo(0, 0);
+  if (!WS.src || WS.src.id !== r.id) wsStart(r);
 }
 
-/* speed and pitch */
-$('#stSpeed').addEventListener('click', () => {
-  const r = curRec(); if (!r) return;
-  let sp = 1, st = 0, fm = true;
-  const card = openModal(`<h3>${esc(t('tpTitle'))}</h3>
-    <div class="modal-body">
-      <div class="slider"><span>${esc(t('tpSpeed'))}</span><input type="range" id="tpS" min="0.5" max="2" step="0.05" value="1"><span class="tc" id="tpSv">1×</span></div>
-      <div class="slider"><span>${esc(t('tpPitch'))}</span><input type="range" id="tpP" min="-12" max="12" step="1" value="0"><span class="tc" id="tpPv">0</span></div>
-      <label class="switch"><input type="checkbox" id="tpF" checked><span>${esc(t('tpFormant'))}<small>${esc(t('tpFormantD'))}</small></span></label>
-    </div>
-    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button>
-      <button class="btn primary" type="button" id="tpGo" disabled>${esc(t('tpSave'))}</button></div>`);
-  const upd = () => {
-    sp = +card.querySelector('#tpS').value; st = +card.querySelector('#tpP').value; fm = card.querySelector('#tpF').checked;
-    card.querySelector('#tpSv').textContent = speedLabel(sp);
-    card.querySelector('#tpPv').textContent = (st > 0 ? '+' : st < 0 ? '−' : '') + Math.abs(st);
-    card.querySelector('#tpGo').disabled = sp === 1 && st === 0;
-  };
-  card.addEventListener('input', upd);
-  card.querySelector('[data-x]').onclick = closeModal;
-  card.querySelector('#tpGo').onclick = async () => {
-    closeModal();
-    const name = t('tpName', { t: r.title, s: nf2.format(sp), p: (st > 0 ? '+' : st < 0 ? '−' : '±') + Math.abs(st) });
-    let res;
-    try { res = await studioJob('timepitch', r, { speed: sp, semitones: st, formant: fm, name: safeName(name) }); } catch (e) { toast(errText(e)); return; }
-    await addDerived(r, res.item, name, null);
-  };
-});
-
-/** a new file made from an existing recording (speed/pitch, mix): same notes and category, opened right away */
-async function addDerived(from, raw, title, bookmarks) {
-  const it = fromNative(raw, null);
-  Object.assign(it, { title, userTitle: true, created: Date.now(), notes: from.notes || '', categoryId: from.categoryId || null, kind: 'rec', source: 'edit', bookmarks: bookmarks || [] });
-  S.items.set(it.id, it); await saveRec(it);
-  if (S.tab === 'music') { S.tab = 'rec'; ls.set('tab', 'rec'); }
-  render();
-  S.cur = null;
-  await openPlayer(it.id);
-  toast(t('tpDone'));
-}
-
-/* background music with ducking */
-$('#stMix').addEventListener('click', async () => {
-  const r = curRec(); if (!r) return;
-  if (!S.media) { toast(t('mixNoMusic'), 3500); return; }
-  let pick = null, bed = -6, duck = -14;
-  const songs = musicItems().filter(x => x.id !== r.id).sort((a, b) => a.title.localeCompare(b.title, LOC, { numeric: true }));
-  const card = openModal(`<h3>${esc(t('mixTitle'))}</h3>
-    <div class="modal-body">
-      <label class="search"><span>${ic('search')}</span><input id="mixQ" type="search" placeholder="${esc(t('mixSearch'))}" autocomplete="off"></label>
-      <div class="mix-list" id="mixList"></div>
-      <div class="slider"><span>${esc(t('mixBed'))}</span><input type="range" id="mixB" min="-24" max="0" step="1" value="-6"><span class="tc" id="mixBv">−6 dB</span></div>
-      <div class="slider"><span>${esc(t('mixDuck'))}</span><input type="range" id="mixD" min="-24" max="-4" step="1" value="-14"><span class="tc" id="mixDv">−14 dB</span></div>
-    </div>
-    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button>
-      <button class="btn primary" type="button" id="mixGo" disabled>${esc(t('mixSave'))}</button></div>`);
-  const list = card.querySelector('#mixList');
-  const draw = () => {
-    const q = norm(card.querySelector('#mixQ').value.trim());
-    const l = songs.filter(x => !q || norm(x.title).includes(q) || norm(x.artist).includes(q)).slice(0, 60);
-    list.innerHTML = l.length ? l.map(x => `<button type="button" class="mix-song${pick && pick.id === x.id ? ' on' : ''}" data-id="${esc(x.id)}"><b>${esc(x.title)}</b><span>${esc(artistOf(x))} · ${fmt(x.duration)}</span></button>`).join('') : `<p class="hint">${esc(t('noSongMatch'))}</p>`;
-  };
-  draw();
-  card.querySelector('#mixQ').addEventListener('input', draw);
-  list.addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (!b) return; pick = S.items.get(b.dataset.id); draw(); card.querySelector('#mixGo').disabled = !pick; });
-  card.addEventListener('input', e => {
-    if (e.target.id === 'mixB') { bed = +e.target.value; card.querySelector('#mixBv').textContent = `${String(bed).replace('-', '−')} dB`; }
-    if (e.target.id === 'mixD') { duck = +e.target.value; card.querySelector('#mixDv').textContent = `${String(duck).replace('-', '−')} dB`; }
-  });
-  card.querySelector('[data-x]').onclick = closeModal;
-  card.querySelector('#mixGo').onclick = async () => {
-    closeModal();
-    const name = t('mixName', { t: r.title });
-    let res;
-    try { res = await studioJob('mix', r, { music: pick.src, bedDb: bed, duckDb: duck, target: S.target, name: safeName(name) }); } catch (e) { toast(errText(e)); return; }
-    await addDerived(r, res.item, name, (r.bookmarks || []).map(b => Object.assign({}, b)));
-  };
-});
-
-/* export for a platform */
-$('#stExport').addEventListener('click', async () => {
-  const r = curRec(); if (!r) return;
-  const v = await chooseBox(t('exTitle'), t('exDesc'), [
-    { value: 'youtube', label: t('tg_youtube'), desc: t('exYoutube') },
-    { value: 'podcast', label: t('tg_podcast'), desc: t('exPodcast') },
-    { value: 'whatsapp', label: t('tg_whatsapp'), desc: t('exWhatsapp') },
-    { value: 'wav', label: 'WAV', desc: t('exWav') }
-  ]);
-  if (!v) return;
+async function wsStart(r) {
+  if (WS.busy) return;
+  if (WS.steps.length > 1 && !WS.saved && !(await confirmBox({ title: t('wsCloseQ'), text: t('wsCloseB'), ok: t('leave'), danger: true }))) return;
+  wsStopAudio();
+  Object.assign(WS, { src: r, steps: [], i: -1, sel: null, beats: null, saved: true, pos: 0, busy: { op: 'orig', p: 0 } });
+  renderEdit();
   let res;
-  try { res = await studioJob('export', r, { format: v, voice: isVoice(r), name: safeName(r.title) }); } catch (e) { toast(errText(e)); return; }
-  try { AND.share(JSON.stringify(res.src), res.name, res.mime); } catch (e) {}
-});
+  try { res = await runJob('wsInit', { src: r.src }, f => { WS.busy.p = f; wsBusyUi(); }); }
+  catch (e) { WS.busy = null; WS.src = null; renderEdit(); toast(errText(e), 5000); return; }
+  WS.busy = null;
+  WS.steps = [Object.assign(res, { op: 'orig' })]; WS.i = 0; WS.v0 = 0; WS.v1 = res.dur / 1000;
+  renderEdit(); wsPeaks();
+}
 
-/* ---------- editor: cut, trim, remove silences ---------- */
-let ED = null;
-const totalLen = rs => rs.reduce((a, [s, e]) => a + (e - s), 0);
-function mergeRanges(rs) {
-  const a = rs.filter(([s, e]) => e - s > 0.01).map(([s, e]) => [s, e]).sort((x, y) => x[0] - y[0]);
-  const out = [];
-  for (const r of a) { const l = out[out.length - 1]; if (l && r[0] <= l[1] + 0.02) l[1] = Math.max(l[1], r[1]); else out.push(r); }
-  return out;
+function wsStopAudio() { if (wsPlaying()) { audio.pause(); S.cur = null; } }
+
+async function wsClose() {
+  if (WS.busy) return;
+  if (WS.steps.length > 1 && !WS.saved && !(await confirmBox({ title: t('wsCloseQ'), text: t('wsCloseB'), ok: t('leave'), danger: true }))) return;
+  wsStopAudio();
+  for (const id of [...S.items.keys()]) if (id.startsWith('ws:')) { S.items.delete(id); S.peaks.delete(id); }
+  Object.assign(WS, { src: null, steps: [], i: -1, sel: null, beats: null, saved: true });
+  try { runJob('wsClean', { keep: [] }).catch(() => {}); } catch (e) {}
+  renderEdit();
 }
-const inRemoved = tm => ED ? ED.removed.find(([s, e]) => tm >= s && tm < e) : null;
-function openEditor() {
-  const r = curRec(); if (!r || !NATIVE || !r.src) return;
-  const dur = curDur(); if (!dur) { toast(t('noDur')); return; }
-  ED = { r, dur, removed: [], sel: null, hist: [], v0: 0, v1: dur, confirmedClose: false };
-  $('#edCut').innerHTML = ic('scissors') + esc(t('cutSel'));
-  $('#edKeep').innerHTML = ic('check') + esc(t('keepSel'));
-  openOverlay('editor');
-  updateEd();
-  requestAnimationFrame(drawEd); setTimeout(drawEd, 320);
-  if (!isComplete(S.peaks.get(r.id))) ensurePeaksUI(r);
+
+async function wsPeaks() {
+  const it = wsItem(WS.i); if (!it) return;
+  await ensurePeaks(it, {});
+  drawWs();
 }
-function onEditorClosed() { ED = null; drawPlayer(); }
-async function askCloseEditor() {
-  if (stack.includes('modal')) return;
-  const ok = await confirmBox({ title: t('edUnsaved'), text: t('edUnsavedB'), ok: t('leave'), cancel: t('backToEdit'), danger: true });
-  if (ok && ED) { ED.confirmedClose = true; closeOverlay('editor'); }
+
+/** one processing step on the current file */
+async function wsRun(op, extra) {
+  const cur = wsCur(); if (!cur || WS.busy) return;
+  wsStopAudio();
+  WS.busy = { op, p: 0 }; wsBusyUi();
+  let res;
+  try { res = await runJob('wsOp', Object.assign({ path: cur.path, op }, extra || {}), f => { if (WS.busy) { WS.busy.p = f; wsBusyUi(); } }); }
+  catch (e) { WS.busy = null; renderEdit(); toast(errText(e), 5000); return; }
+  WS.busy = null;
+  if (res.same) { renderEdit(); toast(t('wsSame')); return; }
+  res.op = op;
+  WS.steps = WS.steps.slice(0, WS.i + 1);
+  WS.steps.push(res); WS.i = WS.steps.length - 1;
+  WS.sel = null; WS.v0 = 0; WS.v1 = res.dur / 1000; WS.pos = Math.min(WS.pos, WS.v1); WS.saved = false;
+  if (op === 'eq' && S.learnVoice && res.report && res.report.tone) addVoiceProfile(res.report.tone);
+  try { runJob('wsClean', { keep: WS.steps.map(s => s.path) }).catch(() => {}); } catch (e) {}
+  renderEdit(); wsPeaks();
+  toast(wsReport(res) || t('wsDone'), 3500);
 }
-function updateEd() {
-  if (!ED) return;
-  const cut = totalLen(ED.removed), nd = ED.dur - cut;
-  $('#edSum').innerHTML = `${esc(t('edDur'))} <b>${fmt(ED.dur)}</b>${cut > 0 ? ` → <b>${fmt(nd)}</b> <span class="cut">(−${fmt(cut)})</span> · ${esc(t('nCuts', { n: ED.removed.length }))}` : ' · ' + esc(t('edNoCut'))}`;
-  $('#edSel').innerHTML = ED.sel ? `${esc(t('edSelection'))} <b>${fmtT(ED.sel[0])} – ${fmtT(ED.sel[1])}</b> (${esc(secs(ED.sel[1] - ED.sel[0]))})` : esc(t('edSelHint'));
-  $('#edCut').disabled = !ED.sel; $('#edKeep').disabled = !ED.sel;
-  $('#edUndo').disabled = !ED.hist.length; $('#edReset').disabled = !ED.removed.length;
-  $('#edSave').disabled = !ED.removed.length;
-  $('#edThrV').textContent = `${String($('#edThr').value).replace('-', '−')} dB`;
-  $('#edGapV').textContent = secs(+$('#edGap').value);
-  drawEd();
+
+function wsReport(st) {
+  const r = st.report || {}, n = nf1.format;
+  switch (st.op) {
+    case 'orig': return t('wsOrigInfo');
+    case 'cut': return t('rpw_cut', { d: fmt(st.dur / 1000) });
+    case 'insert': return t('rpw_insert', { a: n(r.added || 0), p: fmt(r.at || 0) });
+    case 'denoise': return t('rpw_denoise', { b: r.before, a: r.after, r: r.reduction });
+    case 'hum': return t('rpw_hum', { hz: r.hz });
+    case 'trim': return t('rpw_trim', { a: n(r.start || 0), b: n(r.end || 0) });
+    case 'clicks': return t('rpClicks', { n: r.count || 0 });
+    case 'plosive': return t('rpw_plosive', { s: n(r.seconds || 0) });
+    case 'deess': return t('rpw_deess', { s: n(r.seconds || 0) });
+    case 'channels': return t({ identical: 'chIdentical', 'left-silent': 'chSilent', 'right-silent': 'chSilent', 'left-broken': 'chBroken', 'right-broken': 'chBroken', inverted: 'chInverted' }[r.reason] || 'chMono');
+    case 'eq': return t('rpw_eq', { m: n(r.mean || 0) });
+    case 'level': return t('rpw_level', { a: n(r.lraBefore || 0), b: n(st.lra || 0) });
+    case 'loud': return t('rpw_loud', { l: n(st.lufs).replace('-', '−'), p: n(st.peak).replace('-', '−'), t: t('tg_' + (r.target || 'youtube')) });
+    case 'speed': return t('rpw_speed', { s: nf2.format(r.speed || 1), p: (r.semitones > 0 ? '+' : '') + (r.semitones || 0) });
+    case 'mix': return t('rpw_mix', { b: n(r.bed), d: n(r.duck) });
+  }
+  return '';
 }
-function drawEd() {
-  if (!ED || $('#editor').hidden) return;
-  const c = sizeCanvas($('#edWave')); if (!c) return;
-  const { ctx, w, h } = c;
-  const rulerH = 20, H = h - rulerH, { v0, v1, dur } = ED, span = v1 - v0;
+
+const WS_TOOLS = [
+  ['wsGrpEdit', [['cut', 'scissors'], ['keep', 'check'], ['insert', 'import'], ['silence', 'wave']]],
+  ['wsGrpFix', [['denoise', 'spark'], ['hum', 'wave'], ['trim', 'scissors'], ['clicks', 'spark'], ['plosive', 'spark'], ['deess', 'spark'], ['channels', 'mixer'], ['eq', 'mixer'], ['level', 'gauge'], ['loud', 'gauge']]],
+  ['wsGrpFx', [['speed', 'gauge'], ['mix', 'note'], ['beats', 'beat']]]
+];
+
+function renderEdit() {
+  const box = $('#editTab');
+  if (!box || S.tab !== 'edit') return;
+  if (!NATIVE) { box.innerHTML = `<div class="empty">${ic('scissors', 1.6)}<b>${esc(t('tabEdit'))}</b>${esc(t('wsNative'))}</div>`; return; }
+  if (!WS.src) {
+    const q = norm(WS.q);
+    const items = visibleItems().filter(x => x.src && (kindOf(x) === 'rec' || kindOf(x) === 'music') && (!q || norm(x.title).includes(q) || norm(x.artist).includes(q)))
+      .sort((a, b) => (b.created || 0) - (a.created || 0)).slice(0, 80);
+    box.innerHTML = `<div class="ws-intro"><b>${esc(t('wsPick'))}</b><p>${esc(t('wsPickHint'))}</p></div>
+      <label class="search"><span>${ic('search')}</span><input id="wsQ" type="search" placeholder="${esc(t('wsSearch'))}" value="${esc(WS.q)}" autocomplete="off"></label>
+      <div class="songs ws-list">${items.map(x => `<button class="song" type="button" data-ws-pick="${esc(x.id)}"><span class="art">${ic(kindOf(x) === 'music' ? 'note' : 'mic', 1.6)}</span>
+        <span class="song-txt"><b>${esc(x.title)}</b><span>${esc(kindOf(x) === 'music' ? artistOf(x) : dfShort.format(x.created))}</span></span><span class="dur tc">${fmt(x.duration)}</span></button>`).join('') || `<p class="hint">${esc(t('noResults'))}</p>`}</div>`;
+    return;
+  }
+  const cur = wsCur();
+  const bz = WS.busy;
+  let h = `<div class="ws-head"><div style="min-width:0"><b>${esc(WS.src.title)}</b><span class="tc">${cur ? fmt(cur.dur / 1000) + ' · ' + nf1.format(cur.lufs).replace('-', '−') + ' LUFS · ' + t('wsPeak', { p: nf1.format(cur.peak).replace('-', '−') }) : ''}</span></div>
+      <button class="icon-btn" type="button" data-ws="close" aria-label="${esc(t('close'))}">${ic('close')}</button></div>
+    <canvas class="ed-wave" id="wsWave" aria-label="${esc(t('edWaveAria'))}"></canvas>
+    <canvas class="ed-nav" id="wsNav" aria-label="${esc(t('edNavAria'))}"></canvas>
+    <div class="ed-row"><button class="btn sm" type="button" data-ws="zout" aria-label="${esc(t('zoomOut'))}">−</button><button class="btn sm" type="button" data-ws="zin" aria-label="${esc(t('zoomIn'))}">+</button>
+      <button class="btn sm" type="button" data-ws="fit">${esc(t('fit'))}</button><span class="spacer"></span>
+      ${WS.i > 0 ? `<button class="btn sm" type="button" data-ws="ab">${esc(t(wsAbPrev ? 'wsNow' : 'wsPrev'))}</button>` : ''}
+      <button class="ctl" type="button" data-ws="play" id="wsPlay" style="width:46px;height:46px">${ic(wsPlaying() && !audio.paused ? 'pause' : 'play')}</button><span class="tc" id="wsTime">${fmtT(wsTime())}</span></div>
+    <p class="ed-sel" id="wsSel"></p>
+    <div id="wsBusy"${bz ? '' : ' hidden'}><p class="st-desc"><b id="wsBusyT"></b></p><div class="prog"><i id="wsBusyBar"></i></div></div>`;
+  for (const [g, tools] of WS_TOOLS) {
+    h += `<div class="ws-group"><h4>${esc(t(g))}</h4><div class="ws-tools">${tools.map(([op, icn]) =>
+      `<button class="tool" type="button" data-op="${op}"${bz || !cur || ((op === 'cut' || op === 'keep') && !WS.sel) ? ' disabled' : ''}>${ic(icn)}${esc(t('op_' + op))}</button>`).join('')}</div></div>`;
+  }
+  h += `<div class="ws-group"><h4>${esc(t('wsSteps'))}</h4><ol class="ws-steps">${WS.steps.map((st, i) =>
+    `<li class="${i === WS.i ? 'on' : ''}${i > WS.i ? ' later' : ''}"><button type="button" data-step="${i}"><b>${i + 1}. ${esc(t('op_' + st.op))}</b><span>${esc(wsReport(st))}</span>
+      <span class="tc">${fmt(st.dur / 1000)} · ${nf1.format(st.lufs).replace('-', '−')} LUFS · ${esc(t('wsPeak', { p: nf1.format(st.peak).replace('-', '−') }))}</span></button></li>`).join('')}</ol>
+    <div class="st-acts"><button class="btn sm" type="button" data-ws="undo"${WS.i > 0 && !bz ? '' : ' disabled'}>${ic('undo')}${esc(t('undo'))}</button>
+      <span class="spacer"></span><button class="btn primary" type="button" data-ws="save"${WS.i > 0 && !bz ? '' : ' disabled'}>${esc(t('save'))}</button></div></div>`;
+  box.innerHTML = h;
+  wsBusyUi(); wsSelUi();
+  requestAnimationFrame(drawWs);
+}
+
+function wsBusyUi() {
+  const b = $('#wsBusy'); if (!b) return;
+  b.hidden = !WS.busy;
+  if (!WS.busy) return;
+  $('#wsBusyT').textContent = t('wsBusy', { op: t('op_' + WS.busy.op), p: Math.round(WS.busy.p * 100) });
+  $('#wsBusyBar').style.width = Math.round(WS.busy.p * 100) + '%';
+}
+function wsSelUi() {
+  const el = $('#wsSel'); if (!el) return;
+  el.innerHTML = WS.sel ? t('wsSel', { a: fmtT(WS.sel[0]), b: fmtT(WS.sel[1]), d: secs(WS.sel[1] - WS.sel[0]) }) : esc(t('edSelHint'));
+  document.querySelectorAll('#editTab [data-op="cut"], #editTab [data-op="keep"]').forEach(b => { b.disabled = !WS.sel || !!WS.busy; });
+}
+
+function drawWs() {
+  if (S.tab !== 'edit' || !WS.src || !wsCur()) return;
+  const cv = $('#wsWave'); if (!cv) return;
+  const c = sizeCanvas(cv); if (!c) return;
+  const { ctx, w, h } = c, dur = wsDur();
+  if (!dur) return;
+  const rulerH = 20, H = h - rulerH, v0 = WS.v0, v1 = Math.max(WS.v0 + 0.5, WS.v1), span = v1 - v0;
   const X = tm => (tm - v0) / span * w;
-  const pk = S.peaks.get(ED.r.id);
-  for (const [s, e] of ED.removed) { if (e < v0 || s > v1) continue; ctx.fillStyle = COL.recSoft; ctx.fillRect(X(s), 0, Math.max(1, X(e) - X(s)), H); }
-  if (ED.sel) { ctx.fillStyle = COL.accentSoft; ctx.fillRect(X(ED.sel[0]), 0, X(ED.sel[1]) - X(ED.sel[0]), H); }
+  const it = wsItem(WS.i), pk = it && S.peaks.get(it.id);
+  if (WS.sel) { ctx.fillStyle = COL.accentSoft; ctx.fillRect(X(WS.sel[0]), 0, X(WS.sel[1]) - X(WS.sel[0]), H); }
   const n = Math.floor(w / 4);
   for (let i = 0; i < n; i++) {
     const t0 = v0 + i / n * span, t1 = v0 + (i + 1) / n * span, tm = (t0 + t1) / 2;
-    const v = pk ? level(pk, t0, t1) : 0;
-    const bh = Math.max(2, v * (H - 12));
-    const removed = inRemoved(tm), sel = ED.sel && tm >= ED.sel[0] && tm <= ED.sel[1];
-    ctx.fillStyle = removed ? COL.rec : sel ? COL.accent : COL.wave;
-    ctx.globalAlpha = removed ? 0.45 : 1;
+    const v = pk ? level(pk, t0, t1) : 0, bh = Math.max(2, v * (H - 12));
+    ctx.fillStyle = WS.sel && tm >= WS.sel[0] && tm <= WS.sel[1] ? COL.accent : COL.wave;
     ctx.fillRect(i * 4, (H - bh) / 2, 3, bh);
   }
-  ctx.globalAlpha = 1;
-  if (ED.sel) {
-    for (const tm of ED.sel) {
-      const x = X(tm); ctx.fillStyle = COL.accent; ctx.fillRect(x - 1, 0, 2, H);
-      ctx.beginPath(); ctx.arc(clamp(x, 8, w - 8), H - 10, 8, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-  const ct = audio.currentTime; if (ct >= v0 && ct <= v1) { ctx.fillStyle = COL.ink; ctx.fillRect(X(ct) - 1, 0, 2, H); }
+  if (WS.beats && WS.beats.length) { ctx.fillStyle = COL.muted; for (const b of WS.beats) if (b >= v0 && b <= v1) ctx.fillRect(X(b) - 0.5, H - 10, 1, 6); }
+  if (WS.sel) for (const tm of WS.sel) { const x = X(tm); ctx.fillStyle = COL.accent; ctx.fillRect(x - 1, 0, 2, H); ctx.beginPath(); ctx.arc(clamp(x, 8, w - 8), H - 10, 8, 0, Math.PI * 2); ctx.fill(); }
+  const ct = wsTime(); if (ct >= v0 && ct <= v1) { ctx.fillStyle = COL.ink; ctx.fillRect(X(ct) - 1, 0, 2, H); }
   const st = rulerStep(w / span);
   ctx.font = `11px ${MONO}`; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
   for (let s = Math.ceil(v0 / st) * st; s <= v1; s += st) {
     const x = X(s); ctx.fillStyle = COL.line; ctx.fillRect(x - 0.5, H + 1, 1, 4);
     ctx.fillStyle = COL.muted; ctx.fillText(dur >= 3600 ? fmtHMS(s) : fmt(s), clamp(x, 28, w - 28), H + 6);
   }
-  const nc = sizeCanvas($('#edNav')); if (!nc) return;
+  const nc = sizeCanvas($('#wsNav')); if (!nc) return;
   const N = nc.ctx, nw = nc.w, nh = nc.h, nb = Math.floor(nw / 3);
-  for (let i = 0; i < nb; i++) {
-    const t0 = i / nb * dur, t1 = (i + 1) / nb * dur, rm = inRemoved((t0 + t1) / 2);
-    const v = pk ? level(pk, t0, t1) : 0, bh = Math.max(2, v * (nh - 8));
-    N.fillStyle = rm ? COL.rec : COL.wave; N.globalAlpha = rm ? 0.5 : 1;
-    N.fillRect(i * 3, (nh - bh) / 2, 2, bh);
-  }
-  N.globalAlpha = 1;
+  N.fillStyle = COL.wave;
+  for (let i = 0; i < nb; i++) { const v = pk ? level(pk, i / nb * dur, (i + 1) / nb * dur) : 0, bh = Math.max(2, v * (nh - 8)); N.fillRect(i * 3, (nh - bh) / 2, 2, bh); }
   N.strokeStyle = COL.ink; N.lineWidth = 1.5;
   N.strokeRect(v0 / dur * nw + 0.75, 0.75, Math.max(6, span / dur * nw) - 1.5, nh - 1.5);
+  const wt = $('#wsTime'); if (wt) wt.textContent = fmtT(ct);
 }
+
+/* touch: drag to select, drag the round handles to adjust, tap to move the playhead */
 (() => {
-  const cv = $('#edWave'); let g = null;
-  const tAt = e => { const rc = cv.getBoundingClientRect(); return clamp(ED.v0 + (e.clientX - rc.left) / rc.width * (ED.v1 - ED.v0), 0, ED.dur); };
-  cv.addEventListener('pointerdown', e => {
-    if (!ED) return; try { cv.setPointerCapture(e.pointerId); } catch (x) {}
-    const rc = cv.getBoundingClientRect(), x = e.clientX - rc.left, tm = tAt(e);
-    const X = tt => (tt - ED.v0) / (ED.v1 - ED.v0) * rc.width;
-    if (ED.sel && Math.abs(x - X(ED.sel[0])) < 22) g = { mode: 'a' };
-    else if (ED.sel && Math.abs(x - X(ED.sel[1])) < 22) g = { mode: 'b' };
-    else g = { mode: 'new', t0: tm, x0: e.clientX, moved: false };
+  let g = null, nav = false;
+  const tAt = (cv, e) => { const rc = cv.getBoundingClientRect(); return clamp(WS.v0 + (e.clientX - rc.left) / rc.width * (WS.v1 - WS.v0), 0, wsDur()); };
+  const box = $('#editTab');
+  box.addEventListener('pointerdown', e => {
+    const cv = e.target.closest('#wsWave, #wsNav'); if (!cv || !wsCur()) return;
+    e.preventDefault();
+    try { cv.setPointerCapture(e.pointerId); } catch (x) {}
+    if (cv.id === 'wsNav') { nav = true; wsNavMove(cv, e); return; }
+    const rc = cv.getBoundingClientRect(), x = e.clientX - rc.left, tm = tAt(cv, e);
+    const X = tt => (tt - WS.v0) / (WS.v1 - WS.v0) * rc.width;
+    if (WS.sel && Math.abs(x - X(WS.sel[0])) < 24) g = { mode: 'a', cv };
+    else if (WS.sel && Math.abs(x - X(WS.sel[1])) < 24) g = { mode: 'b', cv };
+    else g = { mode: 'new', t0: tm, x0: e.clientX, moved: false, cv };
   });
-  cv.addEventListener('pointermove', e => {
-    if (!g || !ED) return;
-    const tm = tAt(e);
-    if (g.mode === 'a') ED.sel = [Math.min(tm, ED.sel[1] - 0.05), ED.sel[1]];
-    else if (g.mode === 'b') ED.sel = [ED.sel[0], Math.max(tm, ED.sel[0] + 0.05)];
-    else { if (Math.abs(e.clientX - g.x0) > 6) g.moved = true; if (g.moved) ED.sel = [Math.min(g.t0, tm), Math.max(g.t0, tm)]; }
-    updateEd();
+  box.addEventListener('pointermove', e => {
+    if (nav) { const cv = $('#wsNav'); if (cv) wsNavMove(cv, e); return; }
+    if (!g) return;
+    const tm = tAt(g.cv, e);
+    if (g.mode === 'a') WS.sel = [Math.min(tm, WS.sel[1] - 0.05), WS.sel[1]];
+    else if (g.mode === 'b') WS.sel = [WS.sel[0], Math.max(tm, WS.sel[0] + 0.05)];
+    else { if (Math.abs(e.clientX - g.x0) > 6) g.moved = true; if (g.moved) WS.sel = [Math.min(g.t0, tm), Math.max(g.t0, tm)]; }
+    wsSelUi(); drawWs();
   });
-  const end = e => { if (!g || !ED) { g = null; return; } if (g.mode === 'new' && !g.moved) seek(tAt(e)); g = null; updateEd(); };
-  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', () => { g = null; });
-  const nav = $('#edNav'); let nd = false;
-  const navMove = e => {
-    const rc = nav.getBoundingClientRect(), span = ED.v1 - ED.v0;
-    const c = clamp((e.clientX - rc.left) / rc.width * ED.dur, span / 2, ED.dur - span / 2);
-    ED.v0 = c - span / 2; ED.v1 = c + span / 2; drawEd();
+  const end = e => {
+    if (nav) { nav = false; return; }
+    if (!g) return;
+    if (g.mode === 'new' && !g.moved) { WS.sel = null; wsSeek(tAt(g.cv, e)); }
+    g = null; wsSelUi(); drawWs();
   };
-  nav.addEventListener('pointerdown', e => { if (!ED) return; nd = true; try { nav.setPointerCapture(e.pointerId); } catch (x) {} navMove(e); });
-  nav.addEventListener('pointermove', e => { if (nd && ED) navMove(e); });
-  nav.addEventListener('pointerup', () => { nd = false; }); nav.addEventListener('pointercancel', () => { nd = false; });
+  box.addEventListener('pointerup', end);
+  box.addEventListener('pointercancel', end);
 })();
-function edZoom(f) {
-  if (!ED) return;
-  const span = clamp((ED.v1 - ED.v0) * f, Math.min(4, ED.dur), ED.dur);
-  const c = ED.sel ? (ED.sel[0] + ED.sel[1]) / 2 : clamp(audio.currentTime, 0, ED.dur);
-  ED.v0 = clamp(c - span / 2, 0, ED.dur - span); ED.v1 = ED.v0 + span; drawEd();
+function wsNavMove(cv, e) {
+  const rc = cv.getBoundingClientRect(), dur = wsDur(), span = WS.v1 - WS.v0;
+  const c = clamp((e.clientX - rc.left) / rc.width * dur, span / 2, dur - span / 2);
+  WS.v0 = c - span / 2; WS.v1 = c + span / 2; drawWs();
 }
-$('#edZoomIn').addEventListener('click', () => edZoom(0.4));
-$('#edZoomOut').addEventListener('click', () => edZoom(2.5));
-$('#edFit').addEventListener('click', () => { if (ED) { ED.v0 = 0; ED.v1 = ED.dur; drawEd(); } });
-$('#edPlay').addEventListener('click', () => { if (!ED) return; const rm = inRemoved(audio.currentTime); if (rm && audio.paused) seek(rm[1]); togglePlay(); });
-$('#edSetA').addEventListener('click', () => { if (!ED) return; const ct = audio.currentTime; ED.sel = ED.sel ? [Math.min(ct, ED.sel[1] - 0.05), ED.sel[1]] : [ct, Math.min(ED.dur, ct + 5)]; updateEd(); });
-$('#edSetB').addEventListener('click', () => { if (!ED) return; const ct = audio.currentTime; ED.sel = ED.sel ? [ED.sel[0], Math.max(ct, ED.sel[0] + 0.05)] : [Math.max(0, ct - 5), ct]; updateEd(); });
-function edPush() { ED.hist.push(ED.removed.map(r => r.slice())); }
-$('#edCut').addEventListener('click', () => { if (!ED || !ED.sel) return; edPush(); ED.removed = mergeRanges(ED.removed.concat([ED.sel])); ED.sel = null; updateEd(); toast(t('cutDone')); });
-$('#edKeep').addEventListener('click', () => {
-  if (!ED || !ED.sel) return; edPush();
-  ED.removed = mergeRanges(ED.removed.concat([[0, ED.sel[0]], [ED.sel[1], ED.dur]])); ED.sel = null; updateEd(); toast(t('keepDone'));
+function wsZoom(f) {
+  const dur = wsDur(); if (!dur) return;
+  const span = clamp((WS.v1 - WS.v0) * f, Math.min(2, dur), dur);
+  const c = WS.sel ? (WS.sel[0] + WS.sel[1]) / 2 : clamp(wsTime(), 0, dur);
+  WS.v0 = clamp(c - span / 2, 0, dur - span); WS.v1 = WS.v0 + span; drawWs();
+}
+function wsSeek(tm) {
+  WS.pos = tm;
+  const p = wsPlaying();
+  if (p && p.id === (wsItem(WS.i) || {}).id) seek(tm); else drawWs();
+}
+let wsAbPrev = false;
+function wsPlay(stepIndex) {
+  const idx = stepIndex == null ? WS.i : stepIndex;
+  const it = wsItem(idx); if (!it) return;
+  const p = wsPlaying();
+  if (p && p.id === it.id) { togglePlay(); setTimeout(renderWsPlay, 50); return; }
+  const pos = p ? audio.currentTime : WS.pos;
+  setCur(it.id);
+  audio.queue([qItem(it)], 0, Math.min(pos, it.duration - 0.05), true);
+  setTimeout(renderWsPlay, 50);
+}
+function renderWsPlay() { const b = $('#wsPlay'); if (b) b.innerHTML = ic(wsPlaying() && !audio.paused ? 'pause' : 'play'); }
+audio.addEventListener('play', renderWsPlay);
+audio.addEventListener('pause', () => { const p = wsPlaying(); if (p) WS.pos = audio.currentTime; renderWsPlay(); });
+
+$('#editTab').addEventListener('input', e => { if (e.target.id === 'wsQ') { WS.q = e.target.value; const pos = e.target.selectionStart; renderEdit(); const q = $('#wsQ'); if (q) { q.focus(); try { q.setSelectionRange(pos, pos); } catch (x) {} } } });
+$('#editTab').addEventListener('click', async e => {
+  const pick = e.target.closest('[data-ws-pick]');
+  if (pick) { const r = S.items.get(pick.dataset.wsPick); if (r) wsStart(r); return; }
+  const stp = e.target.closest('[data-step]');
+  if (stp && !WS.busy) { wsStopAudio(); wsAbPrev = false; WS.i = +stp.dataset.step; WS.sel = null; WS.v0 = 0; WS.v1 = wsDur(); renderEdit(); wsPeaks(); return; }
+  const b = e.target.closest('[data-ws]');
+  if (b) {
+    const k = b.dataset.ws;
+    if (k === 'close') wsClose();
+    else if (k === 'zin') wsZoom(0.4);
+    else if (k === 'zout') wsZoom(2.5);
+    else if (k === 'fit') { WS.v0 = 0; WS.v1 = wsDur(); drawWs(); }
+    else if (k === 'play') { wsAbPrev = false; wsPlay(); }
+    else if (k === 'ab') { wsAbPrev = !wsAbPrev; wsPlayAB(); b.textContent = t(wsAbPrev ? 'wsNow' : 'wsPrev'); }
+    else if (k === 'undo' && WS.i > 0) { wsStopAudio(); WS.steps = WS.steps.slice(0, WS.i); WS.i--; WS.sel = null; WS.v0 = 0; WS.v1 = wsDur(); renderEdit(); wsPeaks(); }
+    else if (k === 'save') wsSave();
+    return;
+  }
+  const o = e.target.closest('[data-op]');
+  if (o && !o.disabled) wsTool(o.dataset.op);
 });
-$('#edUndo').addEventListener('click', () => { if (!ED || !ED.hist.length) return; ED.removed = ED.hist.pop(); updateEd(); });
-$('#edReset').addEventListener('click', () => { if (!ED) return; edPush(); ED.removed = []; updateEd(); });
-$('#edThr').addEventListener('input', updateEd);
-$('#edGap').addEventListener('input', updateEd);
+function wsPlayAB() {
+  const want = wsAbPrev ? WS.i - 1 : WS.i;
+  const it = wsItem(want); if (!it) return;
+  const p = wsPlaying(), pos = p ? audio.currentTime : WS.pos;
+  setCur(it.id);
+  audio.queue([qItem(it)], 0, Math.min(pos, it.duration - 0.05), true);
+  if (want !== WS.i) wsPeaksFor(want);
+}
+async function wsPeaksFor(i) { const it = wsItem(i); if (it) await ensurePeaks(it, {}); }
+
+async function wsTool(op) {
+  const cur = wsCur(), dur = wsDur();
+  if (op === 'cut' || op === 'keep') {
+    if (!WS.sel) return;
+    const [a, b] = WS.sel;
+    const keep = op === 'keep' ? [[a * 1000, b * 1000]] : [[0, a * 1000], [b * 1000, dur * 1000 + 1000]].filter(r => r[1] - r[0] > 20);
+    if (!keep.length) return;
+    return wsRun('cut', { keep });
+  }
+  if (op === 'silence') return wsSilence();
+  if (op === 'insert') return wsPickAudio(t('op_insert'), true, (it, where) => wsRun('insert', { other: it.src, posMs: where === 'start' ? 0 : where === 'end' ? dur * 1000 : wsTime() * 1000 }));
+  if (op === 'mix') return wsMixDialog();
+  if (op === 'speed') return wsSpeedDialog();
+  if (op === 'loud') {
+    const v = await chooseBox(t('op_loud'), t('wsLoudD'), ['youtube', 'podcast', 'whatsapp'].map(x => ({ value: x, label: t('tg_' + x), desc: t('ex' + x[0].toUpperCase() + x.slice(1)) })));
+    if (v) wsRun('loud', { target: v });
+    return;
+  }
+  if (op === 'eq') return wsRun('eq', { learned: S.learnVoice ? await learnedProfile() : null });
+  if (op === 'beats') {
+    WS.busy = { op, p: 0 }; wsBusyUi();
+    try {
+      const res = await runJob('beats', { src: cur.src }, f => { if (WS.busy) { WS.busy.p = f; wsBusyUi(); } });
+      WS.busy = null; WS.beats = res.times || [];
+      renderEdit();
+      toast(WS.beats.length ? t('beatTitle') + ': ' + t('beatBpm', { b: nf1.format(res.bpm) }) : t('beatNone'), 4000);
+    } catch (e) { WS.busy = null; renderEdit(); toast(errText(e), 5000); }
+    return;
+  }
+  wsRun(op);
+}
+
+async function wsSilence() {
+  const it = wsItem(WS.i), pk = it && S.peaks.get(it.id);
+  if (!isComplete(pk)) { toast(t('waveWait')); return; }
+  const card = openModal(`<h3>${esc(t('silTitle'))}</h3><p class="mtext">${esc(t('silDesc'))}</p>
+    <div class="modal-body">
+      <div class="slider"><span>${esc(t('silThr'))}</span><input type="range" id="sT" min="-60" max="-20" step="1" value="-40"><span class="tc" id="sTv">−40 dB</span></div>
+      <div class="slider"><span>${esc(t('silGap'))}</span><input type="range" id="sG" min="0.3" max="5" step="0.1" value="1"><span class="tc" id="sGv">${secs(1)}</span></div>
+      <p class="mtext" id="sInfo"></p>
+    </div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" id="sGo">${esc(t('silRun'))}</button></div>`);
+  let found = [];
+  const upd = () => {
+    const thr = +card.querySelector('#sT').value, gap = +card.querySelector('#sG').value;
+    card.querySelector('#sTv').textContent = `${String(thr).replace('-', '−')} dB`;
+    card.querySelector('#sGv').textContent = secs(gap);
+    found = findSilences(pk, wsDur(), thr, gap);
+    const tot = found.reduce((a, [s, e]) => a + e - s, 0);
+    card.querySelector('#sInfo').textContent = found.length ? t('wsSilInfo', { n: found.length, d: fmt(tot) }) : t('noSil');
+    card.querySelector('#sGo').disabled = !found.length;
+  };
+  card.addEventListener('input', upd); upd();
+  card.querySelector('[data-x]').onclick = closeModal;
+  card.querySelector('#sGo').onclick = () => {
+    closeModal();
+    const dur = wsDur(), keep = []; let pos = 0;
+    for (const [s, e] of found) { if (s > pos) keep.push([pos * 1000, s * 1000]); pos = Math.max(pos, e); }
+    if (pos < dur) keep.push([pos * 1000, dur * 1000 + 1000]);
+    if (keep.length) wsRun('cut', { keep });
+  };
+}
 function findSilences(pk, dur, dbThr, minGap) {
   const pad = 0.15, thr = Math.sqrt(Math.pow(10, dbThr / 20)) * 255;
   const found = []; let start = -1;
@@ -2752,82 +2675,96 @@ function findSilences(pk, dur, dbThr, minGap) {
       start = -1;
     }
   }
-  return found;
+  return found.filter(([s, e]) => e - s > 0.05);
 }
-$('#edSilence').addEventListener('click', () => {
-  if (!ED) return;
-  const pk = S.peaks.get(ED.r.id);
-  if (!isComplete(pk)) { toast(t('waveWait')); return; }
-  const found = findSilences(pk, ED.dur, +$('#edThr').value, +$('#edGap').value);
-  if (!found.length) { toast(t('noSil')); return; }
-  edPush();
-  const before = totalLen(ED.removed);
-  ED.removed = mergeRanges(ED.removed.concat(found));
-  updateEd();
-  toast(t('silDone', { n: found.length, d: fmt(totalLen(ED.removed) - before) }), 3200);
-});
-function edPreviewSkip() {
-  if (!ED || audio.paused) return;
-  const rm = inRemoved(audio.currentTime);
-  if (rm) { if (rm[1] >= ED.dur - 0.05) audio.pause(); else seek(rm[1]); }
+
+/** list of recordings and songs to choose another audio from */
+function wsPickAudio(title, withWhere, done, extraHtml, onReady) {
+  const all = visibleItems().filter(x => x.src && x.id !== (WS.src && WS.src.id) && (kindOf(x) === 'rec' || kindOf(x) === 'music'))
+    .sort((a, b) => a.title.localeCompare(b.title, LOC, { numeric: true }));
+  let pick = null;
+  const card = openModal(`<h3>${esc(title)}</h3>
+    <div class="modal-body">
+      <label class="search"><span>${ic('search')}</span><input id="pQ" type="search" placeholder="${esc(t('wsSearch'))}" autocomplete="off"></label>
+      <div class="mix-list" id="pList"></div>
+      ${withWhere ? `<div class="seg2" role="radiogroup" id="pWhere">${['cursor', 'start', 'end'].map((w, i) => `<button type="button" role="radio" data-w="${w}" aria-checked="${i === 0}">${esc(t('wsIns_' + w))}</button>`).join('')}</div>` : ''}
+      ${extraHtml || ''}
+    </div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" id="pGo" disabled>${esc(t('ok'))}</button></div>`);
+  const list = card.querySelector('#pList');
+  const draw = () => {
+    const q = norm(card.querySelector('#pQ').value.trim());
+    const l = all.filter(x => !q || norm(x.title).includes(q) || norm(x.artist).includes(q)).slice(0, 60);
+    list.innerHTML = l.length ? l.map(x => `<button type="button" class="mix-song${pick && pick.id === x.id ? ' on' : ''}" data-id="${esc(x.id)}"><b>${esc(x.title)}</b><span>${esc(kindOf(x) === 'music' ? artistOf(x) : dfShort.format(x.created))} · ${fmt(x.duration)}</span></button>`).join('') : `<p class="hint">${esc(t('noResults'))}</p>`;
+  };
+  draw();
+  card.querySelector('#pQ').addEventListener('input', draw);
+  list.addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (!b) return; pick = S.items.get(b.dataset.id); draw(); card.querySelector('#pGo').disabled = !pick; });
+  let where = 'cursor';
+  const pw = card.querySelector('#pWhere');
+  if (pw) pw.addEventListener('click', e => { const b = e.target.closest('[data-w]'); if (!b) return; where = b.dataset.w; pw.querySelectorAll('[data-w]').forEach(x => x.setAttribute('aria-checked', x === b)); });
+  card.querySelector('[data-x]').onclick = closeModal;
+  card.querySelector('#pGo').onclick = () => { const p = pick; const out = onReady ? onReady(card) : null; closeModal(); done(p, where, out); };
 }
-const mapTime = (tm, removed) => { let cut = 0; for (const [s, e] of removed) { if (tm >= e) cut += e - s; else if (tm >= s) return null; } return tm - cut; };
-$('#edSave').addEventListener('click', async () => {
-  if (!ED || !ED.removed.length) return;
-  const r = ED.r;
-  const opts = [{ value: 'copy', label: t('saveCopy'), desc: t('saveCopyD') }];
-  if (r.own) opts.push({ value: 'replace', label: t('saveReplace'), desc: t('saveReplaceD') });
-  const choice = await chooseBox(t('saveHow'), t('saveHowB', { d: fmt(ED.dur - totalLen(ED.removed)) }), opts);
-  if (!choice || !ED) return;
-  const removed = ED.removed.map(x => x.slice()), dur = ED.dur;
-  const keep = []; let pos = 0;
-  for (const [s, e] of removed) { if (s > pos) keep.push([Math.round(pos * 1000), Math.round(s * 1000)]); pos = Math.max(pos, e); }
-  if (pos < dur) keep.push([Math.round(pos * 1000), Math.round(dur * 1000) + 1000]);
-  if (!keep.length) { toast(t('allCut')); return; }
-  audio.pause();
-  const replace = choice === 'replace';
-  const editedTitle = t('edited', { t: r.title });
-  const baseName = replace ? (r.name || r.title).replace(/\.[^.]+$/, '') : editedTitle;
-  let jobId = null;
-  const card = openModal(`<h3>${esc(t('saving'))}</h3><p class="mtext" id="pgText">${esc(t('encoding', { p: 0 }))}</p><div class="prog"><i id="pgBar"></i></div>
-    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" id="pgCancel">${esc(t('cancel'))}</button></div>`);
-  S.modalLocked = true;
-  card.querySelector('#pgCancel').onclick = () => { if (jobId) try { AND.cancelJob(jobId); } catch (e) {} };
+
+function wsMixDialog() {
+  if (!musicItems().length && !recItems().length) { toast(t('mixNoMusic'), 3500); return; }
+  const extra = `<div class="slider"><span>${esc(t('mixBed'))}</span><input type="range" id="mixB" min="-24" max="0" step="1" value="-6"><span class="tc" id="mixBv">−6 dB</span></div>
+    <div class="slider"><span>${esc(t('mixDuck'))}</span><input type="range" id="mixD" min="-24" max="-4" step="1" value="-14"><span class="tc" id="mixDv">−14 dB</span></div>`;
+  wsPickAudio(t('mixTitle'), false, (it, w, v) => wsRun('mix', { music: it.src, bedDb: v.bed, duckDb: v.duck, target: S.target }), extra,
+    card => ({ bed: +card.querySelector('#mixB').value, duck: +card.querySelector('#mixD').value }));
+  const card = $('#modalCard');
+  card.addEventListener('input', e => {
+    if (e.target.id === 'mixB') card.querySelector('#mixBv').textContent = `${String(e.target.value).replace('-', '−')} dB`;
+    if (e.target.id === 'mixD') card.querySelector('#mixDv').textContent = `${String(e.target.value).replace('-', '−')} dB`;
+  });
+}
+
+function wsSpeedDialog() {
+  const card = openModal(`<h3>${esc(t('tpTitle'))}</h3>
+    <div class="modal-body">
+      <div class="slider"><span>${esc(t('tpSpeed'))}</span><input type="range" id="tpS" min="0.5" max="2" step="0.05" value="1"><span class="tc" id="tpSv">1×</span></div>
+      <div class="slider"><span>${esc(t('tpPitch'))}</span><input type="range" id="tpP" min="-12" max="12" step="1" value="0"><span class="tc" id="tpPv">0</span></div>
+      <label class="switch"><input type="checkbox" id="tpF" checked><span>${esc(t('tpFormant'))}<small>${esc(t('tpFormantD'))}</small></span></label>
+    </div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" id="tpGo" disabled>${esc(t('ok'))}</button></div>`);
+  let sp = 1, st = 0;
+  card.addEventListener('input', () => {
+    sp = +card.querySelector('#tpS').value; st = +card.querySelector('#tpP').value;
+    card.querySelector('#tpSv').textContent = speedLabel(sp);
+    card.querySelector('#tpPv').textContent = (st > 0 ? '+' : st < 0 ? '−' : '') + Math.abs(st);
+    card.querySelector('#tpGo').disabled = sp === 1 && st === 0;
+  });
+  card.querySelector('[data-x]').onclick = closeModal;
+  card.querySelector('#tpGo').onclick = () => { const f = card.querySelector('#tpF').checked; closeModal(); wsRun('speed', { speed: sp, semitones: st, formant: f }); };
+}
+
+async function wsSave() {
+  const cur = wsCur(); if (!cur || WS.i < 1) return;
+  const own = WS.src && WS.src.own && kindOf(WS.src) === 'rec';
+  const opts = [{ value: 'copy', label: t('saveCopy'), desc: t('saveCopyD') }, { value: 'wav', label: t('wsSaveWav'), desc: t('wsSaveWavD') }];
+  if (own) opts.push({ value: 'replace', label: t('saveReplace'), desc: t('wsReplaceD') });
+  const v = await chooseBox(t('saveHow'), t('saveHowB', { d: fmt(cur.dur / 1000) }), opts);
+  if (!v) return;
+  wsStopAudio();
+  const name = t('edited', { t: WS.src.title });
+  WS.busy = { op: 'save', p: 0 }; wsBusyUi();
   let res;
   try {
-    res = await nativeCall(() => (jobId = AND.job('render', JSON.stringify({ src: r.src, keep, name: safeName(baseName) + '.m4a', replace }))),
-      f => { const p = Math.round(f * 100); card.querySelector('#pgText').textContent = t('encoding', { p }); card.querySelector('#pgBar').style.width = p + '%'; });
-  } catch (e) {
-    S.modalLocked = false; closeModal();
-    toast(t(String(e.message || '').includes('cancel') ? 'saveCancelled' : 'saveFailed'), 4000);
-    return;
-  }
-  S.modalLocked = false; closeModal();
-  // notes, bookmarks (moved to their new times) and the waveform carry over to the new file
-  const it = fromNative(res, null);
-  it.title = replace ? r.title : editedTitle; it.userTitle = true;
-  it.created = replace ? r.created : Date.now();
-  it.notes = r.notes || ''; it.categoryId = r.categoryId || null; it.fav = replace ? !!r.fav : false;
-  it.source = r.source; it.mode = r.mode; it.kind = kindOf(r);
-  it.bookmarks = (r.bookmarks || []).map(b => { const nt = mapTime(b.t, removed); return nt == null ? null : Object.assign({}, b, { id: uid(), t: nt }); }).filter(Boolean);
-  if (!it.duration) it.duration = dur - totalLen(removed);
-  const pk = S.peaks.get(r.id);
-  if (isComplete(pk)) {
-    const parts = []; let p0 = 0;
-    for (const [s, e] of removed) { parts.push([p0, s]); p0 = e; } parts.push([p0, dur]);
-    const chunks = parts.filter(([a, b]) => b > a).map(([a, b]) => pk.data.subarray(Math.floor(a * pk.rate), Math.ceil(b * pk.rate)));
-    const out = new Uint8Array(chunks.reduce((a, c) => a + c.length, 0)); let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; }
-    await storePeaks(it.id, out, pk.rate); storedPeakIds.add(it.id);
-    it.peaks = miniFromBytes(out);
-  }
+    res = await runJob('wsSave', Object.assign({ path: cur.path, name: safeName(v === 'replace' ? baseName(WS.src) : name), format: v === 'wav' ? 'wav' : 'm4a' }, v === 'replace' ? { replace: WS.src.src } : {}),
+      f => { if (WS.busy) { WS.busy.p = f; wsBusyUi(); } });
+  } catch (e) { WS.busy = null; renderEdit(); toast(errText(e), 5000); return; }
+  WS.busy = null;
+  const from = WS.src, it = fromNative(res.item, null);
+  Object.assign(it, { title: v === 'replace' ? from.title : name, userTitle: true, created: v === 'replace' ? from.created : Date.now(), notes: from.notes || '',
+    categoryId: from.categoryId || null, kind: 'rec', source: 'edit', fav: v === 'replace' && !!from.fav, bookmarks: [] });
   S.items.set(it.id, it); await saveRec(it);
-  if (replace) await forgetItem(r.id);
-  ED.confirmedClose = true; closeOverlay('editor');
-  S.cur = null; await openPlayer(it.id);
+  if (v === 'replace' && res.replaced) await forgetItem(from.id);
+  WS.saved = true;
   render();
-  toast(t(replace ? 'savedReplace' : 'savedCopy'));
-});
-$('#edClose').addEventListener('click', () => closeOverlay('editor'));
+  toast(t(v === 'replace' ? 'savedReplace' : 'savedCopy'), 3000);
+}
+
 
 /* ---------- recorder ---------- */
 const R = { state: 'idle', mode: ls.get('mode', 'voice'), stream: null, ctx: null, an: null, mr: null, mime: '', chunks: [], idx: 0,
@@ -2942,7 +2879,6 @@ async function finishNative() {
   await openPlayer(it.id, { replace: 'rec' });
   toast(t('recSaved'));
   updateRecUI();
-  autoProcess(it);
 }
 function releaseMic() {
   cancelAnimationFrame(R.raf);
@@ -3266,7 +3202,7 @@ async function boot() {
   applyStatic();
   $('#importIc').innerHTML = ic('import'); $('#searchIc').innerHTML = ic('search'); $('#setBtn').innerHTML = ic('gear');
   $('#qClear').innerHTML = ic('close'); $('#micNoteX').innerHTML = ic('close'); $('#libNoteX').innerHTML = ic('close');
-  $('#tabRecIc').innerHTML = ic('mic'); $('#tabMusicIc').innerHTML = ic('note');
+  $('#tabRecIc').innerHTML = ic('mic'); $('#tabMusicIc').innerHTML = ic('note'); $('#tabEditIc').innerHTML = ic('scissors');
   $('#recClose').innerHTML = ic('close'); $('#recMarkIc').innerHTML = ic('flag'); $('#recDoneIc').innerHTML = ic('check', 2.2);
   $('#plBack').innerHTML = ic('back', 2); $('#collBack').innerHTML = ic('back', 2); $('#plB10').innerHTML = ic('b10'); $('#plF10').innerHTML = ic('f10');
   $('#plPrev').innerHTML = ic('prev'); $('#plNext').innerHTML = ic('next'); $('#miniNext').innerHTML = ic('next');
