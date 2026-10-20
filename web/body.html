@@ -1307,7 +1307,6 @@ function setPlayIcons() {
   const p = !audio.paused;
   $('#plPlay').innerHTML = ic(p ? 'pause' : 'play'); $('#plPlay').setAttribute('aria-label', t(p ? 'pause' : 'play'));
   $('#miniPlay').innerHTML = ic(p ? 'pause' : 'play'); $('#miniPlay').setAttribute('aria-label', t(p ? 'pause' : 'play'));
-  $('#edPlay').innerHTML = ic(p ? 'pause' : 'play');
 }
 function loopPlayer() {
   cancelAnimationFrame(plRaf);
@@ -1951,7 +1950,7 @@ function wsReport(st) {
 const WS_TOOLS = [
   ['wsGrpEdit', [['cut', 'scissors'], ['keep', 'check'], ['insert', 'import'], ['silence', 'wave']]],
   ['wsGrpFix', [['denoise', 'spark'], ['hum', 'wave'], ['trim', 'scissors'], ['clicks', 'spark'], ['plosive', 'spark'], ['deess', 'spark'], ['channels', 'mixer'], ['eq', 'mixer'], ['level', 'gauge'], ['loud', 'gauge']]],
-  ['wsGrpFx', [['speed', 'gauge'], ['mix', 'note'], ['beats', 'beat']]]
+  ['wsGrpFx', [['speed', 'gauge'], ['mix', 'note'], ['beats', 'beat'], ['export', 'out']]]
 ];
 
 function renderEdit() {
@@ -2016,7 +2015,7 @@ function drawWs() {
   const rulerH = 20, H = h - rulerH, v0 = WS.v0, v1 = Math.max(WS.v0 + 0.5, WS.v1), span = v1 - v0;
   const X = tm => (tm - v0) / span * w;
   const it = wsItem(WS.i), pk = it && S.peaks.get(it.id);
-  if (WS.sel) { ctx.fillStyle = COL.accentSoft; ctx.fillRect(X(WS.sel[0]), 0, X(WS.sel[1]) - X(WS.sel[0]), H); }
+  if (WS.sel) { ctx.fillStyle = COL.accent; ctx.globalAlpha = 0.18; ctx.fillRect(X(WS.sel[0]), 0, X(WS.sel[1]) - X(WS.sel[0]), H); ctx.globalAlpha = 1; }
   const n = Math.floor(w / 4);
   for (let i = 0; i < n; i++) {
     const t0 = v0 + i / n * span, t1 = v0 + (i + 1) / n * span, tm = (t0 + t1) / 2;
@@ -2026,7 +2025,7 @@ function drawWs() {
   }
   if (WS.beats && WS.beats.length) { ctx.fillStyle = COL.muted; for (const b of WS.beats) if (b >= v0 && b <= v1) ctx.fillRect(X(b) - 0.5, H - 10, 1, 6); }
   if (WS.sel) for (const tm of WS.sel) { const x = X(tm); ctx.fillStyle = COL.accent; ctx.fillRect(x - 1, 0, 2, H); ctx.beginPath(); ctx.arc(clamp(x, 8, w - 8), H - 10, 8, 0, Math.PI * 2); ctx.fill(); }
-  const ct = wsTime(); if (ct >= v0 && ct <= v1) { ctx.fillStyle = COL.ink; ctx.fillRect(X(ct) - 1, 0, 2, H); }
+  const ct = wsTime(); if (ct >= v0 && ct <= v1) { const x = X(ct); ctx.fillStyle = COL.rec; ctx.fillRect(x - 1, 0, 2, H); ctx.beginPath(); ctx.moveTo(x - 6, 0); ctx.lineTo(x + 6, 0); ctx.lineTo(x, 8); ctx.closePath(); ctx.fill(); }
   const st = rulerStep(w / span);
   ctx.font = `11px ${MONO}`; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
   for (let s = Math.ceil(v0 / st) * st; s <= v1; s += st) {
@@ -2149,6 +2148,17 @@ async function wsTool(op) {
     return wsRun('cut', { keep });
   }
   if (op === 'silence') return wsSilence();
+  if (op === 'export') {
+    const v = await chooseBox(t('toolExport'), t('wsExportD'), [{ value: 'm4a', label: 'M4A (AAC)', desc: t('saveCopyD') }, { value: 'wav', label: 'WAV', desc: t('wsSaveWavD') }]);
+    if (!v) return;
+    WS.busy = { op, p: 0 }; wsBusyUi();
+    try {
+      const res = await runJob('wsExport', { path: cur.path, format: v, name: safeName(WS.src.title) }, f => { if (WS.busy) { WS.busy.p = f; wsBusyUi(); } });
+      WS.busy = null; wsBusyUi();
+      AND.share(JSON.stringify(res.src), res.name, res.mime);
+    } catch (e) { WS.busy = null; renderEdit(); toast(errText(e), 5000); }
+    return;
+  }
   if (op === 'insert') return wsPickAudio(t('op_insert'), true, (it, where) => wsRun('insert', { other: it.src, posMs: where === 'start' ? 0 : where === 'end' ? dur * 1000 : wsTime() * 1000 }));
   if (op === 'mix') return wsMixDialog();
   if (op === 'speed') return wsSpeedDialog();
@@ -2745,7 +2755,6 @@ async function boot() {
   $('#plBack').innerHTML = ic('back', 2); $('#collBack').innerHTML = ic('back', 2); $('#plB10').innerHTML = ic('b10'); $('#plF10').innerHTML = ic('f10');
   $('#plPrev').innerHTML = ic('prev'); $('#plNext').innerHTML = ic('next'); $('#miniNext').innerHTML = ic('next');
   $('#plMark').innerHTML = ic('flag') + esc(t('mark')); $('#plEdit').innerHTML = ic('scissors'); $('#plEdit2').innerHTML = ic('scissors') + esc(t('edit'));
-  $('#edClose').innerHTML = ic('close'); $('#edPlay').innerHTML = ic('play');
   $('#plCopy').innerHTML = ic('copy') + esc(t('copyNotes'));
   $('#plShare').innerHTML = ic('share') + esc(t(AND || (!IN_FRAME && navigator.canShare) ? 'share' : 'download'));
   $('#plDelete').innerHTML = ic('trash') + esc(t('delete'));
@@ -2757,7 +2766,7 @@ async function boot() {
   if (!MIC_OK && !ls.get('micNoteX', false)) $('#micNote').hidden = false;
   $('#micNoteX').addEventListener('click', () => { $('#micNote').hidden = true; ls.set('micNoteX', true); });
   if (!MIC_OK) $('#recBtn').setAttribute('aria-label', t('recordWithPhone'));
-  if (!NATIVE) S.tab = 'rec';
+  if (!NATIVE || S.tab === 'edit') S.tab = 'rec';   // an editing session does not survive a restart
 
   try { idb = await openDB(); }
   catch (e) { mem = {}; for (const s of Object.keys(STORES)) mem[s] = new Map(); $('#storeNote').hidden = false; }
@@ -2780,6 +2789,7 @@ async function boot() {
     audio.refresh();
     if (audio.src && S.items.has(audio.src)) { S.cur = audio.src; S.miniOn = true; updateMini(); }
     scheduleBackground(3000);
+    if (!S.media && !ls.get('askedMedia', false)) { ls.set('askedMedia', true); requestLibrary(); }
   }
 }
 boot();

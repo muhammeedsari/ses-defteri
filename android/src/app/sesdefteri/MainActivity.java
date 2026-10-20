@@ -720,6 +720,8 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.init(MainActivity.this, a.getJSONObject("src"), p, cancel);
                         } else if ("wsOp".equals(kind)) {
                             res = Workspace.op(MainActivity.this, a, p, cancel);
+                        } else if ("wsExport".equals(kind)) {
+                            res = Workspace.export(MainActivity.this, a, p, cancel);
                         } else if ("wsSave".equals(kind)) {
                             res = Workspace.save(MainActivity.this, a, p, cancel);
                         } else if ("wsClean".equals(kind)) {

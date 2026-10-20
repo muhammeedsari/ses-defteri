@@ -2,6 +2,7 @@
 (function () {
 const A = {
 tr: {
+  op_export: "Dışa aktar", wsExportD: "Bu adımdaki ses paylaşılır; önce \"Ses yüksekliği\" ile hedefe göre ayarlayabilirsin.",
   tabEdit: "Sesi düzenle", wsPick: "Düzenlenecek sesi seç", wsPickHint: "Her işlem ayrı bir adım olur: dinle, öncekiyle karşılaştır, beğenmezsen geri al. Kaydedene kadar asıl dosyaya dokunulmaz.",
   wsSearch: "Kayıt veya şarkı ara", wsNative: "Ses düzenleme yalnızca Android uygulamasında çalışır.",
   wsCloseQ: "Düzenleme kapatılsın mı?", wsCloseB: "Kaydedilmemiş adımlar silinir.",
@@ -20,6 +21,7 @@ tr: {
   rpw_eq: "Ortalama {m} dB düzeltme", rpw_level: "Ses aralığı {a} → {b} LU", rpw_loud: "{l} LUFS, tepe {p} dB ({t})", rpw_speed: "{s}× hız, {p} yarım ton", rpw_mix: "Müzik {b} dB, konuşurken {d} dB"
 },
 en: {
+  op_export: "Export", wsExportD: "The sound at this step is shared; use \"Loudness\" first to set it for a destination.",
   tabEdit: "Edit sound", wsPick: "Choose a sound to edit", wsPickHint: "Each action becomes its own step: listen, compare with the previous one, undo if you don't like it. The original file is untouched until you save.",
   wsSearch: "Search recordings or songs", wsNative: "Sound editing works only in the Android app.",
   wsCloseQ: "Close the editor?", wsCloseB: "Unsaved steps will be deleted.",
@@ -38,6 +40,7 @@ en: {
   rpw_eq: "Average correction {m} dB", rpw_level: "Loudness range {a} → {b} LU", rpw_loud: "{l} LUFS, peak {p} dB ({t})", rpw_speed: "{s}× speed, {p} semitones", rpw_mix: "Music {b} dB, {d} dB while speaking"
 },
 de: {
+  op_export: "Exportieren", wsExportD: "Der Klang dieses Schritts wird geteilt; mit „Lautheit“ vorher für ein Ziel einstellen.",
   tabEdit: "Bearbeiten", wsPick: "Audio zum Bearbeiten wählen", wsPickHint: "Jede Aktion wird ein eigener Schritt: anhören, mit dem vorherigen vergleichen, bei Bedarf rückgängig machen. Das Original bleibt bis zum Speichern unverändert.",
   wsSearch: "Aufnahmen oder Titel suchen", wsNative: "Bearbeitung funktioniert nur in der Android-App.",
   wsCloseQ: "Bearbeitung schließen?", wsCloseB: "Nicht gespeicherte Schritte werden gelöscht.",
@@ -56,6 +59,7 @@ de: {
   rpw_eq: "Durchschnittlich {m} dB korrigiert", rpw_level: "Lautheitsbereich {a} → {b} LU", rpw_loud: "{l} LUFS, Spitze {p} dB ({t})", rpw_speed: "{s}× Tempo, {p} Halbtöne", rpw_mix: "Musik {b} dB, beim Sprechen {d} dB"
 },
 fr: {
+  op_export: "Exporter", wsExportD: "Le son de cette étape est partagé ; réglez-le d'abord avec « Sonie » pour une destination.",
   tabEdit: "Éditer le son", wsPick: "Choisissez un son à éditer", wsPickHint: "Chaque action devient une étape : écoutez, comparez avec la précédente, annulez si besoin. L'original reste intact jusqu'à l'enregistrement.",
   wsSearch: "Rechercher enregistrements ou titres", wsNative: "L'édition ne fonctionne que dans l'appli Android.",
   wsCloseQ: "Fermer l'éditeur ?", wsCloseB: "Les étapes non enregistrées seront supprimées.",
@@ -74,6 +78,7 @@ fr: {
   rpw_eq: "Correction moyenne {m} dB", rpw_level: "Plage de sonie {a} → {b} LU", rpw_loud: "{l} LUFS, crête {p} dB ({t})", rpw_speed: "Vitesse {s}×, {p} demi-tons", rpw_mix: "Musique {b} dB, {d} dB pendant la parole"
 },
 es: {
+  op_export: "Exportar", wsExportD: "Se comparte el sonido de este paso; ajústalo antes con «Sonoridad» para un destino.",
   tabEdit: "Editar sonido", wsPick: "Elige un sonido para editar", wsPickHint: "Cada acción es un paso: escucha, compara con el anterior y deshazlo si no te gusta. El original no cambia hasta que guardes.",
   wsSearch: "Buscar grabaciones o canciones", wsNative: "La edición solo funciona en la app de Android.",
   wsCloseQ: "¿Cerrar el editor?", wsCloseB: "Se borrarán los pasos sin guardar.",
@@ -92,6 +97,7 @@ es: {
   rpw_eq: "Corrección media {m} dB", rpw_level: "Rango de sonoridad {a} → {b} LU", rpw_loud: "{l} LUFS, pico {p} dB ({t})", rpw_speed: "Velocidad {s}×, {p} semitonos", rpw_mix: "Música {b} dB, {d} dB al hablar"
 },
 pt: {
+  op_export: "Exportar", wsExportD: "O som desta etapa é compartilhado; ajuste antes com \"Volume\" para um destino.",
   tabEdit: "Editar som", wsPick: "Escolha um som para editar", wsPickHint: "Cada ação vira um passo: ouça, compare com o anterior e desfaça se não gostar. O original não muda até você salvar.",
   wsSearch: "Buscar gravações ou músicas", wsNative: "A edição só funciona no app Android.",
   wsCloseQ: "Fechar o editor?", wsCloseB: "Os passos não salvos serão excluídos.",
@@ -110,6 +116,7 @@ pt: {
   rpw_eq: "Correção média {m} dB", rpw_level: "Faixa de volume {a} → {b} LU", rpw_loud: "{l} LUFS, pico {p} dB ({t})", rpw_speed: "Velocidade {s}×, {p} semitons", rpw_mix: "Música {b} dB, {d} dB durante a fala"
 },
 ru: {
+  op_export: "Экспорт", wsExportD: "Отправляется звук этого шага; сначала можно настроить «Громкость» под назначение.",
   tabEdit: "Редактор", wsPick: "Выберите звук для редактирования", wsPickHint: "Каждое действие — отдельный шаг: прослушайте, сравните с предыдущим, отмените, если не понравилось. Оригинал не меняется до сохранения.",
   wsSearch: "Поиск записей или песен", wsNative: "Редактирование работает только в Android-приложении.",
   wsCloseQ: "Закрыть редактор?", wsCloseB: "Несохранённые шаги будут удалены.",
@@ -128,6 +135,7 @@ ru: {
   rpw_eq: "Средняя коррекция {m} дБ", rpw_level: "Диапазон громкости {a} → {b} LU", rpw_loud: "{l} LUFS, пик {p} дБ ({t})", rpw_speed: "Скорость {s}×, {p} полутонов", rpw_mix: "Музыка {b} дБ, при речи {d} дБ"
 },
 ar: {
+  op_export: "تصدير", wsExportD: "يُشارك صوت هذه الخطوة؛ اضبطه أولًا بـ«شدة الصوت» حسب الوجهة.",
   tabEdit: "تحرير الصوت", wsPick: "اختر صوتًا لتحريره", wsPickHint: "كل إجراء يصبح خطوة مستقلة: استمع وقارن بالسابقة وتراجع إن لم يعجبك. لا يتغير الأصل حتى تحفظ.",
   wsSearch: "ابحث في التسجيلات أو الأغاني", wsNative: "التحرير يعمل فقط في تطبيق Android.",
   wsCloseQ: "إغلاق المحرر؟", wsCloseB: "ستُحذف الخطوات غير المحفوظة.",
@@ -146,6 +154,7 @@ ar: {
   rpw_eq: "متوسط التصحيح {m} ديسيبل", rpw_level: "مدى الشدة {a} → {b} LU", rpw_loud: "{l} LUFS، الذروة {p} ديسيبل ({t})", rpw_speed: "السرعة {s}×، {p} نصف نغمة", rpw_mix: "الموسيقى {b} ديسيبل، {d} ديسيبل أثناء الكلام"
 },
 zh: {
+  op_export: "导出", wsExportD: "分享当前步骤的声音；可先用“响度”按目标平台调整。",
   tabEdit: "编辑声音", wsPick: "选择要编辑的声音", wsPickHint: "每个操作都是独立的一步：可以试听、与上一步比较、不满意就撤销。保存前原文件不会改动。",
   wsSearch: "搜索录音或歌曲", wsNative: "声音编辑仅在 Android 应用中可用。",
   wsCloseQ: "关闭编辑器？", wsCloseB: "未保存的步骤将被删除。",

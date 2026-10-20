@@ -510,6 +510,33 @@ final class Workspace {
         }
     }
 
+    /* ---------- export: the current step as a file in the cache, for the share sheet ---------- */
+
+    static JSONObject export(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        File in = new File(a.getString("path"));
+        Info inf = info(in);
+        File d = new File(c.getCacheDir(), "export");
+        d.mkdirs();
+        File[] old = d.listFiles();
+        if (old != null) for (File x : old) x.delete();
+        boolean wavFmt = "wav".equals(a.optString("format", "m4a"));
+        File out = new File(d, Studio.safe(a.optString("name", "Ses")) + (wavFmt ? ".wav" : ".m4a"));
+        if (wavFmt) {
+            java.io.FileInputStream is = new java.io.FileInputStream(in);
+            java.io.FileOutputStream os = new java.io.FileOutputStream(out);
+            try { byte[] b = new byte[1 << 16]; int n; while ((n = is.read(b)) > 0) os.write(b, 0, n); } finally { is.close(); os.close(); }
+        } else {
+            wav(in, inf, p, new double[] { 0, 1 }, cancel).run(new Studio.EncNode(out, inf.rate, inf.ch > 1 ? 192000 : 128000));
+        }
+        JSONObject res = new JSONObject();
+        JSONObject src = new JSONObject();
+        src.put("path", out.getAbsolutePath());
+        res.put("src", src);
+        res.put("name", out.getName());
+        res.put("mime", wavFmt ? "audio/wav" : "audio/mp4");
+        return res;
+    }
+
     /* ---------- save the current step as a real file ---------- */
 
     static JSONObject save(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
