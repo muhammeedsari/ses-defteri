@@ -458,6 +458,7 @@ public class MainActivity extends Activity implements Player.Listener {
                 o.put("media", has(mediaPermission()));
                 o.put("mic", has(Manifest.permission.RECORD_AUDIO));
                 o.put("asr", Studio.asrAvailable());
+                o.put("sep", Separator.available());
                 o.put("folder", MediaLib.scoped() ? "Music/Ses Defteri" : "Android/data/app.sesdefteri/files/Music/Ses Defteri");
             } catch (Exception ignored) { }
             return o.toString();
@@ -727,6 +728,8 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.op(MainActivity.this, a, p, cancel);
                         } else if ("tlAdd".equals(kind)) {
                             res = Timeline.add(MainActivity.this, a, p, cancel);
+                        } else if ("tlSep".equals(kind)) {
+                            res = Separator.split(MainActivity.this, a, p, cancel);
                         } else if ("tlRender".equals(kind)) {
                             res = Timeline.render(MainActivity.this, a, p, cancel);
                         } else if ("tlClean".equals(kind)) {

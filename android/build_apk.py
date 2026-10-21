@@ -53,7 +53,7 @@ def web_page(local_fonts=True, keep_sw=True):
     if local_fonts:
         page = re.sub(r'<link rel="preconnect"[^>]*>\n', "", page)
         page = re.sub(r'<link rel="stylesheet" href="https://fonts.googleapis.com[^"]*">', '<link rel="stylesheet" href="fonts/fonts.css">', page)
-    for js in ["i18n.js", "i18n2.js", "i18n3.js", "i18n4.js"]:
+    for js in ["i18n.js", "i18n2.js", "i18n3.js", "i18n4.js", "i18n5.js"]:
         page = page.replace(f"<script src=\"{js}\"></script>", "<script>\n" + (WEB / js).read_text(encoding="utf-8") + "\n</script>")
     head = f"""<!doctype html>
 <html lang="tr">
@@ -109,6 +109,14 @@ def main():
     for f in ([] if LITE else ["base-encoder.int8.onnx", "base-decoder.int8.onnx", "base-tokens.txt", "silero_vad.onnx"]):
         if not (asr / f).exists() or (asr / f).stat().st_size != (VENDOR / "asr" / f).stat().st_size:
             shutil.copy(VENDOR / "asr" / f, asr / f)
+    # voice separation (Spleeter 2 stems, fp16)
+    sep = HERE / "assets" / "sep"
+    sep.mkdir(parents=True, exist_ok=True)
+    if LITE:
+        shutil.rmtree(sep, ignore_errors=True)
+    for f in ([] if LITE else ["vocals.fp16.onnx", "accompaniment.fp16.onnx"]):
+        if not (sep / f).exists() or (sep / f).stat().st_size != (VENDOR / "sepm" / f).stat().st_size:
+            shutil.copy(VENDOR / "sepm" / f, sep / f)
 
     # icons
     res = HERE / "res"
@@ -137,7 +145,7 @@ def main():
     names = []
     for abi in ([] if LITE else ["arm64-v8a", "armeabi-v7a"]):
         (libs / "lib" / abi).mkdir(parents=True, exist_ok=True)
-        for so in ["libsherpa-onnx-jni.so", "libonnxruntime.so"]:
+        for so in ["libsherpa-onnx-jni.so", "libonnxruntime.so", "libsherpa-onnx-c-api.so", "libsdsep.so"]:
             shutil.copy(VENDOR / "jniLibs" / abi / so, libs / "lib" / abi / so)
             names.append(f"lib/{abi}/{so}")
     if names: run(["aapt", "add", str(unsigned)] + names, cwd=str(libs))

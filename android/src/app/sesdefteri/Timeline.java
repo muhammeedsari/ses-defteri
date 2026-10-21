@@ -62,7 +62,7 @@ final class Timeline {
         RandomAccessFile f;
         int ch, rate;
         long frames, at, in, len;
-        float g;
+        float g, duck = 1;   // duck: gain while the other tracks are speaking (1 = never ducked)
         int fi, fo;
         byte[] buf = new byte[0];
     }
@@ -91,6 +91,8 @@ final class Timeline {
                     k.g = (float) o.optDouble("g", 1);
                     k.fi = (int) Math.round(o.optDouble("fi", 0) * RATE);
                     k.fo = (int) Math.round(o.optDouble("fo", 0) * RATE);
+                    double dd = o.optDouble("duck", 0);
+                    if (dd < 0) k.duck = (float) Math.pow(10, dd / 20);
                     if (k.len <= 0 || k.g <= 0) continue;
                     k.f = new RandomAccessFile(file, "r");
                     l.add(k);
@@ -106,12 +108,33 @@ final class Timeline {
             ch = c2;
         }
 
-        /** adds frames [pos, pos+n) of every clip into out (2 channels, cleared here) */
+        // ducking state: level of the other tracks and how deep the ducked ones are pulled down (0..1)
+        private float env, depth;
+        private float[] dep = new float[0];
+        private static final float THR = 0.02f, E_ATK = (float) (1 - Math.exp(-1.0 / (0.005 * RATE))), E_REL = (float) Math.exp(-1.0 / (0.25 * RATE)),
+            D_ATK = (float) (1 - Math.exp(-1.0 / (0.08 * RATE))), D_REL = (float) (1 - Math.exp(-1.0 / (0.6 * RATE)));
+
+        /** frames [pos, pos+n) of every clip mixed into out (2 channels, cleared here) */
         void render(long pos, int n, float[][] out) throws Exception {
             for (float[] o : out) java.util.Arrays.fill(o, 0, n, 0f);
-            for (Clip k : clips) {
+            boolean ducked = false;
+            for (Clip k : clips) { if (k.duck < 1) ducked = true; else add(k, pos, n, out, null); }
+            if (!ducked) return;
+            if (dep.length < n) dep = new float[n];
+            for (int i = 0; i < n; i++) {
+                float x = Math.max(Math.abs(out[0][i]), Math.abs(out[1][i]));
+                env = x > env ? env + (x - env) * E_ATK : env * E_REL;
+                float tg = env > THR ? 1 : 0;
+                depth += (tg - depth) * (tg > depth ? D_ATK : D_REL);
+                dep[i] = depth;
+            }
+            for (Clip k : clips) if (k.duck < 1) add(k, pos, n, out, dep);
+        }
+
+        private void add(Clip k, long pos, int n, float[][] out, float[] dep) throws Exception {
+            {
                 long a = Math.max(pos, k.at), z = Math.min(pos + n, k.at + k.len);
-                if (z <= a) continue;
+                if (z <= a) return;
                 int cnt = (int) (z - a), off = (int) (a - pos), bytes = cnt * k.ch * 2;
                 if (k.buf.length < bytes) k.buf = new byte[bytes];
                 k.f.seek(44 + (k.in + a - k.at) * k.ch * 2);
@@ -123,6 +146,7 @@ final class Timeline {
                     float g = k.g;
                     if (k.fi > 0 && r < k.fi) g *= (float) r / k.fi;
                     if (k.fo > 0 && k.len - r < k.fo) g *= (float) (k.len - r) / k.fo;
+                    if (dep != null) g *= 1 - dep[off + i] * (1 - k.duck);
                     float l = (short) ((b[q] & 0xff) | (b[q + 1] << 8)) / 32768f;
                     q += 2;
                     float rr = l;

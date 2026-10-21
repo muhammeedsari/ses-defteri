@@ -652,6 +652,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 <script src="i18n2.js"></script>
 <script src="i18n3.js"></script>
 <script src="i18n4.js"></script>
+<script src="i18n5.js"></script>
 <script>
 (() => {
 'use strict';
@@ -662,7 +663,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '1.5';
+const VERSION = '1.6';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -2332,7 +2333,7 @@ function srtOf(segs) {
 /* ---------- edit sound: every step is its own file you can play, compare and undo ---------- */
 /* ---------- "Edit sound": multitrack timeline ---------- */
 const TL_MAX = 6, TL_RULER = 26, TL_ROW = 58;
-const TL = { p: null, sel: null, pos: 0, pps: 40, play: false, busy: null, undo: [], redo: [], raf: 0, cleanT: 0 };
+const TL = { p: null, sel: null, pos: 0, pps: 40, play: false, busy: null, undo: [], redo: [], raf: 0, cleanT: 0, rec: null };
 const tlNew = () => ({ tracks: [{ vol: 0, mute: false }], clips: [] });
 function tlLoad() {
   const p = ls.get('proj', null);
@@ -2381,7 +2382,7 @@ function tlClean() {
 function tlMix() {
   const tr = TL.p.tracks;
   return TL.p.clips.filter(c => tr[c.tr] && !tr[c.tr].mute).map(c => ({ path: c.path, at: c.at, in: c.in, len: tlLen(c),
-    g: Math.pow(10, ((c.gain || 0) + (tr[c.tr].vol || 0)) / 20), fi: c.fi || 0, fo: c.fo || 0 }));
+    g: Math.pow(10, ((c.gain || 0) + (tr[c.tr].vol || 0)) / 20), fi: c.fi || 0, fo: c.fo || 0, duck: tr[c.tr].duck ? (tr[c.tr].duckDb || -12) : 0 }));
 }
 /** first track where [a, b) is free, a new one if there is room, else the first */
 function tlFreeTrack(a, b, skipId, prefer) {
@@ -2434,12 +2435,12 @@ async function tlRunJob(label, kind, args) {
   try { return await runJob(kind, args, f => { if (TL.busy) { TL.busy.p = f; tlBusyUi(); } }); }
   finally { TL.busy = null; tlBusyUi(); renderTlBar(); }
 }
-async function tlAddFrom(r) {
+async function tlAddFrom(r, atSec) {
   if (TL.busy) return;
   tlStop();
   let res;
   try { res = await tlRunJob(t('tlAdding'), 'tlAdd', { src: r.src }); } catch (e) { toast(errText(e), 5000); return; }
-  const before = tlSnap(), dur = res.dur / 1000, at = TL.p.clips.length ? TL.pos : 0;
+  const before = tlSnap(), dur = res.dur / 1000, at = atSec != null ? atSec : TL.p.clips.length ? TL.pos : 0;
   const c = { id: uid(), tr: tlFreeTrack(at, at + dur), path: res.path, ch: res.ch, dur, in: 0, out: dur, at, gain: 0, fi: 0, fo: 0, name: r.title || '' };
   tlEnsureTrack(c.tr);
   TL.p.clips.push(c); TL.sel = c.id;
@@ -2508,7 +2509,9 @@ function tlFade() {
 function tlTrack() {
   const c = tlSel(); const tr = TL.p.tracks[c ? c.tr : 0]; if (!tr) return;
   tlSliders(t('tlTrackN', { n: (c ? c.tr : 0) + 1 }), [{ id: 'tv', label: t('tlVol'), min: -30, max: 6, step: 0.5, value: tr.vol || 0, fmt: dbTxt },
-    { id: 'tm', value: !!tr.mute, html: `<label class="switch"><input type="checkbox" id="tm"${tr.mute ? ' checked' : ''}><span>${esc(t('tlMute'))}</span></label>` }], v => { tr.vol = v.tv; tr.mute = v.tm; });
+    { id: 'tm', value: !!tr.mute, html: `<label class="switch"><input type="checkbox" id="tm"${tr.mute ? ' checked' : ''}><span>${esc(t('tlMute'))}</span></label>` },
+    { id: 'td', value: !!tr.duck, html: `<label class="switch"><input type="checkbox" id="td"${tr.duck ? ' checked' : ''}><span>${esc(t('tlDuck'))}<small>${esc(t('tlDuckD'))}</small></span></label>` },
+    { id: 'tdd', label: t('tlDuckAmt'), min: -30, max: -3, step: 1, value: tr.duckDb || -12, fmt: dbTxt }], v => { tr.vol = v.tv; tr.mute = v.tm; tr.duck = v.td; tr.duckDb = v.tdd; });
 }
 const TL_FX = ['denoise', 'hum', 'clicks', 'plosive', 'deess', 'channels', 'eq', 'level', 'loud', 'trim', 'silence'];
 async function tlFx() {
@@ -2674,8 +2677,9 @@ function renderTlBar() {
   const b = (k, icn, lab, extra) => `<button class="tool" type="button" data-tl="${k}"${dis}${extra || ''}>${ic(icn)}${esc(lab)}</button>`;
   bar.innerHTML = c
     ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
-      b('speed', 'gauge', t('tlSpeed')) + b('dup', 'copy', t('tlDup')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
-    : b('add', 'import', t('tlAdd')) + (TL.p.clips.length ? b('fit', 'wave', t('tlFit')) + b('track', 'mixer', t('tlTrack')) + b('new', 'trash', t('tlNewP')) : '');
+      b('sep', 'mixer', t('tlSep')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
+    : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (TL.p.clips.length ? b('fit', 'wave', t('tlFit')) + b('track', 'mixer', t('tlTrack')) + b('new', 'trash', t('tlNewP')) : '');
+  if (TL.rec) bar.innerHTML = `<button class="btn danger-fill" type="button" data-tl="rec">${ic('pause')} ${esc(t('tlRecStop'))} <span class="tc" id="tlRecT"></span></button><span class="hint">${esc(t('tlRecHint'))}</span>`;
 }
 function tlBusyUi() {
   const b = $('#tlBusy'); if (!b) return;
@@ -2726,6 +2730,11 @@ function drawTl() {
       const s = k.in + (x - x0) / pps, v = pk ? level(pk, s, s + 3 / pps) : 0, bh = Math.max(1, v * amp * 2);
       ctx.fillRect(x, mid - bh / 2, 2, bh);
     }
+    if (k.beats && k.beats.length) {
+      ctx.fillStyle = COL.ink; ctx.globalAlpha = (tr.mute ? 0.35 : 1) * 0.55;
+      for (const bt of k.beats) { if (bt < k.in || bt > k.out) continue; const x = x0 + (bt - k.in) * pps; if (x >= 0 && x <= w) ctx.fillRect(x - 0.5, y + hh - 7, 1, 6); }
+      ctx.globalAlpha = tr.mute ? 0.35 : 1;
+    }
     // fades
     ctx.fillStyle = COL.ink; ctx.globalAlpha = (tr.mute ? 0.35 : 1) * 0.18;
     if (k.fi > 0) { ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + k.fi * pps, y); ctx.lineTo(x0, y + hh); ctx.fill(); }
@@ -2745,6 +2754,10 @@ function drawTl() {
       ctx.fillStyle = COL.accentSoft; ctx.fillRect(x0 + 3, y + hh / 2 - 8, 2, 16); ctx.fillRect(x1 - 5, y + hh / 2 - 8, 2, 16);
     }
     ctx.globalAlpha = 1;
+  }
+  if (TL.rec) {
+    const len = (performance.now() - TL.rec.t0) / 1000, row = Math.min(TL.p.tracks.length, TL_MAX - 1), y = TL_RULER + row * TL_ROW + 4;
+    ctx.fillStyle = COL.rec; ctx.globalAlpha = 0.35; rr(ctx, X(TL.rec.at), y, Math.max(2, len * pps), TL_ROW - 9, 7); ctx.globalAlpha = 1;
   }
   // playhead
   ctx.fillStyle = COL.rec; ctx.fillRect(cx - 1, 0, 2, h);
@@ -2804,7 +2817,7 @@ function drawWs() { drawTl(); }
     else if (g.mode === 'move') {
       let at = Math.max(0, g.at0 + d);
       // snap to the playhead, the start and other clip edges
-      const snaps = [0, TL.pos]; for (const o of TL.p.clips) if (o !== c) snaps.push(o.at, o.at + tlLen(o));
+      const snaps = [0, TL.pos]; for (const o of TL.p.clips) if (o !== c) { snaps.push(o.at, o.at + tlLen(o)); if (o.beats) for (const bt of o.beats) if (bt >= o.in && bt <= o.out) snaps.push(o.at + bt - o.in); }
       const lim = 10 / TL.pps;
       for (const sv of snaps) { if (Math.abs(at - sv) < lim) { at = sv; break; } if (Math.abs(at + tlLen(c) - sv) < lim) { at = sv - tlLen(c); break; } }
       c.at = Math.max(0, at);
@@ -2866,7 +2879,83 @@ $('#editTab').addEventListener('click', e => {
   else if (k === 'fx') tlFx();
   else if (k === 'speed') tlSpeed();
   else if (k === 'track') tlTrack();
+  else if (k === 'sep') tlSep();
+  else if (k === 'beats') tlBeats();
+  else if (k === 'rec') tlRec();
 });
+
+/* ----- voice separation, beats, recording onto the timeline ----- */
+async function tlSep() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  if (!CAPS.sep) { toast(t('sepNo'), 4000); return; }
+  const how = await chooseBox(t('tlSep'), t('sepD'), [{ value: 'voc', label: t('sepKeep'), desc: t('sepKeepD') },
+    { value: 'acc', label: t('sepRemove'), desc: t('sepRemoveD') }, { value: 'both', label: t('sepBoth'), desc: t('sepBothD') }]);
+  if (!how) return;
+  tlStop();
+  let res;
+  try { res = await tlRunJob(t('tlSep'), 'tlSep', { path: c.path }); } catch (e) { toast(errText(e), 5000); return; }
+  const before = tlSnap();
+  const fit = (k, o) => { const nd = o.dur / 1000, f = nd / k.dur; Object.assign(k, { path: o.path, ch: o.ch, dur: nd }); k.in = Math.min(k.in * f, nd - 0.05); k.out = Math.min(k.out * f, nd); };
+  const base = c.name || '';
+  if (how === 'both') {
+    const d = Object.assign({}, c, { id: uid(), name: base + ' · ' + t('sepMusic') });
+    fit(d, res.acc);
+    d.tr = tlFreeTrack(d.at, d.at + tlLen(d), null, c.tr + 1); tlEnsureTrack(d.tr);
+    TL.p.clips.push(d);
+  }
+  fit(c, how === 'acc' ? res.acc : res.voc);
+  c.name = base + ' · ' + t(how === 'acc' ? 'sepMusic' : 'sepVoice');
+  c.beats = null;
+  tlCommit(before);
+  toast(t('sepDone'), 3000);
+}
+async function tlBeats() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  let res;
+  try { res = await tlRunJob(t('tlBeats'), 'beats', { src: { path: c.path } }); } catch (e) { toast(errText(e), 5000); return; }
+  const before = tlSnap();
+  c.beats = (res.times || []).map(x => Math.round(x * 1000) / 1000); c.bpm = res.bpm || 0;
+  tlCommit(before);
+  toast(c.beats.length ? t('beatTitle') + ': ' + t('beatBpm', { b: nf1.format(c.bpm) }) : t('beatNone'), 4000);
+}
+async function tlRec() {
+  if (TL.rec) return tlRecStop();
+  if (TL.busy) return;
+  tlStop();
+  const name = t('fileVoice', { d: stamp(Date.now()) }) + '.m4a';
+  let res = {};
+  try { res = JSON.parse(AND.recStart('voice', name)); } catch (e) { res = {}; }
+  if (!res.ok && res.error === 'perm') {
+    if (!(await askPerm('mic'))) { toast(t('micPerm'), 4500); return; }
+    try { res = JSON.parse(AND.recStart('voice', name)); } catch (e) { res = {}; }
+  }
+  if (!res.ok) { toast(t('recFail'), 4200); return; }
+  TL.rec = { at: TL.pos, t0: performance.now(), started: Date.now() };
+  if (TL.pos < tlEnd() - 0.1) tlPlay();   // hear the other tracks while recording
+  renderTlBar();
+  const loop = () => {
+    const r = TL.rec; if (!r) return;
+    const len = (performance.now() - r.t0) / 1000;
+    if (!TL.play) TL.pos = r.at + len;
+    const el = $('#tlRecT'); if (el) el.textContent = fmt(len);
+    drawTl();
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+}
+async function tlRecStop() {
+  const r = TL.rec; if (!r) return;
+  TL.rec = null; tlStop();
+  let res = {};
+  try { res = JSON.parse(AND.recStop()); } catch (e) { res = {}; }
+  renderTlBar(); drawTl();
+  if (!res.ok || !res.item) { toast(t(res.error === 'empty' ? 'recShort' : 'recSaveFail'), 4000); return; }
+  const it = fromNative(res.item, null);
+  Object.assign(it, { title: defaultTitle('voice', r.started), userTitle: true, created: r.started, categoryId: defaultCat(), notes: '', bookmarks: [], source: 'mic', mode: 'voice', fav: false, kind: 'rec' });
+  S.items.set(it.id, it); await saveRec(it);
+  TL.pos = r.at;
+  tlAddFrom(it, r.at);
+}
 
 /** list of recordings and songs to choose another audio from */
 function wsPickAudio(title, withWhere, done, extraHtml, onReady) {
