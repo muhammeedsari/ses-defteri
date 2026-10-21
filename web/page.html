@@ -458,6 +458,20 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ws-steps li.on button{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .ws-steps li.later button{opacity:.55}
 [dir="rtl"] .ws-steps button{text-align:right}
+/* 1.5 timeline */
+.tl-top{display:flex;align-items:center;gap:6px;margin-top:12px}
+.tl-top .tc{font-size:13px;color:var(--muted);min-width:96px}
+.tl-top .icon-btn:disabled,.tl-top .ctl:disabled{opacity:.4}
+.tl-redo .ic{transform:scaleX(-1)}
+.tl-cv{width:100%;height:142px;display:block;margin-top:10px;touch-action:none;border-radius:12px;background:var(--surface);border:1px solid var(--line);user-select:none;-webkit-user-select:none}
+.tl-bar{display:flex;gap:8px;overflow-x:auto;padding:12px 0 4px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.tl-bar::-webkit-scrollbar{display:none}
+.tl-bar .tool{flex:none}
+.tl-bar .tool:disabled{opacity:.45}
+.tl-empty{margin:18px 0;text-align:center;color:var(--muted)}
+.tl-empty b{display:block;color:var(--ink);font-size:16px}
+.tl-empty p{margin:6px 0 0;font-size:14px}
+.tl-hint{font-size:12.5px;color:var(--muted);margin:8px 0 0}
 </style>
 
 <div class="wrap" id="app">
@@ -637,6 +651,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 <script src="i18n.js"></script>
 <script src="i18n2.js"></script>
 <script src="i18n3.js"></script>
+<script src="i18n4.js"></script>
 <script>
 (() => {
 'use strict';
@@ -647,7 +662,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '1.4.1';
+const VERSION = '1.5';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1466,6 +1481,7 @@ function render() { renderTabs(); renderChips(); renderList(); renderSummary(); 
 
 $('#tabs').addEventListener('click', e => {
   const b = e.target.closest('[data-tab]'); if (!b) return;
+  if (b.dataset.tab !== 'edit') tlStop();
   S.tab = b.dataset.tab; ls.set('tab', S.tab); listLimit = 120; musicLimit = 150; render(); scrollTo(0, 0);
 });
 $('#chips').addEventListener('click', e => {
@@ -2314,339 +2330,224 @@ function srtOf(segs) {
   return segs.map((s, i) => `${i + 1}\n${ts(s[0])} --> ${ts(s[1])}\n${s[2]}\n`).join('\n');
 }
 /* ---------- edit sound: every step is its own file you can play, compare and undo ---------- */
-const WS = { src: null, steps: [], i: -1, sel: null, v0: 0, v1: 0, busy: null, beats: null, saved: true, q: '', pos: 0 };
-const wsCur = () => WS.steps[WS.i];
-const wsDur = () => (wsCur() ? wsCur().dur / 1000 : 0);
-let wsAbPrev = false;
-function wsItem(i) {
-  const st = WS.steps[i]; if (!st) return null;
-  const id = 'ws:' + st.path;
+/* ---------- "Edit sound": multitrack timeline ---------- */
+const TL_MAX = 6, TL_RULER = 26, TL_ROW = 58;
+const TL = { p: null, sel: null, pos: 0, pps: 40, play: false, busy: null, undo: [], redo: [], raf: 0, cleanT: 0 };
+const tlNew = () => ({ tracks: [{ vol: 0, mute: false }], clips: [] });
+function tlLoad() {
+  const p = ls.get('proj', null);
+  TL.p = p && Array.isArray(p.tracks) && Array.isArray(p.clips) ? p : tlNew();
+  if (!TL.p.tracks.length) TL.p.tracks.push({ vol: 0, mute: false });
+}
+const tlLen = c => c.out - c.in;
+const tlEnd = () => TL.p.clips.reduce((m, c) => Math.max(m, c.at + tlLen(c)), 0);
+const tlSel = () => TL.p.clips.find(c => c.id === TL.sel) || null;
+const tlSnap = () => JSON.stringify(TL.p);
+function tlItem(c) {
+  const id = 'f:' + c.path;
   let it = S.items.get(id);
-  if (!it) { it = { id, src: st.src, title: (WS.src ? WS.src.title : '') + ' · ' + (i + 1), duration: st.dur / 1000, kind: 'ws', bookmarks: [], created: Date.now(), mime: 'audio/wav' }; S.items.set(id, it); }
+  if (!it) { it = { id, src: { path: c.path }, title: c.name || '', duration: c.dur, kind: 'ws', bookmarks: [], created: Date.now(), mime: 'audio/wav' }; S.items.set(id, it); }
   return it;
 }
-const wsPlaying = () => { const it = S.cur && S.items.get(S.cur); return it && it.kind === 'ws' ? it : null; };
-const wsTime = () => wsPlaying() ? audio.currentTime : WS.pos;
-const wsShown = () => { const a = wsAbPrev && WS.i > 0 ? wsItem(WS.i - 1) : null, pa = a && S.peaks.get(a.id); return pa ? a : wsItem(WS.i); };
+/** record a change: the state before it goes on the undo stack */
+function tlCommit(before) {
+  if (before === tlSnap()) return;
+  TL.undo.push(before); if (TL.undo.length > 40) TL.undo.shift();
+  TL.redo = [];
+  tlChanged();
+}
+function tlChanged() {
+  // drop empty tracks at the bottom, keep at least one
+  const used = TL.p.clips.reduce((m, c) => Math.max(m, c.tr), 0);
+  TL.p.tracks.length = Math.max(1, Math.min(TL.p.tracks.length, used + 1));
+  ls.set('proj', TL.p);
+  if (TL.play) try { AND.tlUpdate(JSON.stringify(tlMix())); } catch (e) {}
+  clearTimeout(TL.cleanT); TL.cleanT = setTimeout(tlClean, 4000);
+  renderEdit();
+}
+function tlUndo(redo) {
+  const from = redo ? TL.redo : TL.undo, to = redo ? TL.undo : TL.redo;
+  if (!from.length || TL.busy) return;
+  to.push(tlSnap()); TL.p = JSON.parse(from.pop());
+  if (!tlSel()) TL.sel = null;
+  tlChanged();
+}
+function tlClean() {
+  const keep = new Set(TL.p.clips.map(c => c.path));
+  for (const s of TL.undo.concat(TL.redo)) try { for (const c of JSON.parse(s).clips) keep.add(c.path); } catch (e) {}
+  try { runJob('tlClean', { keep: [...keep] }).catch(() => {}); } catch (e) {}
+}
+/** what the native mixer plays: one entry per audible clip */
+function tlMix() {
+  const tr = TL.p.tracks;
+  return TL.p.clips.filter(c => tr[c.tr] && !tr[c.tr].mute).map(c => ({ path: c.path, at: c.at, in: c.in, len: tlLen(c),
+    g: Math.pow(10, ((c.gain || 0) + (tr[c.tr].vol || 0)) / 20), fi: c.fi || 0, fo: c.fo || 0 }));
+}
+/** first track where [a, b) is free, a new one if there is room, else the first */
+function tlFreeTrack(a, b, skipId, prefer) {
+  const free = i => !TL.p.clips.some(c => c.id !== skipId && c.tr === i && c.at < b - 0.001 && c.at + tlLen(c) > a + 0.001);
+  if (prefer != null && prefer < TL_MAX && free(prefer)) return prefer;
+  for (let i = 0; i < TL.p.tracks.length; i++) if (free(i)) return i;
+  return TL.p.tracks.length < TL_MAX ? TL.p.tracks.length : prefer != null ? prefer : 0;
+}
+function tlEnsureTrack(i) { while (TL.p.tracks.length <= i) TL.p.tracks.push({ vol: 0, mute: false }); }
 
+/* ----- playback through the native mixer ----- */
+function tlPlay() {
+  if (TL.play) { tlStop(); return; }
+  if (!TL.p.clips.length) return;
+  if (TL.pos >= tlEnd() - 0.05) TL.pos = 0;
+  if (!audio.paused) audio.pause();
+  const err = AND.tlPlay(JSON.stringify(tlMix()), TL.pos);
+  if (err) { toast(err, 4000); return; }
+  TL.play = true; renderTlPlay();
+  cancelAnimationFrame(TL.raf);
+  const f = () => {
+    if (!TL.play) return;
+    const p = AND.tlPos();
+    if (p < 0) { TL.play = false; TL.pos = Math.min(TL.pos, tlEnd()); renderTlPlay(); drawTl(); return; }
+    TL.pos = p; drawTl();
+    TL.raf = requestAnimationFrame(f);
+  };
+  TL.raf = requestAnimationFrame(f);
+}
+function tlStop() {
+  if (!TL.play) return;
+  let p = -1; try { p = AND.tlPos(); AND.tlStop(); } catch (e) {}
+  if (p >= 0) TL.pos = p;
+  TL.play = false; cancelAnimationFrame(TL.raf); renderTlPlay(); drawTl();
+}
+function renderTlPlay() { const b = $('#tlPlay'); if (b) b.innerHTML = ic(TL.play ? 'pause' : 'play'); }
+audio.addEventListener('play', () => tlStop());
+
+/* ----- adding audio ----- */
 function openWorkspace(r) {
   if (!r || !NATIVE || !r.src) return;
   closeOverlay('player');
+  if (!audio.paused) audio.pause();
   S.tab = 'edit'; ls.set('tab', 'edit');
   render(); scrollTo(0, 0);
-  if (!WS.src || WS.src.id !== r.id) wsStart(r);
+  tlAddFrom(r);
 }
-
-async function wsStart(r) {
-  if (WS.busy) return;
-  if (WS.steps.length > 1 && !WS.saved && !(await confirmBox({ title: t('wsCloseQ'), text: t('wsCloseB'), ok: t('leave'), danger: true }))) return;
-  wsStopAudio();
-  Object.assign(WS, { src: r, steps: [], i: -1, sel: null, beats: null, saved: true, pos: 0, busy: { op: 'orig', p: 0 } });
-  renderEdit();
+async function tlRunJob(label, kind, args) {
+  TL.busy = { label, p: 0 }; tlBusyUi(); renderTlBar();
+  try { return await runJob(kind, args, f => { if (TL.busy) { TL.busy.p = f; tlBusyUi(); } }); }
+  finally { TL.busy = null; tlBusyUi(); renderTlBar(); }
+}
+async function tlAddFrom(r) {
+  if (TL.busy) return;
+  tlStop();
   let res;
-  try { res = await runJob('wsInit', { src: r.src }, f => { WS.busy.p = f; wsBusyUi(); }); }
-  catch (e) { WS.busy = null; WS.src = null; renderEdit(); toast(errText(e), 5000); return; }
-  WS.busy = null;
-  WS.steps = [Object.assign(res, { op: 'orig' })]; WS.i = 0; WS.v0 = 0; WS.v1 = res.dur / 1000;
-  renderEdit(); wsPeaks();
+  try { res = await tlRunJob(t('tlAdding'), 'tlAdd', { src: r.src }); } catch (e) { toast(errText(e), 5000); return; }
+  const before = tlSnap(), dur = res.dur / 1000, at = TL.p.clips.length ? TL.pos : 0;
+  const c = { id: uid(), tr: tlFreeTrack(at, at + dur), path: res.path, ch: res.ch, dur, in: 0, out: dur, at, gain: 0, fi: 0, fo: 0, name: r.title || '' };
+  tlEnsureTrack(c.tr);
+  TL.p.clips.push(c); TL.sel = c.id;
+  if (!TL.p.name) TL.p.name = r.title || '';
+  tlCommit(before);
 }
 
-function wsStopAudio() { if (wsPlaying()) { audio.pause(); S.cur = null; } }
-
-async function wsClose() {
-  if (WS.busy) return;
-  if (WS.steps.length > 1 && !WS.saved && !(await confirmBox({ title: t('wsCloseQ'), text: t('wsCloseB'), ok: t('leave'), danger: true }))) return;
-  wsStopAudio();
-  for (const id of [...S.items.keys()]) if (id.startsWith('ws:')) { S.items.delete(id); S.peaks.delete(id); }
-  Object.assign(WS, { src: null, steps: [], i: -1, sel: null, beats: null, saved: true });
-  try { runJob('wsClean', { keep: [] }).catch(() => {}); } catch (e) {}
-  renderEdit();
+/* ----- clip tools ----- */
+function tlSplit() {
+  const c = tlSel(); if (!c) return;
+  const k = TL.pos - c.at;
+  if (k < 0.05 || k > tlLen(c) - 0.05) { toast(t('tlNoSplit')); return; }
+  const before = tlSnap();
+  const d = Object.assign({}, c, { id: uid(), in: c.in + k, at: TL.pos, fi: 0 });
+  c.out = c.in + k; c.fo = 0;
+  d.fo = Math.min(d.fo || 0, tlLen(d) / 2);
+  TL.p.clips.push(d); TL.sel = d.id;
+  tlCommit(before);
 }
-
-async function wsPeaks() {
-  const it = wsItem(WS.i); if (!it) return;
-  await ensurePeaks(it, {});
-  drawWs();
+function tlDelete() {
+  const c = tlSel(); if (!c) return;
+  const before = tlSnap();
+  TL.p.clips = TL.p.clips.filter(x => x !== c); TL.sel = null;
+  tlCommit(before);
 }
-
-/** one processing step on the current file */
-async function wsRun(op, extra) {
-  const cur = wsCur(); if (!cur || WS.busy) return;
-  wsStopAudio();
-  WS.busy = { op, p: 0 }; wsBusyUi();
-  let res;
-  try { res = await runJob('wsOp', Object.assign({ path: cur.path, op }, extra || {}), f => { if (WS.busy) { WS.busy.p = f; wsBusyUi(); } }); }
-  catch (e) { WS.busy = null; renderEdit(); toast(errText(e), 5000); return; }
-  WS.busy = null; wsAbPrev = false;
-  if (res.same) { renderEdit(); toast(t('wsSame')); return; }
-  res.op = op;
-  WS.steps = WS.steps.slice(0, WS.i + 1);
-  WS.steps.push(res); WS.i = WS.steps.length - 1;
-  WS.sel = null; WS.v0 = 0; WS.v1 = res.dur / 1000; WS.pos = Math.min(WS.pos, WS.v1); WS.saved = false;
-  if (op === 'eq' && S.learnVoice && res.report && res.report.tone) addVoiceProfile(res.report.tone);
-  try { runJob('wsClean', { keep: WS.steps.map(s => s.path) }).catch(() => {}); } catch (e) {}
-  renderEdit(); wsPeaks();
-  toast(wsReport(res) || t('wsDone'), 3500);
+function tlDup() {
+  const c = tlSel(); if (!c) return;
+  const before = tlSnap(), at = c.at + tlLen(c);
+  const d = Object.assign({}, c, { id: uid(), at });
+  d.tr = tlFreeTrack(at, at + tlLen(d), null, c.tr); tlEnsureTrack(d.tr);
+  TL.p.clips.push(d); TL.sel = d.id;
+  tlCommit(before);
 }
-
-function wsReport(st) {
-  const r = st.report || {}, n = nf1.format;
-  switch (st.op) {
-    case 'orig': return t('wsOrigInfo');
-    case 'cut': return t('rpw_cut', { d: fmt(st.dur / 1000) });
-    case 'insert': return t('rpw_insert', { a: n(r.added || 0), p: fmt(r.at || 0) });
-    case 'denoise': return t('rpw_denoise', { b: r.before, a: r.after, r: r.reduction });
-    case 'hum': return t('rpw_hum', { hz: r.hz });
-    case 'trim': return t('rpw_trim', { a: n(r.start || 0), b: n(r.end || 0) });
-    case 'clicks': return t('rpClicks', { n: r.count || 0 });
-    case 'plosive': return t('rpw_plosive', { s: n(r.seconds || 0) });
-    case 'deess': return t('rpw_deess', { s: n(r.seconds || 0) });
-    case 'channels': return t({ identical: 'chIdentical', 'left-silent': 'chSilent', 'right-silent': 'chSilent', 'left-broken': 'chBroken', 'right-broken': 'chBroken', inverted: 'chInverted' }[r.reason] || 'chMono');
-    case 'eq': return t('rpw_eq', { m: n(r.mean || 0) });
-    case 'level': return t('rpw_level', { a: n(r.lraBefore || 0), b: n(st.lra || 0) });
-    case 'loud': return t('rpw_loud', { l: n(st.lufs).replace('-', '−'), p: n(st.peak).replace('-', '−'), t: t('tg_' + (r.target || 'youtube')) });
-    case 'speed': return t('rpw_speed', { s: nf2.format(r.speed || 1), p: (r.semitones > 0 ? '+' : '') + (r.semitones || 0) });
-    case 'mix': return t('rpw_mix', { b: n(r.bed), d: n(r.duck) });
-  }
-  return '';
-}
-
-const WS_TOOLS = [
-  ['wsGrpEdit', [['cut', 'scissors'], ['keep', 'check'], ['insert', 'import'], ['silence', 'wave']]],
-  ['wsGrpFix', [['denoise', 'spark'], ['hum', 'wave'], ['trim', 'scissors'], ['clicks', 'spark'], ['plosive', 'spark'], ['deess', 'spark'], ['channels', 'mixer'], ['eq', 'mixer'], ['level', 'gauge'], ['loud', 'gauge']]],
-  ['wsGrpFx', [['speed', 'gauge'], ['mix', 'note'], ['beats', 'beat'], ['export', 'out']]]
-];
-
-function renderEdit() {
-  const box = $('#editTab');
-  if (!box || S.tab !== 'edit') return;
-  if (!NATIVE) { box.innerHTML = `<div class="empty">${ic('scissors', 1.6)}<b>${esc(t('tabEdit'))}</b>${esc(t('wsNative'))}</div>`; return; }
-  if (!WS.src) {
-    const q = norm(WS.q);
-    const items = visibleItems().filter(x => x.src && (kindOf(x) === 'rec' || kindOf(x) === 'music') && (!q || norm(x.title).includes(q) || norm(x.artist).includes(q)))
-      .sort((a, b) => (b.created || 0) - (a.created || 0)).slice(0, 80);
-    box.innerHTML = `<div class="ws-intro"><b>${esc(t('wsPick'))}</b><p>${esc(t('wsPickHint'))}</p></div>
-      <label class="search"><span>${ic('search')}</span><input id="wsQ" type="search" placeholder="${esc(t('wsSearch'))}" value="${esc(WS.q)}" autocomplete="off"></label>
-      <div class="songs ws-list">${items.map(x => `<button class="song" type="button" data-ws-pick="${esc(x.id)}"><span class="art">${ic(kindOf(x) === 'music' ? 'note' : 'mic', 1.6)}</span>
-        <span class="song-txt"><b>${esc(x.title)}</b><span>${esc(kindOf(x) === 'music' ? artistOf(x) : dfShort.format(x.created))}</span></span><span class="dur tc">${fmt(x.duration)}</span></button>`).join('') || `<p class="hint">${esc(t('noResults'))}</p>`}</div>`;
-    return;
-  }
-  const cur = wsCur();
-  const bz = WS.busy;
-  let h = `<div class="ws-head"><div style="min-width:0"><b>${esc(WS.src.title)}</b><span class="tc">${cur ? fmt(cur.dur / 1000) + ' · ' + nf1.format(cur.lufs).replace('-', '−') + ' LUFS · ' + t('wsPeak', { p: nf1.format(cur.peak).replace('-', '−') }) : ''}</span></div>
-      <button class="icon-btn" type="button" data-ws="close" aria-label="${esc(t('close'))}">${ic('close')}</button></div>
-    <canvas class="ed-wave" id="wsWave" aria-label="${esc(t('edWaveAria'))}"></canvas>
-    <canvas class="ed-nav" id="wsNav" aria-label="${esc(t('edNavAria'))}"></canvas>
-    <div class="ed-row"><button class="btn sm" type="button" data-ws="zout" aria-label="${esc(t('zoomOut'))}">−</button><button class="btn sm" type="button" data-ws="zin" aria-label="${esc(t('zoomIn'))}">+</button>
-      <button class="btn sm" type="button" data-ws="fit">${esc(t('fit'))}</button><span class="spacer"></span>
-      ${WS.i > 0 ? `<button class="btn sm" type="button" data-ws="ab">${esc(t(wsAbPrev ? 'wsNow' : 'wsPrev'))}</button>` : ''}
-      <button class="ctl" type="button" data-ws="play" id="wsPlay" style="width:46px;height:46px">${ic(wsPlaying() && !audio.paused ? 'pause' : 'play')}</button><span class="tc" id="wsTime">${fmtT(wsTime())}</span></div>
-    <p class="ed-sel" id="wsSel"></p>
-    <div id="wsBusy"${bz ? '' : ' hidden'}><p class="st-desc"><b id="wsBusyT"></b></p><div class="prog"><i id="wsBusyBar"></i></div></div>`;
-  for (const [g, tools] of WS_TOOLS) {
-    h += `<div class="ws-group"><h4>${esc(t(g))}</h4><div class="ws-tools">${tools.map(([op, icn]) =>
-      `<button class="tool" type="button" data-op="${op}"${bz || !cur || ((op === 'cut' || op === 'keep') && !WS.sel) ? ' disabled' : ''}>${ic(icn)}${esc(t('op_' + op))}</button>`).join('')}</div></div>`;
-  }
-  h += `<div class="ws-group"><h4>${esc(t('wsSteps'))}</h4><ol class="ws-steps">${WS.steps.map((st, i) =>
-    `<li class="${i === WS.i ? 'on' : ''}${i > WS.i ? ' later' : ''}"><button type="button" data-step="${i}"><b>${i + 1}. ${esc(t('op_' + st.op))}</b><span>${esc(wsReport(st))}</span>
-      <span class="tc">${fmt(st.dur / 1000)} · ${nf1.format(st.lufs).replace('-', '−')} LUFS · ${esc(t('wsPeak', { p: nf1.format(st.peak).replace('-', '−') }))}</span></button></li>`).join('')}</ol>
-    <div class="st-acts"><button class="btn sm" type="button" data-ws="undo"${WS.i > 0 && !bz ? '' : ' disabled'}>${ic('undo')}${esc(t('undo'))}</button>
-      <span class="spacer"></span><button class="btn primary" type="button" data-ws="save"${WS.i > 0 && !bz ? '' : ' disabled'}>${esc(t('save'))}</button></div></div>`;
-  box.innerHTML = h;
-  wsBusyUi(); wsSelUi();
-  requestAnimationFrame(drawWs);
-}
-
-function wsBusyUi() {
-  const b = $('#wsBusy'); if (!b) return;
-  b.hidden = !WS.busy;
-  if (!WS.busy) return;
-  $('#wsBusyT').textContent = t('wsBusy', { op: t('op_' + WS.busy.op), p: Math.round(WS.busy.p * 100) });
-  $('#wsBusyBar').style.width = Math.round(WS.busy.p * 100) + '%';
-}
-function wsSelUi() {
-  const el = $('#wsSel'); if (!el) return;
-  el.innerHTML = WS.sel ? t('wsSel', { a: fmtT(WS.sel[0]), b: fmtT(WS.sel[1]), d: secs(WS.sel[1] - WS.sel[0]) }) : esc(t('edSelHint'));
-  document.querySelectorAll('#editTab [data-op="cut"], #editTab [data-op="keep"]').forEach(b => { b.disabled = !WS.sel || !!WS.busy; });
-}
-
-function drawWs() {
-  if (S.tab !== 'edit' || !WS.src || !wsCur()) return;
-  const cv = $('#wsWave'); if (!cv) return;
-  const c = sizeCanvas(cv); if (!c) return;
-  const { ctx, w, h } = c, dur = wsDur();
-  if (!dur) return;
-  const rulerH = 20, H = h - rulerH, v0 = WS.v0, v1 = Math.max(WS.v0 + 0.5, WS.v1), span = v1 - v0;
-  const X = tm => (tm - v0) / span * w;
-  const it = wsShown(), pk = it && S.peaks.get(it.id);
-  if (WS.sel) { ctx.fillStyle = COL.accent; ctx.globalAlpha = 0.18; ctx.fillRect(X(WS.sel[0]), 0, X(WS.sel[1]) - X(WS.sel[0]), H); ctx.globalAlpha = 1; }
-  const n = Math.floor(w / 4);
-  for (let i = 0; i < n; i++) {
-    const t0 = v0 + i / n * span, t1 = v0 + (i + 1) / n * span, tm = (t0 + t1) / 2;
-    const v = pk ? level(pk, t0, t1) : 0, bh = Math.max(2, v * (H - 12));
-    ctx.fillStyle = WS.sel && tm >= WS.sel[0] && tm <= WS.sel[1] ? COL.accent : COL.wave;
-    ctx.fillRect(i * 4, (H - bh) / 2, 3, bh);
-  }
-  if (WS.beats && WS.beats.length) { ctx.fillStyle = COL.muted; for (const b of WS.beats) if (b >= v0 && b <= v1) ctx.fillRect(X(b) - 0.5, H - 10, 1, 6); }
-  if (WS.sel) for (const tm of WS.sel) { const x = X(tm); ctx.fillStyle = COL.accent; ctx.fillRect(x - 1, 0, 2, H); ctx.beginPath(); ctx.arc(clamp(x, 8, w - 8), H - 10, 8, 0, Math.PI * 2); ctx.fill(); }
-  const ct = wsTime(); if (ct >= v0 && ct <= v1) { const x = X(ct); ctx.fillStyle = COL.rec; ctx.fillRect(x - 1, 0, 2, H); ctx.beginPath(); ctx.moveTo(x - 6, 0); ctx.lineTo(x + 6, 0); ctx.lineTo(x, 8); ctx.closePath(); ctx.fill(); }
-  const st = rulerStep(w / span);
-  ctx.font = `11px ${MONO}`; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
-  for (let s = Math.ceil(v0 / st) * st; s <= v1; s += st) {
-    const x = X(s); ctx.fillStyle = COL.line; ctx.fillRect(x - 0.5, H + 1, 1, 4);
-    ctx.fillStyle = COL.muted; ctx.fillText(dur >= 3600 ? fmtHMS(s) : fmt(s), clamp(x, 28, w - 28), H + 6);
-  }
-  const nc = sizeCanvas($('#wsNav')); if (!nc) return;
-  const N = nc.ctx, nw = nc.w, nh = nc.h, nb = Math.floor(nw / 3);
-  N.fillStyle = COL.wave;
-  for (let i = 0; i < nb; i++) { const v = pk ? level(pk, i / nb * dur, (i + 1) / nb * dur) : 0, bh = Math.max(2, v * (nh - 8)); N.fillRect(i * 3, (nh - bh) / 2, 2, bh); }
-  N.strokeStyle = COL.ink; N.lineWidth = 1.5;
-  N.strokeRect(v0 / dur * nw + 0.75, 0.75, Math.max(6, span / dur * nw) - 1.5, nh - 1.5);
-  const wt = $('#wsTime'); if (wt) wt.textContent = fmtT(ct);
-}
-
-/* touch: drag to select, drag the round handles to adjust, tap to move the playhead */
-(() => {
-  let g = null, nav = false;
-  const tAt = (cv, e) => { const rc = cv.getBoundingClientRect(); return clamp(WS.v0 + (e.clientX - rc.left) / rc.width * (WS.v1 - WS.v0), 0, wsDur()); };
-  const box = $('#editTab');
-  box.addEventListener('pointerdown', e => {
-    const cv = e.target.closest('#wsWave, #wsNav'); if (!cv || !wsCur()) return;
-    e.preventDefault();
-    try { cv.setPointerCapture(e.pointerId); } catch (x) {}
-    if (cv.id === 'wsNav') { nav = true; wsNavMove(cv, e); return; }
-    const rc = cv.getBoundingClientRect(), x = e.clientX - rc.left, tm = tAt(cv, e);
-    const X = tt => (tt - WS.v0) / (WS.v1 - WS.v0) * rc.width;
-    if (WS.sel && Math.abs(x - X(WS.sel[0])) < 24) g = { mode: 'a', cv };
-    else if (WS.sel && Math.abs(x - X(WS.sel[1])) < 24) g = { mode: 'b', cv };
-    else g = { mode: 'new', t0: tm, x0: e.clientX, moved: false, cv };
-  });
-  box.addEventListener('pointermove', e => {
-    if (nav) { const cv = $('#wsNav'); if (cv) wsNavMove(cv, e); return; }
-    if (!g) return;
-    const tm = tAt(g.cv, e);
-    if (g.mode === 'a') WS.sel = [Math.min(tm, WS.sel[1] - 0.05), WS.sel[1]];
-    else if (g.mode === 'b') WS.sel = [WS.sel[0], Math.max(tm, WS.sel[0] + 0.05)];
-    else { if (Math.abs(e.clientX - g.x0) > 6) g.moved = true; if (g.moved) WS.sel = [Math.min(g.t0, tm), Math.max(g.t0, tm)]; }
-    wsSelUi(); drawWs();
-  });
-  const end = e => {
-    if (nav) { nav = false; return; }
-    if (!g) return;
-    if (g.mode === 'new' && !g.moved) { WS.sel = null; wsSeek(tAt(g.cv, e)); }
-    g = null; wsSelUi(); drawWs();
+/** a modal with live sliders; changes play at once, Cancel puts everything back */
+function tlSliders(title, rows, apply) {
+  const before = tlSnap();
+  const card = openModal(`<h3>${esc(title)}</h3><div class="modal-body">${rows.map(r => r.html ||
+    `<div class="slider"><span>${esc(r.label)}</span><input type="range" id="${r.id}" min="${r.min}" max="${r.max}" step="${r.step}" value="${r.value}"><span class="tc" id="${r.id}v"></span></div>`).join('')}</div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`,
+    () => { if (!ok) { TL.p = JSON.parse(before); tlChanged(); } });
+  let ok = false;
+  const upd = () => {
+    const v = {};
+    for (const r of rows) { const el = card.querySelector('#' + r.id); if (!el) continue; v[r.id] = el.type === 'checkbox' ? el.checked : +el.value; const o = card.querySelector('#' + r.id + 'v'); if (o && r.fmt) o.textContent = r.fmt(v[r.id]); }
+    apply(v);
+    ls.set('proj', TL.p);
+    if (TL.play) try { AND.tlUpdate(JSON.stringify(tlMix())); } catch (e) {}
+    drawTl();
   };
-  box.addEventListener('pointerup', end);
-  box.addEventListener('pointercancel', end);
-})();
-function wsNavMove(cv, e) {
-  const rc = cv.getBoundingClientRect(), dur = wsDur(), span = WS.v1 - WS.v0;
-  const c = clamp((e.clientX - rc.left) / rc.width * dur, span / 2, dur - span / 2);
-  WS.v0 = c - span / 2; WS.v1 = c + span / 2; drawWs();
+  card.addEventListener('input', upd); card.addEventListener('change', upd);
+  for (const r of rows) { const o = card.querySelector('#' + r.id + 'v'); if (o && r.fmt) o.textContent = r.fmt(r.value); }
+  card.querySelector('[data-x]').onclick = closeModal;
+  card.querySelector('[data-ok]').onclick = () => { ok = true; closeModal(); tlCommit(before); };
 }
-function wsZoom(f) {
-  const dur = wsDur(); if (!dur) return;
-  const span = clamp((WS.v1 - WS.v0) * f, Math.min(2, dur), dur);
-  const c = WS.sel ? (WS.sel[0] + WS.sel[1]) / 2 : clamp(wsTime(), 0, dur);
-  WS.v0 = clamp(c - span / 2, 0, dur - span); WS.v1 = WS.v0 + span; drawWs();
+const dbTxt = v => t('tlDb', { v: (v > 0 ? '+' : v < 0 ? '−' : '') + nf1.format(Math.abs(v)) });
+function tlGain() {
+  const c = tlSel(); if (!c) return;
+  tlSliders(t('tlVol'), [{ id: 'g', label: t('tlVol'), min: -30, max: 12, step: 0.5, value: c.gain || 0, fmt: dbTxt }], v => { c.gain = v.g; });
 }
-function wsSeek(tm) {
-  WS.pos = tm;
-  const p = wsPlaying();
-  if (p) seek(tm); else drawWs();
+function tlFade() {
+  const c = tlSel(); if (!c) return;
+  const mx = Math.max(0.1, Math.min(10, Math.floor(tlLen(c) / 2 * 10) / 10));
+  tlSliders(t('tlFade'), [{ id: 'fi', label: t('tlFadeIn'), min: 0, max: mx, step: 0.1, value: Math.min(mx, c.fi || 0), fmt: secs },
+    { id: 'fo', label: t('tlFadeOut'), min: 0, max: mx, step: 0.1, value: Math.min(mx, c.fo || 0), fmt: secs }], v => { c.fi = v.fi; c.fo = v.fo; });
 }
-function wsPlay(stepIndex) {
-  const idx = stepIndex == null ? WS.i : stepIndex;
-  const it = wsItem(idx); if (!it) return;
-  const p = wsPlaying();
-  if (p && (p.id === it.id || stepIndex == null)) { togglePlay(); setTimeout(renderWsPlay, 50); return; }
-  const pos = p ? audio.currentTime : WS.pos;
-  setCur(it.id);
-  audio.queue([qItem(it)], 0, Math.min(pos, it.duration - 0.05), true);
-  setTimeout(renderWsPlay, 50);
+function tlTrack() {
+  const c = tlSel(); const tr = TL.p.tracks[c ? c.tr : 0]; if (!tr) return;
+  tlSliders(t('tlTrackN', { n: (c ? c.tr : 0) + 1 }), [{ id: 'tv', label: t('tlVol'), min: -30, max: 6, step: 0.5, value: tr.vol || 0, fmt: dbTxt },
+    { id: 'tm', value: !!tr.mute, html: `<label class="switch"><input type="checkbox" id="tm"${tr.mute ? ' checked' : ''}><span>${esc(t('tlMute'))}</span></label>` }], v => { tr.vol = v.tv; tr.mute = v.tm; });
 }
-function renderWsPlay() { const b = $('#wsPlay'); if (b) b.innerHTML = ic(wsPlaying() && !audio.paused ? 'pause' : 'play'); }
-audio.addEventListener('play', renderWsPlay);
-audio.addEventListener('pause', () => { const p = wsPlaying(); if (p) WS.pos = audio.currentTime; renderWsPlay(); });
-
-$('#editTab').addEventListener('input', e => { if (e.target.id === 'wsQ') { WS.q = e.target.value; const pos = e.target.selectionStart; renderEdit(); const q = $('#wsQ'); if (q) { q.focus(); try { q.setSelectionRange(pos, pos); } catch (x) {} } } });
-$('#editTab').addEventListener('click', async e => {
-  const pick = e.target.closest('[data-ws-pick]');
-  if (pick) { const r = S.items.get(pick.dataset.wsPick); if (r) wsStart(r); return; }
-  const stp = e.target.closest('[data-step]');
-  if (stp && !WS.busy) { wsStopAudio(); wsAbPrev = false; WS.i = +stp.dataset.step; WS.sel = null; WS.v0 = 0; WS.v1 = wsDur(); renderEdit(); wsPeaks(); return; }
-  const b = e.target.closest('[data-ws]');
-  if (b) {
-    const k = b.dataset.ws;
-    if (k === 'close') wsClose();
-    else if (k === 'zin') wsZoom(0.4);
-    else if (k === 'zout') wsZoom(2.5);
-    else if (k === 'fit') { WS.v0 = 0; WS.v1 = wsDur(); drawWs(); }
-    else if (k === 'play') wsPlay();
-    else if (k === 'ab') { wsAbPrev = !wsAbPrev; wsPlayAB(); b.textContent = t(wsAbPrev ? 'wsNow' : 'wsPrev'); }
-    else if (k === 'undo' && WS.i > 0) { wsStopAudio(); wsAbPrev = false; WS.steps = WS.steps.slice(0, WS.i); WS.i--; WS.sel = null; WS.v0 = 0; WS.v1 = wsDur(); renderEdit(); wsPeaks(); }
-    else if (k === 'save') wsSave();
-    return;
-  }
-  const o = e.target.closest('[data-op]');
-  if (o && !o.disabled) wsTool(o.dataset.op);
-});
-function wsPlayAB() {
-  const want = wsAbPrev ? WS.i - 1 : WS.i;
-  const it = wsItem(want); if (!it) return;
-  const p = wsPlaying(), pos = p ? audio.currentTime : WS.pos, go = !p || !audio.paused;
-  WS.pos = Math.min(pos, it.duration - 0.05);
-  setCur(it.id);
-  audio.queue([qItem(it)], 0, WS.pos, go);
-  drawWs(); setTimeout(renderWsPlay, 50);
-  ensurePeaks(it, {}).then(drawWs, () => {});
-}
-
-async function wsTool(op) {
-  const cur = wsCur(), dur = wsDur();
-  if (op === 'cut' || op === 'keep') {
-    if (!WS.sel) return;
-    const [a, b] = WS.sel;
-    const keep = op === 'keep' ? [[a * 1000, b * 1000]] : [[0, a * 1000], [b * 1000, dur * 1000 + 1000]].filter(r => r[1] - r[0] > 20);
-    if (!keep.length) return;
-    return wsRun('cut', { keep });
-  }
-  if (op === 'silence') return wsSilence();
-  if (op === 'export') {
-    const v = await chooseBox(t('toolExport'), t('wsExportD'), [{ value: 'm4a', label: 'M4A (AAC)', desc: t('saveCopyD') }, { value: 'wav', label: 'WAV', desc: t('wsSaveWavD') }]);
-    if (!v) return;
-    WS.busy = { op, p: 0 }; wsBusyUi();
-    try {
-      const res = await runJob('wsExport', { path: cur.path, format: v, name: safeName(WS.src.title) }, f => { if (WS.busy) { WS.busy.p = f; wsBusyUi(); } });
-      WS.busy = null; wsBusyUi();
-      AND.share(JSON.stringify(res.src), res.name, res.mime);
-    } catch (e) { WS.busy = null; renderEdit(); toast(errText(e), 5000); }
-    return;
-  }
-  if (op === 'insert') return wsPickAudio(t('op_insert'), true, (it, where) => wsRun('insert', { other: it.src, posMs: where === 'start' ? 0 : where === 'end' ? dur * 1000 : wsTime() * 1000 }));
-  if (op === 'mix') return wsMixDialog();
-  if (op === 'speed') return wsSpeedDialog();
+const TL_FX = ['denoise', 'hum', 'clicks', 'plosive', 'deess', 'channels', 'eq', 'level', 'loud', 'trim', 'silence'];
+async function tlFx() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  const op = await chooseBox(t('tlFx'), t('tlFxD'), TL_FX.map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
+  if (!op) return;
   if (op === 'loud') {
     const v = await chooseBox(t('op_loud'), t('wsLoudD'), ['youtube', 'podcast', 'whatsapp'].map(x => ({ value: x, label: t('tg_' + x), desc: t('ex' + x[0].toUpperCase() + x.slice(1)) })));
-    if (v) wsRun('loud', { target: v });
+    if (v) tlEffect(c, 'loud', { target: v });
     return;
   }
-  if (op === 'eq') return wsRun('eq', { learned: S.learnVoice ? await learnedProfile() : null });
-  if (op === 'beats') {
-    WS.busy = { op, p: 0 }; wsBusyUi();
-    try {
-      const res = await runJob('beats', { src: cur.src }, f => { if (WS.busy) { WS.busy.p = f; wsBusyUi(); } });
-      WS.busy = null; WS.beats = res.times || [];
-      renderEdit();
-      toast(WS.beats.length ? t('beatTitle') + ': ' + t('beatBpm', { b: nf1.format(res.bpm) }) : t('beatNone'), 4000);
-    } catch (e) { WS.busy = null; renderEdit(); toast(errText(e), 5000); }
-    return;
-  }
-  wsRun(op);
+  if (op === 'eq') return tlEffect(c, 'eq', { learned: S.learnVoice ? await learnedProfile() : null });
+  if (op === 'silence') return tlSilence(c);
+  tlEffect(c, op);
 }
-
-async function wsSilence() {
-  const it = wsItem(WS.i), pk = it && S.peaks.get(it.id);
+function tlSpeed() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  wsSpeedDialog(v => tlEffect(c, 'speed', v));
+}
+/** runs one processing step on the clip's file; the clip then points at the new file */
+async function tlEffect(c, op, extra) {
+  if (TL.busy) return;
+  tlStop();
+  let res;
+  try { res = await tlRunJob(t('op_' + op), 'wsOp', Object.assign({ path: c.path, op }, extra || {})); } catch (e) { toast(errText(e), 5000); return; }
+  if (res.same) { toast(t('wsSame')); return; }
+  const before = tlSnap(), nd = res.dur / 1000;
+  if (Math.abs(nd - c.dur) > 0.01) {
+    if (op === 'speed') { const f = nd / c.dur; c.in *= f; c.out = Math.min(nd, c.out * f); c.fi *= f; c.fo *= f; }
+    else { c.in = 0; c.out = nd; }
+  }
+  Object.assign(c, { path: res.path, dur: nd, ch: res.ch });
+  c.out = Math.min(c.out, nd); c.in = Math.min(c.in, c.out - 0.05);
+  if (op === 'eq' && S.learnVoice && res.report && res.report.tone) addVoiceProfile(res.report.tone);
+  tlCommit(before);
+  toast(wsReport(op, res) || t('wsDone'), 3500);
+}
+async function tlSilence(c) {
+  const it = tlItem(c), pk = await ensurePeaks(it, {});
   if (!isComplete(pk)) { toast(t('waveWait')); return; }
   const card = openModal(`<h3>${esc(t('silTitle'))}</h3><p class="mtext">${esc(t('silDesc'))}</p>
     <div class="modal-body">
@@ -2660,7 +2561,7 @@ async function wsSilence() {
     const thr = +card.querySelector('#sT').value, gap = +card.querySelector('#sG').value;
     card.querySelector('#sTv').textContent = `${String(thr).replace('-', '−')} dB`;
     card.querySelector('#sGv').textContent = secs(gap);
-    found = findSilences(pk, wsDur(), thr, gap);
+    found = findSilences(pk, c.dur, thr, gap);
     const tot = found.reduce((a, [s, e]) => a + e - s, 0);
     card.querySelector('#sInfo').textContent = found.length ? t('wsSilInfo', { n: found.length, d: fmt(tot) }) : t('noSil');
     card.querySelector('#sGo').disabled = !found.length;
@@ -2669,10 +2570,10 @@ async function wsSilence() {
   card.querySelector('[data-x]').onclick = closeModal;
   card.querySelector('#sGo').onclick = () => {
     closeModal();
-    const dur = wsDur(), keep = []; let pos = 0;
+    const keep = []; let pos = 0;
     for (const [s, e] of found) { if (s > pos) keep.push([pos * 1000, s * 1000]); pos = Math.max(pos, e); }
-    if (pos < dur) keep.push([pos * 1000, dur * 1000 + 1000]);
-    if (keep.length) wsRun('cut', { keep });
+    if (pos < c.dur) keep.push([pos * 1000, c.dur * 1000 + 1000]);
+    if (keep.length) tlEffect(c, 'cut', { keep });
   };
 }
 function findSilences(pk, dur, dbThr, minGap) {
@@ -2689,50 +2590,310 @@ function findSilences(pk, dur, dbThr, minGap) {
   }
   return found.filter(([s, e]) => e - s > 0.05);
 }
+function wsReport(op, st) {
+  const r = st.report || {}, n = nf1.format;
+  switch (op) {
+    case 'cut': return t('rpw_cut', { d: fmt(st.dur / 1000) });
+    case 'denoise': return t('rpw_denoise', { b: r.before, a: r.after, r: r.reduction });
+    case 'hum': return t('rpw_hum', { hz: r.hz });
+    case 'trim': return t('rpw_trim', { a: n(r.start || 0), b: n(r.end || 0) });
+    case 'clicks': return t('rpClicks', { n: r.count || 0 });
+    case 'plosive': return t('rpw_plosive', { s: n(r.seconds || 0) });
+    case 'deess': return t('rpw_deess', { s: n(r.seconds || 0) });
+    case 'channels': return t({ identical: 'chIdentical', 'left-silent': 'chSilent', 'right-silent': 'chSilent', 'left-broken': 'chBroken', 'right-broken': 'chBroken', inverted: 'chInverted' }[r.reason] || 'chMono');
+    case 'eq': return t('rpw_eq', { m: n(r.mean || 0) });
+    case 'level': return t('rpw_level', { a: n(r.lraBefore || 0), b: n(st.lra || 0) });
+    case 'loud': return t('rpw_loud', { l: n(st.lufs).replace('-', '−'), p: n(st.peak).replace('-', '−'), t: t('tg_' + (r.target || 'youtube')) });
+    case 'speed': return t('rpw_speed', { s: nf2.format(r.speed || 1), p: (r.semitones > 0 ? '+' : '') + (r.semitones || 0) });
+  }
+  return '';
+}
+
+/* ----- project ----- */
+async function tlNewProject() {
+  if (!TL.p.clips.length || TL.busy) return;
+  if (!(await confirmBox({ title: t('tlNewQ'), text: t('tlNewB'), ok: t('tlNewP'), danger: true }))) return;
+  tlStop();
+  const before = tlSnap();
+  TL.p = tlNew(); TL.sel = null; TL.pos = 0;
+  tlCommit(before);
+}
+function tlFit() {
+  const cv = $('#tl'), e = tlEnd(); if (!cv || !e) return;
+  TL.pps = clamp((cv.clientWidth - 40) / e, 2, 400); TL.pos = e / 2; drawTl();
+}
+async function tlExport() {
+  if (!TL.p.clips.length || TL.busy) return;
+  const v = await chooseBox(t('tlExport'), t('tlExportD'), [
+    { value: 'save:m4a', label: t('tlSaveM4a'), desc: t('saveCopyD') }, { value: 'save:wav', label: t('tlSaveWav'), desc: t('wsSaveWavD') },
+    { value: 'share:m4a', label: t('tlShareM4a'), desc: t('saveCopyD') }, { value: 'share:wav', label: t('tlShareWav'), desc: t('wsSaveWavD') }]);
+  if (!v) return;
+  tlStop();
+  const [how, format] = v.split(':'), name = t('edited', { t: TL.p.name || t('tabEdit') });
+  try {
+    const mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips: tlMix() });
+    if (how === 'share') {
+      const res = await tlRunJob(t('tlExport'), 'wsExport', { path: mix.path, format, name: safeName(name) });
+      AND.share(JSON.stringify(res.src), res.name, res.mime);
+    } else {
+      const res = await tlRunJob(t('op_save'), 'wsSave', { path: mix.path, name: safeName(name), format });
+      const it = fromNative(res.item, null);
+      Object.assign(it, { title: name, userTitle: true, created: Date.now(), notes: '', categoryId: null, kind: 'rec', source: 'edit', fav: false, bookmarks: [] });
+      S.items.set(it.id, it); await saveRec(it);
+      toast(t('tlSaved'), 3000);
+    }
+  } catch (e) { toast(errText(e), 5000); }
+  try { runJob('wsClean', { keep: [] }).catch(() => {}); } catch (e) {}
+}
+
+/* ----- screen ----- */
+function renderEdit() {
+  const box = $('#editTab');
+  if (!box || S.tab !== 'edit') return;
+  if (!NATIVE) { box.innerHTML = `<div class="empty">${ic('scissors', 1.6)}<b>${esc(t('tabEdit'))}</b>${esc(t('wsNative'))}</div>`; return; }
+  if (!TL.p) tlLoad();
+  const empty = !TL.p.clips.length;
+  box.innerHTML = `<div class="tl-top">
+      <button class="icon-btn" type="button" data-tl="undo" aria-label="${esc(t('undo'))}"${TL.undo.length && !TL.busy ? '' : ' disabled'}>${ic('undo')}</button>
+      <button class="icon-btn tl-redo" type="button" data-tl="redo" aria-label="${esc(t('tlRedo'))}"${TL.redo.length && !TL.busy ? '' : ' disabled'}>${ic('undo')}</button>
+      <span class="spacer"></span>
+      <button class="ctl" type="button" data-tl="play" id="tlPlay" style="width:48px;height:48px"${empty ? ' disabled' : ''}>${ic(TL.play ? 'pause' : 'play')}</button>
+      <span class="tc" id="tlTime"></span><span class="spacer"></span>
+      <button class="btn primary sm" type="button" data-tl="export"${empty || TL.busy ? ' disabled' : ''}>${esc(t('tlExport'))}</button></div>
+    <canvas class="tl-cv" id="tl" aria-label="${esc(t('tabEdit'))}"></canvas>
+    <div id="tlBusy" hidden><p class="st-desc"><b id="tlBusyT"></b></p><div class="prog"><i id="tlBusyBar"></i></div></div>
+    <div class="tl-bar" id="tlBar"></div>
+    ${empty ? `<div class="tl-empty"><b>${esc(t('tlEmpty'))}</b><p>${esc(t('tlEmptyD'))}</p></div>` : `<p class="hint tl-hint">${esc(t('tlHint'))}</p>`}`;
+  renderTlBar(); tlBusyUi();
+  for (const c of TL.p.clips) { const it = tlItem(c); if (!isComplete(S.peaks.get(it.id))) ensurePeaks(it, {}).then(drawTl, () => {}); }
+  requestAnimationFrame(drawTl);
+}
+function renderTlBar() {
+  const bar = $('#tlBar'); if (!bar) return;
+  const c = tlSel(), dis = TL.busy ? ' disabled' : '';
+  const b = (k, icn, lab, extra) => `<button class="tool" type="button" data-tl="${k}"${dis}${extra || ''}>${ic(icn)}${esc(lab)}</button>`;
+  bar.innerHTML = c
+    ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
+      b('speed', 'gauge', t('tlSpeed')) + b('dup', 'copy', t('tlDup')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
+    : b('add', 'import', t('tlAdd')) + (TL.p.clips.length ? b('fit', 'wave', t('tlFit')) + b('track', 'mixer', t('tlTrack')) + b('new', 'trash', t('tlNewP')) : '');
+}
+function tlBusyUi() {
+  const b = $('#tlBusy'); if (!b) return;
+  b.hidden = !TL.busy;
+  if (!TL.busy) return;
+  $('#tlBusyT').textContent = t('wsBusy', { op: TL.busy.label, p: Math.round(TL.busy.p * 100) });
+  $('#tlBusyBar').style.width = Math.round(TL.busy.p * 100) + '%';
+}
+function tlHeight() { return TL_RULER + (TL.p.tracks.length + (TL.p.tracks.length < TL_MAX ? 1 : 0)) * TL_ROW; }
+function drawTl() {
+  if (S.tab !== 'edit' || !TL.p) return;
+  const cv = $('#tl'); if (!cv) return;
+  const H0 = tlHeight(); if (cv.style.height !== H0 + 'px') cv.style.height = H0 + 'px';
+  const c = sizeCanvas(cv); if (!c) return;
+  const { ctx, w, h } = c, pps = TL.pps, cx = w / 2, X = tm => cx + (tm - TL.pos) * pps;
+  // ruler
+  const st = rulerStep(pps), sub = st / 5;
+  ctx.font = `11px ${MONO}`; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+  const t0 = Math.max(0, TL.pos - cx / pps), t1 = TL.pos + cx / pps;
+  for (let s = Math.ceil(t0 / sub) * sub; s <= t1; s += sub) {
+    const x = X(s), major = Math.abs(s / st - Math.round(s / st)) < 1e-6;
+    ctx.fillStyle = COL.line; ctx.fillRect(x - 0.5, TL_RULER - (major ? 8 : 4), 1, major ? 8 : 4);
+    if (major) { ctx.fillStyle = COL.muted; ctx.fillText(fmt(s), x, 3); }
+  }
+  // rows
+  const rows = TL.p.tracks.length;
+  for (let i = 0; i < rows; i++) {
+    const y = TL_RULER + i * TL_ROW;
+    ctx.fillStyle = COL.line; ctx.globalAlpha = 0.35; ctx.fillRect(0, y + TL_ROW - 1, w, 1); ctx.globalAlpha = 1;
+  }
+  if (rows < TL_MAX) {
+    const y = TL_RULER + rows * TL_ROW;
+    ctx.strokeStyle = COL.line; ctx.setLineDash([4, 4]); ctx.strokeRect(8.5, y + 6.5, w - 17, TL_ROW - 13); ctx.setLineDash([]);
+  }
+  const x0Start = X(0); if (x0Start > 0) { ctx.fillStyle = COL.line; ctx.globalAlpha = 0.25; ctx.fillRect(0, TL_RULER, x0Start, h - TL_RULER); ctx.globalAlpha = 1; }
+  // clips
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.font = `600 11.5px ${MONO}`;
+  for (const k of TL.p.clips) {
+    const len = tlLen(k), x0 = X(k.at), x1 = X(k.at + len);
+    if (x1 < 0 || x0 > w) continue;
+    const y = TL_RULER + k.tr * TL_ROW + 4, hh = TL_ROW - 9, sel = k.id === TL.sel, tr = TL.p.tracks[k.tr] || {};
+    ctx.globalAlpha = tr.mute ? 0.35 : 1;
+    ctx.fillStyle = COL.accentSoft; rr(ctx, x0, y, Math.max(2, x1 - x0), hh, 7);
+    const pk = S.peaks.get('f:' + k.path), mid = y + hh / 2 + 6, amp = (hh - 18) / 2;
+    ctx.fillStyle = COL.accent;
+    const a = Math.max(x0 + 2, 0), z = Math.min(x1 - 2, w);
+    for (let x = a; x < z; x += 3) {
+      const s = k.in + (x - x0) / pps, v = pk ? level(pk, s, s + 3 / pps) : 0, bh = Math.max(1, v * amp * 2);
+      ctx.fillRect(x, mid - bh / 2, 2, bh);
+    }
+    // fades
+    ctx.fillStyle = COL.ink; ctx.globalAlpha = (tr.mute ? 0.35 : 1) * 0.18;
+    if (k.fi > 0) { ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + k.fi * pps, y); ctx.lineTo(x0, y + hh); ctx.fill(); }
+    if (k.fo > 0) { ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x1 - k.fo * pps, y); ctx.lineTo(x1, y + hh); ctx.fill(); }
+    ctx.globalAlpha = tr.mute ? 0.35 : 1;
+    // label
+    ctx.save(); ctx.beginPath(); ctx.rect(Math.max(x0, 0) + 6, y, Math.max(0, Math.min(x1, w) - Math.max(x0, 0) - 12), hh); ctx.clip();
+    ctx.fillStyle = COL.ink;
+    ctx.fillText((k.name || '') + (k.gain ? '  ' + dbTxt(k.gain) : ''), Math.max(x0, 0) + 8, y + 4);
+    ctx.restore();
+    if (sel) {
+      ctx.strokeStyle = COL.ink; ctx.lineWidth = 2; ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x0 + 1, y + 1, x1 - x0 - 2, hh - 2, 7); else ctx.rect(x0 + 1, y + 1, x1 - x0 - 2, hh - 2);
+      ctx.stroke();
+      ctx.fillStyle = COL.ink;
+      rr(ctx, x0 - 2, y, 12, hh, 5); rr(ctx, x1 - 10, y, 12, hh, 5);
+      ctx.fillStyle = COL.accentSoft; ctx.fillRect(x0 + 3, y + hh / 2 - 8, 2, 16); ctx.fillRect(x1 - 5, y + hh / 2 - 8, 2, 16);
+    }
+    ctx.globalAlpha = 1;
+  }
+  // playhead
+  ctx.fillStyle = COL.rec; ctx.fillRect(cx - 1, 0, 2, h);
+  ctx.beginPath(); ctx.moveTo(cx - 6, 0); ctx.lineTo(cx + 6, 0); ctx.lineTo(cx, 8); ctx.closePath(); ctx.fill();
+  const tt = $('#tlTime'); if (tt) tt.textContent = `${fmtT(TL.pos)} / ${fmt(tlEnd())}`;
+}
+function drawWs() { drawTl(); }
+
+/* touch: tap a clip to select it, drag a selected clip to move it (also to another track), drag its edges to trim,
+   drag empty space to scroll (the playhead stays in the middle), pinch to zoom */
+(() => {
+  const pts = new Map(); let g = null;
+  const box = $('#editTab');
+  const local = e => { const rc = $('#tl').getBoundingClientRect(); return { x: e.clientX - rc.left, y: e.clientY - rc.top, w: rc.width }; };
+  const rowAt = y => Math.floor((y - TL_RULER) / TL_ROW);
+  const hit = (x, y, w) => {
+    const tm = TL.pos + (x - w / 2) / TL.pps, r = rowAt(y);
+    for (let i = TL.p.clips.length - 1; i >= 0; i--) { const c = TL.p.clips[i]; if (c.tr === r && tm >= c.at && tm <= c.at + tlLen(c)) return c; }
+    return null;
+  };
+  box.addEventListener('pointerdown', e => {
+    if (!e.target.closest('#tl') || TL.busy) return;
+    e.preventDefault();
+    try { e.target.setPointerCapture(e.pointerId); } catch (x) {}
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      if (g && g.before && g.mode !== 'scroll') { TL.p = JSON.parse(g.before); }
+      g = { mode: 'pinch', d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, pps0: TL.pps };
+      return;
+    }
+    if (pts.size > 2) return;
+    const p = local(e), s = tlSel(), before = tlSnap();
+    const base = { x0: e.clientX, y0: e.clientY, moved: false, before };
+    if (s) {
+      const xa = p.w / 2 + (s.at - TL.pos) * TL.pps, xb = xa + tlLen(s) * TL.pps, inRow = rowAt(p.y) === s.tr;
+      if (inRow && Math.abs(p.x - xa) < 22 && Math.abs(p.x - xa) <= Math.abs(p.x - xb)) { g = Object.assign(base, { mode: 'trimL', c: s, in0: s.in, at0: s.at }); return; }
+      if (inRow && Math.abs(p.x - xb) < 22) { g = Object.assign(base, { mode: 'trimR', c: s, out0: s.out }); return; }
+    }
+    const c = hit(p.x, p.y, p.w);
+    if (c && c === s) g = Object.assign(base, { mode: 'move', c, at0: c.at, tr0: c.tr });
+    else g = Object.assign(base, { mode: 'scroll', c, pos0: TL.pos, ruler: p.y < TL_RULER, tm: TL.pos + (p.x - p.w / 2) / TL.pps });
+  });
+  box.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId) || !g) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (g.mode === 'pinch') {
+      if (pts.size < 2) return;
+      const [a, b] = [...pts.values()];
+      TL.pps = clamp(g.pps0 * Math.hypot(a.x - b.x, a.y - b.y) / g.d0, 2, 400); drawTl(); return;
+    }
+    const dx = e.clientX - g.x0, dy = e.clientY - g.y0;
+    if (!g.moved && Math.hypot(dx, dy) < 7) return;
+    if (!g.moved) { g.moved = true; if (TL.play) tlStop(); }
+    const d = dx / TL.pps, c = g.c;
+    if (g.mode === 'scroll') TL.pos = clamp(g.pos0 - d, 0, Math.max(tlEnd(), 1));
+    else if (g.mode === 'move') {
+      let at = Math.max(0, g.at0 + d);
+      // snap to the playhead, the start and other clip edges
+      const snaps = [0, TL.pos]; for (const o of TL.p.clips) if (o !== c) snaps.push(o.at, o.at + tlLen(o));
+      const lim = 10 / TL.pps;
+      for (const sv of snaps) { if (Math.abs(at - sv) < lim) { at = sv; break; } if (Math.abs(at + tlLen(c) - sv) < lim) { at = sv - tlLen(c); break; } }
+      c.at = Math.max(0, at);
+      const r = rowAt(local(e).y);
+      c.tr = clamp(r, 0, Math.min(TL_MAX - 1, TL.p.tracks.length));
+    } else if (g.mode === 'trimL') {
+      const dd = clamp(d, -Math.min(g.in0, g.at0), c.out - 0.1 - g.in0);
+      c.in = g.in0 + dd; c.at = g.at0 + dd;
+      c.fi = Math.min(c.fi || 0, tlLen(c) / 2); c.fo = Math.min(c.fo || 0, tlLen(c) / 2);
+    } else if (g.mode === 'trimR') {
+      c.out = clamp(g.out0 + d, c.in + 0.1, c.dur);
+      c.fi = Math.min(c.fi || 0, tlLen(c) / 2); c.fo = Math.min(c.fo || 0, tlLen(c) / 2);
+    }
+    drawTl();
+  });
+  const end = e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.delete(e.pointerId);
+    if (!g) return;
+    if (g.mode === 'pinch') { if (!pts.size) g = null; return; }
+    const m = g; g = null;
+    if (m.mode === 'scroll') {
+      if (!m.moved) {
+        if (m.ruler) { TL.pos = clamp(m.tm, 0, Math.max(tlEnd(), 0)); if (TL.play) { tlStop(); tlPlay(); } }
+        else TL.sel = m.c ? m.c.id : null;
+        renderTlBar(); drawTl();
+      }
+      return;
+    }
+    if (!m.moved) { if (m.mode === 'move') { TL.sel = null; renderTlBar(); drawTl(); } return; }
+    if (m.mode === 'move') {
+      const c = m.c;
+      // never leave two clips on top of each other: move to the nearest free track
+      c.tr = tlFreeTrack(c.at, c.at + tlLen(c), c.id, c.tr);
+      tlEnsureTrack(c.tr);
+    }
+    tlCommit(m.before);
+  };
+  box.addEventListener('pointerup', end);
+  box.addEventListener('pointercancel', end);
+})();
+
+$('#editTab').addEventListener('click', e => {
+  const b = e.target.closest('[data-tl]'); if (!b || b.disabled) return;
+  const k = b.dataset.tl;
+  if (k === 'play') tlPlay();
+  else if (k === 'undo') tlUndo(false);
+  else if (k === 'redo') tlUndo(true);
+  else if (k === 'export') tlExport();
+  else if (k === 'add') wsPickAudio(t('tlAdd'), false, it => tlAddFrom(it));
+  else if (k === 'fit') tlFit();
+  else if (k === 'new') tlNewProject();
+  else if (k === 'done') { TL.sel = null; renderTlBar(); drawTl(); }
+  else if (k === 'split') tlSplit();
+  else if (k === 'del') tlDelete();
+  else if (k === 'dup') tlDup();
+  else if (k === 'gain') tlGain();
+  else if (k === 'fade') tlFade();
+  else if (k === 'fx') tlFx();
+  else if (k === 'speed') tlSpeed();
+  else if (k === 'track') tlTrack();
+});
 
 /** list of recordings and songs to choose another audio from */
 function wsPickAudio(title, withWhere, done, extraHtml, onReady) {
-  const all = visibleItems().filter(x => x.src && x.id !== (WS.src && WS.src.id) && (kindOf(x) === 'rec' || kindOf(x) === 'music'))
-    .sort((a, b) => a.title.localeCompare(b.title, LOC, { numeric: true }));
+  const all = visibleItems().filter(x => x.src && (kindOf(x) === 'rec' || kindOf(x) === 'music'))
+    .sort((a, b) => (b.created || 0) - (a.created || 0));
   let pick = null;
   const card = openModal(`<h3>${esc(title)}</h3>
     <div class="modal-body">
       <label class="search"><span>${ic('search')}</span><input id="pQ" type="search" placeholder="${esc(t('wsSearch'))}" autocomplete="off"></label>
       <div class="mix-list" id="pList"></div>
-      ${withWhere ? `<div class="seg2" role="radiogroup" id="pWhere">${['cursor', 'start', 'end'].map((w, i) => `<button type="button" role="radio" data-w="${w}" aria-checked="${i === 0}">${esc(t('wsIns_' + w))}</button>`).join('')}</div>` : ''}
       ${extraHtml || ''}
     </div>
     <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" id="pGo" disabled>${esc(t('ok'))}</button></div>`);
   const list = card.querySelector('#pList');
   const draw = () => {
     const q = norm(card.querySelector('#pQ').value.trim());
-    const l = all.filter(x => !q || norm(x.title).includes(q) || norm(x.artist).includes(q)).slice(0, 60);
+    const l = all.filter(x => !q || norm(x.title).includes(q) || norm(x.artist).includes(q)).slice(0, 80);
     list.innerHTML = l.length ? l.map(x => `<button type="button" class="mix-song${pick && pick.id === x.id ? ' on' : ''}" data-id="${esc(x.id)}"><b>${esc(x.title)}</b><span>${esc(kindOf(x) === 'music' ? artistOf(x) : dfShort.format(x.created))} · ${fmt(x.duration)}</span></button>`).join('') : `<p class="hint">${esc(t('noResults'))}</p>`;
   };
   draw();
   card.querySelector('#pQ').addEventListener('input', draw);
   list.addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (!b) return; pick = S.items.get(b.dataset.id); draw(); card.querySelector('#pGo').disabled = !pick; });
-  let where = 'cursor';
-  const pw = card.querySelector('#pWhere');
-  if (pw) pw.addEventListener('click', e => { const b = e.target.closest('[data-w]'); if (!b) return; where = b.dataset.w; pw.querySelectorAll('[data-w]').forEach(x => x.setAttribute('aria-checked', x === b)); });
   card.querySelector('[data-x]').onclick = closeModal;
-  card.querySelector('#pGo').onclick = () => { const p = pick; const out = onReady ? onReady(card) : null; closeModal(); done(p, where, out); };
+  card.querySelector('#pGo').onclick = () => { const p = pick; const out = onReady ? onReady(card) : null; closeModal(); done(p, null, out); };
 }
 
-function wsMixDialog() {
-  if (!musicItems().length && !recItems().length) { toast(t('mixNoMusic'), 3500); return; }
-  const extra = `<div class="slider"><span>${esc(t('mixBed'))}</span><input type="range" id="mixB" min="-24" max="0" step="1" value="-6"><span class="tc" id="mixBv">−6 dB</span></div>
-    <div class="slider"><span>${esc(t('mixDuck'))}</span><input type="range" id="mixD" min="-24" max="-4" step="1" value="-14"><span class="tc" id="mixDv">−14 dB</span></div>`;
-  wsPickAudio(t('mixTitle'), false, (it, w, v) => wsRun('mix', { music: it.src, bedDb: v.bed, duckDb: v.duck, target: S.target }), extra,
-    card => ({ bed: +card.querySelector('#mixB').value, duck: +card.querySelector('#mixD').value }));
-  const card = $('#modalCard');
-  card.addEventListener('input', e => {
-    if (e.target.id === 'mixB') card.querySelector('#mixBv').textContent = `${String(e.target.value).replace('-', '−')} dB`;
-    if (e.target.id === 'mixD') card.querySelector('#mixDv').textContent = `${String(e.target.value).replace('-', '−')} dB`;
-  });
-}
-
-function wsSpeedDialog() {
+function wsSpeedDialog(done) {
   const card = openModal(`<h3>${esc(t('tpTitle'))}</h3>
     <div class="modal-body">
       <div class="slider"><span>${esc(t('tpSpeed'))}</span><input type="range" id="tpS" min="0.5" max="2" step="0.05" value="1"><span class="tc" id="tpSv">1×</span></div>
@@ -2748,33 +2909,7 @@ function wsSpeedDialog() {
     card.querySelector('#tpGo').disabled = sp === 1 && st === 0;
   });
   card.querySelector('[data-x]').onclick = closeModal;
-  card.querySelector('#tpGo').onclick = () => { const f = card.querySelector('#tpF').checked; closeModal(); wsRun('speed', { speed: sp, semitones: st, formant: f }); };
-}
-
-async function wsSave() {
-  const cur = wsCur(); if (!cur || WS.i < 1) return;
-  const own = WS.src && WS.src.own && kindOf(WS.src) === 'rec';
-  const opts = [{ value: 'copy', label: t('saveCopy'), desc: t('saveCopyD') }, { value: 'wav', label: t('wsSaveWav'), desc: t('wsSaveWavD') }];
-  if (own) opts.push({ value: 'replace', label: t('saveReplace'), desc: t('wsReplaceD') });
-  const v = await chooseBox(t('saveHow'), t('saveHowB', { d: fmt(cur.dur / 1000) }), opts);
-  if (!v) return;
-  wsStopAudio();
-  const name = t('edited', { t: WS.src.title });
-  WS.busy = { op: 'save', p: 0 }; wsBusyUi();
-  let res;
-  try {
-    res = await runJob('wsSave', Object.assign({ path: cur.path, name: safeName(v === 'replace' ? baseName(WS.src) : name), format: v === 'wav' ? 'wav' : 'm4a' }, v === 'replace' ? { replace: WS.src.src } : {}),
-      f => { if (WS.busy) { WS.busy.p = f; wsBusyUi(); } });
-  } catch (e) { WS.busy = null; renderEdit(); toast(errText(e), 5000); return; }
-  WS.busy = null;
-  const from = WS.src, it = fromNative(res.item, null);
-  Object.assign(it, { title: v === 'replace' ? from.title : name, userTitle: true, created: v === 'replace' ? from.created : Date.now(), notes: from.notes || '',
-    categoryId: from.categoryId || null, kind: 'rec', source: 'edit', fav: v === 'replace' && !!from.fav, bookmarks: [] });
-  S.items.set(it.id, it); await saveRec(it);
-  if (v === 'replace' && res.replaced) await forgetItem(from.id);
-  WS.saved = true;
-  render();
-  toast(t(v === 'replace' ? 'savedReplace' : 'savedCopy'), 3000);
+  card.querySelector('#tpGo').onclick = () => { const f = card.querySelector('#tpF').checked; closeModal(); done({ speed: sp, semitones: st, formant: f }); };
 }
 
 

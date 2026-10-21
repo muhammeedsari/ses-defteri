@@ -143,7 +143,7 @@ final class Workspace {
         File in = new File(a.getString("path"));
         Info inf = info(in);
         String op = a.getString("op");
-        File out = newFile(c);
+        File out = new File(in.getParentFile(), "s" + System.nanoTime() + ".wav");
         JSONObject rep = new JSONObject();
         int ch = inf.ch, fs = inf.rate;
         try {
@@ -397,8 +397,11 @@ final class Workspace {
 
     /** decodes another file into a WAV with the workspace's rate and channel count */
     static File decodeLike(Context c, JSONObject src, int ch, int rate, AudioTools.Progress p, double[] slice, AtomicBoolean cancel) throws Exception {
+        return decodeTo(c, src, ch, rate, p, slice, cancel, newFile(c));
+    }
+
+    static File decodeTo(Context c, JSONObject src, final int ch, int rate, AudioTools.Progress p, double[] slice, AtomicBoolean cancel, File out) throws Exception {
         Studio.Fmt f = Studio.probe(c, src);
-        File out = newFile(c);
         Node tail = new Studio.WavNode(out, rate);
         Node head = tail;
         if (f.rate != rate) { Resampler r = new Resampler(ch, f.rate, rate); r.to(head); head = r; }

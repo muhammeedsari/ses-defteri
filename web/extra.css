@@ -110,3 +110,17 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ws-steps li.on button{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .ws-steps li.later button{opacity:.55}
 [dir="rtl"] .ws-steps button{text-align:right}
+/* 1.5 timeline */
+.tl-top{display:flex;align-items:center;gap:6px;margin-top:12px}
+.tl-top .tc{font-size:13px;color:var(--muted);min-width:96px}
+.tl-top .icon-btn:disabled,.tl-top .ctl:disabled{opacity:.4}
+.tl-redo .ic{transform:scaleX(-1)}
+.tl-cv{width:100%;height:142px;display:block;margin-top:10px;touch-action:none;border-radius:12px;background:var(--surface);border:1px solid var(--line);user-select:none;-webkit-user-select:none}
+.tl-bar{display:flex;gap:8px;overflow-x:auto;padding:12px 0 4px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.tl-bar::-webkit-scrollbar{display:none}
+.tl-bar .tool{flex:none}
+.tl-bar .tool:disabled{opacity:.45}
+.tl-empty{margin:18px 0;text-align:center;color:var(--muted)}
+.tl-empty b{display:block;color:var(--ink);font-size:16px}
+.tl-empty p{margin:6px 0 0;font-size:14px}
+.tl-hint{font-size:12.5px;color:var(--muted);margin:8px 0 0}

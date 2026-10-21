@@ -423,6 +423,7 @@ public class MainActivity extends Activity implements Player.Listener {
     @Override
     protected void onDestroy() {
         Player.I.init(this, null);
+        Timeline.stop();
         if (web != null) {
             web.removeJavascriptInterface("SesDefteriAndroid");
             web.destroy();
@@ -671,6 +672,10 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public void plRepeat(final int r) { ui(new Runnable() { @Override public void run() { Player.I.setRepeat(r); } }); }
         @JavascriptInterface public void plStop() { ui(new Runnable() { @Override public void run() { Player.I.stop(); } }); }
         @JavascriptInterface public String plState() { return Player.I.state(); }
+        @JavascriptInterface public String tlPlay(String json, double sec) { try { Timeline.play(json, sec); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
+        @JavascriptInterface public void tlUpdate(String json) { try { Timeline.update(json); } catch (Exception ignored) { } }
+        @JavascriptInterface public void tlStop() { Timeline.stop(); }
+        @JavascriptInterface public double tlPos() { return Timeline.pos(); }
 
         /* -- background jobs: waveform, editing, saving -- */
         @JavascriptInterface public String job(final String kind, final String argsJson) {
@@ -679,9 +684,9 @@ public class MainActivity extends Activity implements Player.Listener {
             jobs.put(id, cancel);
             boolean bg = false;
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
-            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind);
+            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind);
             if (heavy) WorkService.begin(MainActivity.this);
-            (bg ? bgPool : heavy || "wsClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
+            (bg ? bgPool : heavy || "wsClean".equals(kind) || "tlClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
                 @Override
                 public void run() {
                     try {
@@ -720,6 +725,13 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.init(MainActivity.this, a.getJSONObject("src"), p, cancel);
                         } else if ("wsOp".equals(kind)) {
                             res = Workspace.op(MainActivity.this, a, p, cancel);
+                        } else if ("tlAdd".equals(kind)) {
+                            res = Timeline.add(MainActivity.this, a, p, cancel);
+                        } else if ("tlRender".equals(kind)) {
+                            res = Timeline.render(MainActivity.this, a, p, cancel);
+                        } else if ("tlClean".equals(kind)) {
+                            Timeline.clean(MainActivity.this, a.optJSONArray("keep"));
+                            res = new JSONObject();
                         } else if ("wsExport".equals(kind)) {
                             res = Workspace.export(MainActivity.this, a, p, cancel);
                         } else if ("wsSave".equals(kind)) {
