@@ -404,7 +404,7 @@ final class Workspace {
         Studio.Fmt f = Studio.probe(c, src);
         Node tail = new Studio.WavNode(out, rate);
         Node head = tail;
-        if (f.rate != rate) { Resampler r = new Resampler(ch, f.rate, rate); r.to(head); head = r; }
+        if (f.rate != rate) { Resampler r = new Resampler(ch, (double) f.rate, (double) rate); r.to(head); head = r; }
         if (f.ch != ch) {
             final int inCh = f.ch;
             final Node nx = head;
@@ -492,7 +492,7 @@ final class Workspace {
         Pipeline.FileTemp mt = new Pipeline.FileTemp(mtemp, mch);
         try {
             Node head = mt;
-            if (fm.rate != inf.rate) { Resampler r = new Resampler(mch, fm.rate, inf.rate); r.to(mt); head = r; }
+            if (fm.rate != inf.rate) { Resampler r = new Resampler(mch, (double) fm.rate, (double) inf.rate); r.to(mt); head = r; }
             Studio.source(c, msrc, fm, p, new double[][] { { 0, 0.2 } }, cancel).run(head);
             int outCh = Math.max(inf.ch, mch);
             Meter m = new Meter(outCh, inf.rate);

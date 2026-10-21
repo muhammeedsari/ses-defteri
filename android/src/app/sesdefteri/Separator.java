@@ -56,6 +56,15 @@ final class Separator {
         Workspace.Info inf = Workspace.info(in);
         p.on(0.01);
         File vm = model(c, "vocals.fp16.onnx"), am = model(c, "accompaniment.fp16.onnx");
+        File[] out = run(in, inf, vm, am, p, cancel);
+        JSONObject res = new JSONObject();
+        res.put("voc", clip(out[0]));
+        res.put("acc", clip(out[1]));
+        return res;
+    }
+
+    /** writes vocals and accompaniment next to the input; returns both files */
+    static File[] run(File in, Workspace.Info inf, File vm, File am, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
         long h = create(vm.getAbsolutePath(), am.getAbsolutePath(), threads);
         if (h == 0) throw new IllegalStateException("sep-model");
@@ -64,7 +73,7 @@ final class Separator {
         RandomAccessFile r = new RandomAccessFile(in, "r");
         try {
             final int rate = inf.rate, ch = inf.ch;
-            final long N = inf.frames, CH = 30L * rate, CTX = rate;   // 30 s pieces, 1 s of real audio on each side
+            final long N = inf.frames, CH = 30L * rate, CTX = rate;   // 30 s pieces
             Node[] sink = new Node[2];
             Studio.WavNode[] wn = { new Studio.WavNode(vo, rate), new Studio.WavNode(ao, rate) };
             Resampler[] rs = new Resampler[2];
@@ -72,14 +81,15 @@ final class Separator {
             byte[] buf = new byte[0];
             for (long s = 0; s < N; s += CH) {
                 if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
-                long e = Math.min(N, s + CH), A = Math.max(0, s - CTX), B = Math.min(N, e + CTX);
-                int n = (int) (B - A);
+                // 1 s of context on each side (silence beyond the file), so the model's edge effects fall outside what we keep
+                long e = Math.min(N, s + CH), A = s - CTX, B = e + CTX, ra = Math.max(0, A), rb = Math.min(N, B);
+                int n = (int) (B - A), off = (int) (ra - A), rn = (int) (rb - ra);
                 float[][] x = new float[ch][n];
-                int bytes = n * ch * 2;
+                int bytes = rn * ch * 2;
                 if (buf.length < bytes) buf = new byte[bytes];
-                r.seek(44 + A * ch * 2);
+                r.seek(44 + ra * ch * 2);
                 r.readFully(buf, 0, bytes);
-                for (int i = 0, q = 0; i < n; i++) for (int k = 0; k < ch; k++, q += 2) x[k][i] = (short) ((buf[q] & 0xff) | (buf[q + 1] << 8)) / 32768f;
+                for (int i = 0, q = 0; i < rn; i++) for (int k = 0; k < ch; k++, q += 2) x[k][off + i] = (short) ((buf[q] & 0xff) | (buf[q + 1] << 8)) / 32768f;
                 int[] or = new int[1];
                 float[][] y = process(h, ch == 1 ? new float[][] { x[0], x[0] } : x, rate, or);
                 x = null;
@@ -89,17 +99,17 @@ final class Separator {
                     outRate = or[0];
                     for (int t = 0; t < 2; t++) {
                         sink[t] = wn[t];
-                        if (outRate != rate) { rs[t] = new Resampler(ch, outRate, rate); rs[t].to(wn[t]); sink[t] = rs[t]; }
+                        if (outRate != rate) { rs[t] = new Resampler(ch, (double) outRate, (double) rate); rs[t].to(wn[t]); sink[t] = rs[t]; }
                     }
                 }
                 // keep only [s, e) in the output's own sample clock (absolute positions, so pieces line up exactly)
                 double f = (double) outRate / rate;
                 long oA = Math.round(A * f);
                 int from = (int) (Math.round(s * f) - oA), to = (int) Math.min(y[0].length, Math.round(e * f) - oA);
-                int m = Math.max(0, to - from);
+                int have = Math.max(0, to - from), m = (int) Math.max(have, Math.round(e * f) - oA - from);   // the model may drop a few samples at the very end
                 for (int t = 0; t < 2; t++) {
                     float[][] o = new float[ch][m];
-                    for (int i = 0; i < m; i++) {
+                    for (int i = 0; i < have; i++) {
                         if (ch == 1) {
                             float v = 0;
                             for (int k = 0; k < sc; k++) v += y[t * sc + k][from + i];
@@ -112,10 +122,7 @@ final class Separator {
                 p.on(0.05 + 0.93 * e / N);
             }
             if (sink[0] != null) { sink[0].end(); sink[1].end(); }
-            JSONObject res = new JSONObject();
-            res.put("voc", clip(vo));
-            res.put("acc", clip(ao));
-            return res;
+            return new File[] { vo, ao };
         } catch (Exception x) {
             vo.delete();
             ao.delete();

@@ -185,7 +185,7 @@ final class Studio {
         }
         try {
             Stages.ChannelMap mono = new Stages.ChannelMap(f.ch, Stages.ChannelMap.MONO);
-            Resampler rs = new Resampler(1, f.rate, Transcriber.RATE);
+            Resampler rs = new Resampler(1, (double) f.rate, (double) Transcriber.RATE);
             mono.to(rs).to(new Node() {
                 @Override public void push(float[][] b, int n) { tr.accept(b[0], n); }
                 @Override public void end() { }
