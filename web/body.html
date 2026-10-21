@@ -185,7 +185,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '1.4';
+const VERSION = '1.4.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1855,6 +1855,7 @@ function srtOf(segs) {
 const WS = { src: null, steps: [], i: -1, sel: null, v0: 0, v1: 0, busy: null, beats: null, saved: true, q: '', pos: 0 };
 const wsCur = () => WS.steps[WS.i];
 const wsDur = () => (wsCur() ? wsCur().dur / 1000 : 0);
+let wsAbPrev = false;
 function wsItem(i) {
   const st = WS.steps[i]; if (!st) return null;
   const id = 'ws:' + st.path;
@@ -1863,7 +1864,8 @@ function wsItem(i) {
   return it;
 }
 const wsPlaying = () => { const it = S.cur && S.items.get(S.cur); return it && it.kind === 'ws' ? it : null; };
-const wsTime = () => { const p = wsPlaying(); return p && p.id === (wsItem(WS.i) || {}).id ? audio.currentTime : WS.pos; };
+const wsTime = () => wsPlaying() ? audio.currentTime : WS.pos;
+const wsShown = () => { const a = wsAbPrev && WS.i > 0 ? wsItem(WS.i - 1) : null, pa = a && S.peaks.get(a.id); return pa ? a : wsItem(WS.i); };
 
 function openWorkspace(r) {
   if (!r || !NATIVE || !r.src) return;
@@ -1913,7 +1915,7 @@ async function wsRun(op, extra) {
   let res;
   try { res = await runJob('wsOp', Object.assign({ path: cur.path, op }, extra || {}), f => { if (WS.busy) { WS.busy.p = f; wsBusyUi(); } }); }
   catch (e) { WS.busy = null; renderEdit(); toast(errText(e), 5000); return; }
-  WS.busy = null;
+  WS.busy = null; wsAbPrev = false;
   if (res.same) { renderEdit(); toast(t('wsSame')); return; }
   res.op = op;
   WS.steps = WS.steps.slice(0, WS.i + 1);
@@ -2014,7 +2016,7 @@ function drawWs() {
   if (!dur) return;
   const rulerH = 20, H = h - rulerH, v0 = WS.v0, v1 = Math.max(WS.v0 + 0.5, WS.v1), span = v1 - v0;
   const X = tm => (tm - v0) / span * w;
-  const it = wsItem(WS.i), pk = it && S.peaks.get(it.id);
+  const it = wsShown(), pk = it && S.peaks.get(it.id);
   if (WS.sel) { ctx.fillStyle = COL.accent; ctx.globalAlpha = 0.18; ctx.fillRect(X(WS.sel[0]), 0, X(WS.sel[1]) - X(WS.sel[0]), H); ctx.globalAlpha = 1; }
   const n = Math.floor(w / 4);
   for (let i = 0; i < n; i++) {
@@ -2089,14 +2091,13 @@ function wsZoom(f) {
 function wsSeek(tm) {
   WS.pos = tm;
   const p = wsPlaying();
-  if (p && p.id === (wsItem(WS.i) || {}).id) seek(tm); else drawWs();
+  if (p) seek(tm); else drawWs();
 }
-let wsAbPrev = false;
 function wsPlay(stepIndex) {
   const idx = stepIndex == null ? WS.i : stepIndex;
   const it = wsItem(idx); if (!it) return;
   const p = wsPlaying();
-  if (p && p.id === it.id) { togglePlay(); setTimeout(renderWsPlay, 50); return; }
+  if (p && (p.id === it.id || stepIndex == null)) { togglePlay(); setTimeout(renderWsPlay, 50); return; }
   const pos = p ? audio.currentTime : WS.pos;
   setCur(it.id);
   audio.queue([qItem(it)], 0, Math.min(pos, it.duration - 0.05), true);
@@ -2119,9 +2120,9 @@ $('#editTab').addEventListener('click', async e => {
     else if (k === 'zin') wsZoom(0.4);
     else if (k === 'zout') wsZoom(2.5);
     else if (k === 'fit') { WS.v0 = 0; WS.v1 = wsDur(); drawWs(); }
-    else if (k === 'play') { wsAbPrev = false; wsPlay(); }
+    else if (k === 'play') wsPlay();
     else if (k === 'ab') { wsAbPrev = !wsAbPrev; wsPlayAB(); b.textContent = t(wsAbPrev ? 'wsNow' : 'wsPrev'); }
-    else if (k === 'undo' && WS.i > 0) { wsStopAudio(); WS.steps = WS.steps.slice(0, WS.i); WS.i--; WS.sel = null; WS.v0 = 0; WS.v1 = wsDur(); renderEdit(); wsPeaks(); }
+    else if (k === 'undo' && WS.i > 0) { wsStopAudio(); wsAbPrev = false; WS.steps = WS.steps.slice(0, WS.i); WS.i--; WS.sel = null; WS.v0 = 0; WS.v1 = wsDur(); renderEdit(); wsPeaks(); }
     else if (k === 'save') wsSave();
     return;
   }
@@ -2131,12 +2132,13 @@ $('#editTab').addEventListener('click', async e => {
 function wsPlayAB() {
   const want = wsAbPrev ? WS.i - 1 : WS.i;
   const it = wsItem(want); if (!it) return;
-  const p = wsPlaying(), pos = p ? audio.currentTime : WS.pos;
+  const p = wsPlaying(), pos = p ? audio.currentTime : WS.pos, go = !p || !audio.paused;
+  WS.pos = Math.min(pos, it.duration - 0.05);
   setCur(it.id);
-  audio.queue([qItem(it)], 0, Math.min(pos, it.duration - 0.05), true);
-  if (want !== WS.i) wsPeaksFor(want);
+  audio.queue([qItem(it)], 0, WS.pos, go);
+  drawWs(); setTimeout(renderWsPlay, 50);
+  ensurePeaks(it, {}).then(drawWs, () => {});
 }
-async function wsPeaksFor(i) { const it = wsItem(i); if (it) await ensurePeaks(it, {}); }
 
 async function wsTool(op) {
   const cur = wsCur(), dur = wsDur();

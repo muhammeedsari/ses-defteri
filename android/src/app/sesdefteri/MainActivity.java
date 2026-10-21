@@ -681,7 +681,7 @@ public class MainActivity extends Activity implements Player.Listener {
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
             final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind);
             if (heavy) WorkService.begin(MainActivity.this);
-            (bg ? bgPool : heavy ? studioPool : pool).execute(new Runnable() {
+            (bg ? bgPool : heavy || "wsClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
                 @Override
                 public void run() {
                     try {
