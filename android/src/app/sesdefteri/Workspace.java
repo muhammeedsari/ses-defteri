@@ -149,6 +149,7 @@ final class Workspace {
         final double str = Math.max(0.3, Math.min(1.6, a.optDouble("strength", 1)));   // Light 0.6 / Balanced 1 / Strong 1.4
         try {
             if ("insert".equals(op)) return insert(c, in, inf, out, a, p, cancel);
+            if ("aidenoise".equals(op)) return aiDenoise(c, in, inf, p, cancel);
             Node head;
             Meter m;
             double[] slice = { 0.3, 1 };
@@ -179,6 +180,7 @@ final class Workspace {
                     double[] hr = an.humRatioDb;
                     double h50 = Math.max(hr[0], hr[1]), h60 = Math.max(hr[2], hr[3]);
                     double base = h60 > h50 ? 60 : 50;
+                    if (Math.max(h50, h60) < 3) { rep.put("none", true); return same(a, rep); }
                     double[] notch = { base, base * 2, base * 3, base * 4, base * 5 };
                     rep.put("hz", (int) base);
                     rep.put("strength", Math.round(Math.max(h50, h60)));
@@ -243,6 +245,7 @@ final class Workspace {
                     double[] g = eqGains(measured, target, str);
                     double mean = 0;
                     for (double x : g) mean += Math.abs(x) / g.length;
+                    if (mean < 0.5) { rep.put("none", true); return same(a, rep); }
                     Spectral s = new Spectral(ch, fs).eq(Enhancer.eqCurve(g, fs, Fft.nextPow2((int) Math.round(fs * 0.021))));
                     m = new Meter(ch, fs);
                     s.to(m);
@@ -256,6 +259,7 @@ final class Workspace {
                 case "level": {
                     Analyzer.Analysis an = analyze(in, inf, p, cancel);
                     rep.put("lraBefore", Math.round(an.lra * 10) / 10.0);
+                    if (an.lra < 4) { rep.put("none", true); return same(a, rep); }
                     m = new Meter(ch, fs);
                     head = new Stages.Compressor(ch, fs, an.speechMeanDb + 2, 1 + 1.5 * str);
                     head.to(m);
@@ -299,9 +303,42 @@ final class Workspace {
             Stages.DeEsser d = dees.get();
             if (d != null) { rep.put("seconds", Math.round(d.active * 10.0 / fs) / 10.0); dees.remove(); }
             rep.remove("_after");
+            // nothing to fix in this recording: say so instead of handing back an identical copy
+            if ((cr != null && cr.repaired == 0) || (pt != null && pt.active < fs / 20) || (d != null && d.active < fs / 5)) {
+                out.delete();
+                rep.put("none", true);
+                return same(a, rep);
+            }
             return done(out, m, rep);
         } catch (Exception e) {
             out.delete();
+            throw e;
+        }
+    }
+
+    /** noise removal with the voice-separation model: keeps the voice, drops everything else */
+    static JSONObject aiDenoise(Context c, File in, Info inf, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        if (!Separator.available()) throw new IllegalStateException("sep-unavailable");
+        Analyzer.Analysis b = analyze(in, inf, part(p, 0, 0.33), cancel);
+        File vm = Separator.model(c, "vocals.fp16.onnx"), am = Separator.model(c, "accompaniment.fp16.onnx");
+        File[] o = Separator.run(in, inf, vm, am, part(p, 0.1, 0.9), cancel);
+        o[1].delete();
+        try {
+            Info oi = info(o[0]);
+            Analyzer after = new Analyzer(oi.ch, oi.rate);
+            Meter m = new Meter(oi.ch, oi.rate);
+            Node t = new Tee(after);
+            t.to(m).to(new Sink());
+            wav(o[0], oi, part(p, 0.9, 1), new double[] { 0, 1 }, cancel).run(t);
+            double na = after.finish().noiseDb;
+            JSONObject rep = new JSONObject();
+            rep.put("before", Math.round(b.noiseDb));
+            rep.put("after", Math.round(na));
+            rep.put("reduction", Math.max(0, Math.round(b.noiseDb - na)));
+            rep.put("ai", true);
+            return done(o[0], m, rep);
+        } catch (Exception e) {
+            o[0].delete();
             throw e;
         }
     }
@@ -400,7 +437,7 @@ final class Workspace {
                 String fx = fixes.getString(i);
                 JSONObject o = new JSONObject();
                 o.put("path", cur.getAbsolutePath());
-                o.put("op", fx);
+                o.put("op", "denoise".equals(fx) && a.optBoolean("ai") ? "aidenoise" : fx);
                 o.put("strength", a.optDouble("strength", 1));
                 if ("loud".equals(fx)) o.put("target", a.optString("target", "youtube"));
                 if ("eq".equals(fx) && a.has("learned")) o.put("learned", a.get("learned"));

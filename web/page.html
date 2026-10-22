@@ -677,6 +677,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 <script src="i18n4.js"></script>
 <script src="i18n5.js"></script>
 <script src="i18n6.js"></script>
+<script src="i18n7.js"></script>
 <script>
 (() => {
 'use strict';
@@ -687,7 +688,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '1.7';
+const VERSION = '1.7.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1019,7 +1020,7 @@ function readColors() {
   const cs = getComputedStyle(document.documentElement);
   const g = n => cs.getPropertyValue(n).trim();
   COL = { accent: g('--accent'), wave: g('--wave'), mark: g('--mark'), ink: g('--ink'), line: g('--line'), muted: g('--muted'), rec: g('--rec'),
-    accentSoft: g('--accent-soft'), recSoft: g('--rec-soft'),
+    accentSoft: g('--accent-soft'), recSoft: g('--rec-soft'), surface: g('--surface'),
     sInk: g('--stage-ink'), sLine: g('--stage-line'), sMark: g('--stage-mark'), sRec: g('--stage-rec') };
   MONO = g('--f-mono') || 'monospace';
 }
@@ -2538,10 +2539,10 @@ function tlTrack() {
     { id: 'td', value: !!tr.duck, html: `<label class="switch"><input type="checkbox" id="td"${tr.duck ? ' checked' : ''}><span>${esc(t('tlDuck'))}<small>${esc(t('tlDuckD'))}</small></span></label>` },
     { id: 'tdd', label: t('tlDuckAmt'), min: -30, max: -3, step: 1, value: tr.duckDb || -12, fmt: dbTxt }], v => { tr.vol = v.tv; tr.mute = v.tm; tr.duck = v.td; tr.duckDb = v.tdd; });
 }
-const TL_FX = ['denoise', 'hum', 'clicks', 'plosive', 'deess', 'channels', 'eq', 'level', 'loud', 'trim', 'silence'];
+const TL_FX = ['aidenoise', 'denoise', 'hum', 'clicks', 'plosive', 'deess', 'channels', 'eq', 'level', 'loud', 'trim', 'silence'];
 async function tlFx() {
   const c = tlSel(); if (!c || TL.busy) return;
-  const op = await chooseBox(t('tlFx'), t('tlFxD'), TL_FX.map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
+  const op = await chooseBox(t('tlFx'), t('tlFxD'), TL_FX.filter(x => x !== 'aidenoise' || CAPS.sep).map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
   if (!op) return;
   if (op === 'loud') {
     const v = await chooseBox(t('op_loud'), t('wsLoudD'), ['youtube', 'podcast', 'whatsapp'].map(x => ({ value: x, label: t('tg_' + x), desc: t('ex' + x[0].toUpperCase() + x.slice(1)) })));
@@ -2562,7 +2563,7 @@ async function tlEffect(c, op, extra) {
   tlStop();
   let res;
   try { res = await tlRunJob(t('op_' + op), 'wsOp', Object.assign({ path: c.path, op }, extra || {})); } catch (e) { toast(errText(e), 5000); return; }
-  if (res.same) { toast(t('wsSame')); return; }
+  if (res.same) { toast(res.report && res.report.none ? t('fxNone', { x: t('op_' + op) }) : t('wsSame'), 4000); return; }
   const before = tlSnap(), nd = res.dur / 1000;
   if (Math.abs(nd - c.dur) > 0.01) {
     if (op === 'speed') { const f = nd / c.dur; c.in *= f; c.out = Math.min(nd, c.out * f); c.fi *= f; c.fo *= f; }
@@ -2622,7 +2623,7 @@ function wsReport(op, st) {
   const r = st.report || {}, n = nf1.format;
   switch (op) {
     case 'cut': return t('rpw_cut', { d: fmt(st.dur / 1000) });
-    case 'denoise': return t('rpw_denoise', { b: r.before, a: r.after, r: r.reduction });
+    case 'denoise': case 'aidenoise': return t('rpw_denoise', { b: r.before, a: r.after, r: r.reduction });
     case 'hum': return t('rpw_hum', { hz: r.hz });
     case 'trim': return t('rpw_trim', { a: n(r.start || 0), b: n(r.end || 0) });
     case 'clicks': return t('rpClicks', { n: r.count || 0 });
@@ -2702,8 +2703,8 @@ function renderTlBar() {
   const b = (k, icn, lab, extra) => `<button class="tool" type="button" data-tl="${k}"${dis}${extra || ''}>${ic(icn)}${esc(lab)}</button>`;
   bar.innerHTML = c
     ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
-      b('sep', 'mixer', t('tlSep')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
-    : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (TL.p.clips.length ? b('fit', 'wave', t('tlFit')) + b('track', 'mixer', t('tlTrack')) + b('new', 'trash', t('tlNewP')) : '');
+      b('merge', 'copy', t('tlMerge')) + b('sep', 'mixer', t('tlSep')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
+    : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (TL.p.clips.length ? b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
   if (TL.rec) bar.innerHTML = `<button class="btn danger-fill" type="button" data-tl="rec">${ic('pause')} ${esc(t('tlRecStop'))} <span class="tc" id="tlRecT"></span></button><span class="hint">${esc(t('tlRecHint'))}</span>`;
 }
 function tlBusyUi() {
@@ -2737,6 +2738,8 @@ function drawTl() {
   }
   if (rows < TL_MAX) {
     const y = TL_RULER + rows * TL_ROW;
+    ctx.fillStyle = COL.muted; ctx.font = `12px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('+', w / 2, y + TL_ROW / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = `11px ${MONO}`;
     ctx.strokeStyle = COL.line; ctx.setLineDash([4, 4]); ctx.strokeRect(8.5, y + 6.5, w - 17, TL_ROW - 13); ctx.setLineDash([]);
   }
   const x0Start = X(0); if (x0Start > 0) { ctx.fillStyle = COL.line; ctx.globalAlpha = 0.25; ctx.fillRect(0, TL_RULER, x0Start, h - TL_RULER); ctx.globalAlpha = 1; }
@@ -2784,6 +2787,22 @@ function drawTl() {
     const len = (performance.now() - TL.rec.t0) / 1000, row = Math.min(TL.p.tracks.length, TL_MAX - 1), y = TL_RULER + row * TL_ROW + 4;
     ctx.fillStyle = COL.rec; ctx.globalAlpha = 0.35; rr(ctx, X(TL.rec.at), y, Math.max(2, len * pps), TL_ROW - 9, 7); ctx.globalAlpha = 1;
   }
+  // track badges: number + speaker, tap to mute / unmute
+  for (let i = 0; i < rows; i++) {
+    const y = TL_RULER + i * TL_ROW + 6, mu = TL.p.tracks[i].mute, du = TL.p.tracks[i].duck;
+    ctx.fillStyle = mu ? COL.rec : COL.surface; ctx.globalAlpha = 0.95; rr(ctx, 4, y, 42, 22, 6); ctx.globalAlpha = 1;
+    ctx.strokeStyle = mu ? COL.rec : COL.line; ctx.lineWidth = 1; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(4.5, y + 0.5, 41, 21, 6); else ctx.rect(4.5, y + 0.5, 41, 21); ctx.stroke();
+    const ink = mu ? '#fff' : COL.ink;
+    ctx.fillStyle = ink; ctx.font = `600 11px ${MONO}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(i + 1), 10, y + 11.5);
+    // speaker
+    ctx.beginPath(); ctx.moveTo(23, y + 8.5); ctx.lineTo(26, y + 8.5); ctx.lineTo(30, y + 5); ctx.lineTo(30, y + 17); ctx.lineTo(26, y + 13.5); ctx.lineTo(23, y + 13.5); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = ink; ctx.lineWidth = 1.4; ctx.beginPath();
+    if (mu) { ctx.moveTo(33, y + 8); ctx.lineTo(39, y + 14); ctx.moveTo(39, y + 8); ctx.lineTo(33, y + 14); }
+    else { ctx.arc(31, y + 11, 4, -0.9, 0.9); if (!du) { ctx.moveTo(34.8, y + 4.5); ctx.arc(31, y + 11, 7.5, -0.9, 0.9); } }
+    ctx.stroke();
+  }
+  ctx.textBaseline = 'top';
   // playhead
   ctx.fillStyle = COL.rec; ctx.fillRect(cx - 1, 0, 2, h);
   ctx.beginPath(); ctx.moveTo(cx - 6, 0); ctx.lineTo(cx + 6, 0); ctx.lineTo(cx, 8); ctx.closePath(); ctx.fill();
@@ -2816,6 +2835,14 @@ function drawWs() { drawTl(); }
     }
     if (pts.size > 2) return;
     const p = local(e), s = tlSel(), before = tlSnap();
+    const row = rowAt(p.y);
+    if (p.x < 50 && row >= 0 && row < TL.p.tracks.length && p.y - (TL_RULER + row * TL_ROW) < 32) {
+      pts.delete(e.pointerId);
+      const tr = TL.p.tracks[row]; tr.mute = !tr.mute;
+      tlCommit(before);
+      toast(t(tr.mute ? 'tlMuted' : 'tlUnmuted', { n: row + 1 }));
+      return;
+    }
     const base = { x0: e.clientX, y0: e.clientY, moved: false, before };
     if (s) {
       const xa = p.w / 2 + (s.at - TL.pos) * TL.pps, xb = xa + tlLen(s) * TL.pps, inRow = rowAt(p.y) === s.tr;
@@ -2905,6 +2932,7 @@ $('#editTab').addEventListener('click', e => {
   else if (k === 'speed') tlSpeed();
   else if (k === 'track') tlTrack();
   else if (k === 'sep') tlSep();
+  else if (k === 'merge') tlMerge();
   else if (k === 'beats') tlBeats();
   else if (k === 'rec') tlRec();
 });
@@ -2933,6 +2961,22 @@ async function tlSep() {
   c.beats = null;
   tlCommit(before);
   toast(t('sepDone'), 3000);
+}
+/** joins the selected clip with the next one on its track into a single clip (the gap between them stays as silence) */
+async function tlMerge() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  const end = c.at + tlLen(c);
+  const d = TL.p.clips.filter(x => x !== c && x.tr === c.tr && x.at >= end - 0.05).sort((a, b) => a.at - b.at)[0];
+  if (!d) { toast(t('tlNoMerge'), 3500); return; }
+  tlStop();
+  const part = x => ({ path: x.path, at: x.at - c.at, in: x.in, len: tlLen(x), g: Math.pow(10, (x.gain || 0) / 20), fi: x.fi || 0, fo: x.fo || 0 });
+  let res;
+  try { res = await tlRunJob(t('tlMerge'), 'tlRender', { clips: [part(c), part(d)], dir: 'proj', limit: false }); } catch (e) { toast(errText(e), 5000); return; }
+  const before = tlSnap(), dur = res.dur / 1000;
+  const m = { id: uid(), tr: c.tr, path: res.path, ch: res.ch, dur, in: 0, out: dur, at: c.at, gain: 0, fi: 0, fo: 0, name: (c.name || '') + ' + ' + (d.name || '') };
+  TL.p.clips = TL.p.clips.filter(x => x !== c && x !== d);
+  TL.p.clips.push(m); TL.sel = m.id;
+  tlCommit(before);
 }
 async function tlBeats() {
   const c = tlSel(); if (!c || TL.busy) return;
@@ -3099,7 +3143,7 @@ async function clRun() {
   clCard(`<h3>${esc(t('clClean'))}</h3><p class="mtext">${esc(t('clWorking'))}</p><div class="prog"><i id="clBar"></i></div>
     <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-cl="x">${esc(t('cancel'))}</button></div>`);
   try {
-    CL.res = await clJob('clean', Object.assign({ path: CL.diag.path, fixes, strength: CL.strength, target: purposeTarget(CL.purpose) },
+    CL.res = await clJob('clean', Object.assign({ path: CL.diag.path, fixes, strength: CL.strength, target: purposeTarget(CL.purpose), ai: !!CAPS.sep && CL.strength >= 1 && CL.purpose !== 'music' },
       fixes.includes('eq') && S.learnVoice ? { learned: await learnedProfile() } : {}));
   } catch (e) { if (CL.r) { toast(errText(e), 5000); clPlan(); } return; }
   if (CL.r !== r) return;
@@ -3108,7 +3152,10 @@ async function clRun() {
 }
 function clDone() {
   const d = CL.diag, res = CL.res, n = nf1.format;
-  const lines = res.fixes.map(k => { const st = Object.assign({}, res, { report: (res.reports || {})[k] || {} }); return `<li><b>${esc(t('op_' + k))}</b><span>${esc(wsReport(k, st) || t('wsDone'))}</span></li>`; }).join('');
+  const lines = res.fixes.map(k => {
+    const rp = (res.reports || {})[k] || {}, st = Object.assign({}, res, { report: rp });
+    return `<li><b>${esc(t(rp.ai ? 'op_aidenoise' : 'op_' + k))}</b><span>${esc(rp.none ? t('fxNoneShort') : wsReport(k, st) || t('wsDone'))}</span></li>`;
+  }).join('');
   clCard(`<h3>${esc(t('clDone'))}</h3>
     <div class="modal-body">
       <div class="seg2" role="radiogroup" id="clCmp">${['before', 'after'].map(k => `<button type="button" role="radio" data-cmp="${k}" aria-checked="${CL.cmp === k}">${esc(t('cl_' + k))}</button>`).join('')}</div>

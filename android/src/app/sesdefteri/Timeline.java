@@ -253,14 +253,14 @@ final class Timeline {
 
     static JSONObject render(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         Engine e = new Engine(a.getJSONArray("clips"));
-        File out = Workspace.newFile(c);
+        // "proj": a merged clip that stays in the project; otherwise a temporary mix for export
+        File out = "proj".equals(a.optString("dir")) ? new File(dir(c), "m" + System.nanoTime() + ".wav") : Workspace.newFile(c);
         try {
             if (e.end <= 0) throw new IllegalStateException("empty");
             final int BL = 4096, ch = e.ch;
             float[][] mix = new float[2][BL], o = new float[ch][BL];
-            Limiter lim = new Limiter(ch, RATE, -1.0, 0);
-            lim.to(new Studio.WavNode(out, RATE));
-            Node head = lim;
+            Node head = new Studio.WavNode(out, RATE);
+            if (a.optBoolean("limit", true)) { Limiter lim = new Limiter(ch, RATE, -1.0, 0); lim.to(head); head = lim; }
             for (long pos = 0; pos < e.end; pos += BL) {
                 if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
                 int n = (int) Math.min(BL, e.end - pos);
@@ -274,6 +274,7 @@ final class Timeline {
             JSONObject r = new JSONObject();
             r.put("path", out.getAbsolutePath());
             r.put("dur", e.end * 1000.0 / RATE);
+            r.put("ch", ch);
             return r;
         } catch (Exception x) {
             out.delete();
