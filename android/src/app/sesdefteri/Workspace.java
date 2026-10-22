@@ -146,6 +146,7 @@ final class Workspace {
         File out = new File(in.getParentFile(), "s" + System.nanoTime() + ".wav");
         JSONObject rep = new JSONObject();
         int ch = inf.ch, fs = inf.rate;
+        final double str = Math.max(0.3, Math.min(1.6, a.optDouble("strength", 1)));   // Light 0.6 / Balanced 1 / Strong 1.4
         try {
             if ("insert".equals(op)) return insert(c, in, inf, out, a, p, cancel);
             Node head;
@@ -161,7 +162,7 @@ final class Workspace {
                 }
                 case "denoise": {
                     Analyzer.Analysis an = analyze(in, inf, p, cancel);
-                    double nr = Math.max(6, Math.min(18, (42 - an.snr) * 0.55 + 6));
+                    double nr = Math.max(4, Math.min(24, (Math.max(6, Math.min(18, (42 - an.snr) * 0.55 + 6))) * str));
                     Spectral s = new Spectral(ch, fs).noise(an.noisePower, nr, 1.0);
                     Analyzer after = new Analyzer(ch, fs);
                     m = new Meter(ch, fs);
@@ -208,7 +209,7 @@ final class Workspace {
                 }
                 case "plosive": {
                     Stages.Filters hp = new Stages.Filters(ch, fs, 75, null);
-                    Stages.PlosiveTamer pt = new Stages.PlosiveTamer(ch, fs, 1.8);
+                    Stages.PlosiveTamer pt = new Stages.PlosiveTamer(ch, fs, 1 + 0.8 * str);
                     m = new Meter(ch, fs);
                     hp.to(pt).to(m);
                     head = hp;
@@ -218,7 +219,7 @@ final class Workspace {
                 }
                 case "deess": {
                     Analyzer.Analysis an = analyze(in, inf, p, cancel);
-                    Stages.DeEsser d = new Stages.DeEsser(ch, fs, Math.pow(10, (an.speechDb - 12) / 20), 9);
+                    Stages.DeEsser d = new Stages.DeEsser(ch, fs, Math.pow(10, (an.speechDb - 12) / 20), 9 * str);
                     m = new Meter(ch, fs);
                     d.to(m);
                     head = d;
@@ -239,15 +240,9 @@ final class Workspace {
                     Analyzer.Analysis an = analyze(in, inf, p, cancel);
                     double[] measured = Enhancer.bandsOf(an.ltasPower, fs, an.fftSize);
                     double[] target = a.has("learned") && !a.isNull("learned") ? Studio.doubles(a.optJSONArray("learned")) : Enhancer.referenceBands();
-                    double[] g = new double[Enhancer.BANDS.length];
+                    double[] g = eqGains(measured, target, str);
                     double mean = 0;
-                    for (int i = 0; i < g.length; i++) {
-                        double s = 0, w = 0;
-                        for (int j = Math.max(0, i - 1); j <= Math.min(g.length - 1, i + 1); j++) { double ww = j == i ? 2 : 1; s += (target[j] - measured[j]) * ww; w += ww; }
-                        double v = 0.8 * s / w, max = Enhancer.BANDS[i] < 160 ? 0 : Enhancer.BANDS[i] > 8000 ? 6 : 8;
-                        g[i] = Math.max(-8, Math.min(max, v));
-                        mean += Math.abs(g[i]) / g.length;
-                    }
+                    for (double x : g) mean += Math.abs(x) / g.length;
                     Spectral s = new Spectral(ch, fs).eq(Enhancer.eqCurve(g, fs, Fft.nextPow2((int) Math.round(fs * 0.021))));
                     m = new Meter(ch, fs);
                     s.to(m);
@@ -262,7 +257,7 @@ final class Workspace {
                     Analyzer.Analysis an = analyze(in, inf, p, cancel);
                     rep.put("lraBefore", Math.round(an.lra * 10) / 10.0);
                     m = new Meter(ch, fs);
-                    head = new Stages.Compressor(ch, fs, an.speechMeanDb + 2, 2.5);
+                    head = new Stages.Compressor(ch, fs, an.speechMeanDb + 2, 1 + 1.5 * str);
                     head.to(m);
                     break;
                 }
@@ -309,6 +304,122 @@ final class Workspace {
             out.delete();
             throw e;
         }
+    }
+
+    /** per-band correction towards the target tone (smoothed over neighbours, capped) */
+    static double[] eqGains(double[] measured, double[] target, double str) {
+        double[] g = new double[Enhancer.BANDS.length];
+        for (int i = 0; i < g.length; i++) {
+            double s = 0, w = 0;
+            for (int j = Math.max(0, i - 1); j <= Math.min(g.length - 1, i + 1); j++) { double ww = j == i ? 2 : 1; s += (target[j] - measured[j]) * ww; w += ww; }
+            double v = 0.8 * str * s / w, max = Enhancer.BANDS[i] < 160 ? 0 : Enhancer.BANDS[i] > 8000 ? 6 : 8;
+            g[i] = Math.max(-8, Math.min(max, v));
+        }
+        return g;
+    }
+
+    /* ---------- "Clean": diagnosis of a recording, then all chosen fixes in one go ---------- */
+
+    static File cleanDir(Context c) {
+        File d = new File(c.getCacheDir(), "clean");
+        if (!d.exists()) d.mkdirs();
+        return d;
+    }
+
+    static AudioTools.Progress part(final AudioTools.Progress p, final double a, final double b) {
+        return new AudioTools.Progress() { @Override public void on(double f) { p.on(a + (b - a) * Math.max(0, Math.min(1, f))); } };
+    }
+
+    static JSONObject diagnose(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        File d = cleanDir(c);
+        File[] old = d.listFiles();
+        if (old != null) for (File x : old) x.delete();
+        JSONObject src = a.getJSONObject("src");
+        Studio.Fmt f = Studio.probe(c, src);
+        File w = new File(d, "o" + System.nanoTime() + ".wav");
+        decodeTo(c, src, Math.min(2, f.ch), Timeline.RATE, p, new double[] { 0, 0.4 }, cancel, w);
+        Info inf = info(w);
+        int ch = inf.ch, fs = inf.rate;
+        // pass 1: levels, noise, hum, channels, tone, loudness
+        Analyzer an0 = new Analyzer(ch, fs);
+        Loudness lo = new Loudness(ch, fs);
+        Node t1 = new Tee(an0);
+        t1.to(lo).to(new Sink());
+        wav(w, inf, p, new double[] { 0.4, 0.7 }, cancel).run(t1);
+        Analyzer.Analysis an = an0.finish();
+        // pass 2: count clicks, plosives and harsh "s" with the same detectors the fixes use
+        Stages.ClickRepair cr = new Stages.ClickRepair(ch, fs, 10);
+        Stages.Filters hp = new Stages.Filters(ch, fs, 75, null);
+        Stages.PlosiveTamer pt = new Stages.PlosiveTamer(ch, fs, 1.8);
+        Stages.DeEsser de = new Stages.DeEsser(ch, fs, Math.pow(10, (an.speechDb - 12) / 20), 9);
+        cr.to(new Sink());
+        hp.to(pt).to(new Sink());
+        de.to(new Sink());
+        Node t2 = new Tee(cr);
+        t2.to(new Tee(hp)).to(de);
+        wav(w, inf, p, new double[] { 0.7, 1 }, cancel).run(t2);
+
+        JSONObject o = new JSONObject();
+        o.put("path", w.getAbsolutePath());
+        o.put("dur", inf.frames * 1000.0 / fs);
+        o.put("ch", ch);
+        double lufs = lo.integrated();
+        o.put("lufs", Double.isInfinite(lufs) ? -99 : Math.round(lufs * 10) / 10.0);
+        o.put("lra", Math.round(lo.range() * 10) / 10.0);
+        o.put("peak", Math.round(20 * Math.log10(Math.max(1e-9, an.peak)) * 10) / 10.0);
+        o.put("clipped", an.clipped);
+        o.put("snr", Math.round(an.snr));
+        o.put("noise", Math.round(an.noiseDb));
+        double[] hr = an.humRatioDb;
+        double h50 = Math.max(hr[0], hr[1]), h60 = Math.max(hr[2], hr[3]);
+        o.put("hum", Math.round(Math.max(h50, h60)));
+        o.put("humHz", h60 > h50 ? 60 : 50);
+        o.put("clicks", cr.repaired);
+        o.put("plosive", Math.round(pt.active * 10.0 / fs) / 10.0);
+        o.put("sib", Math.round(de.active * 10.0 / fs) / 10.0);
+        o.put("channel", ch > 1 ? (an.channelMode == Stages.ChannelMap.KEEP ? "" : an.channelReason) : "");
+        o.put("head", Math.round(an.activeStart * 10.0 / fs) / 10.0);
+        o.put("tail", Math.round((an.samples - an.activeEnd) * 10.0 / fs) / 10.0);
+        double[] g = eqGains(Enhancer.bandsOf(an.ltasPower, fs, an.fftSize), Enhancer.referenceBands(), 1);
+        double mean = 0;
+        for (double x : g) mean += Math.abs(x) / g.length;
+        o.put("eq", Math.round(mean * 10) / 10.0);
+        o.put("speech", an.speechFrames > 0);
+        return o;
+    }
+
+    /** runs the chosen fixes one after another on the diagnosed WAV; the original recording is never touched */
+    static JSONObject clean(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        File in = new File(a.getString("path")), cur = in;
+        JSONArray fixes = a.getJSONArray("fixes");
+        JSONObject reports = new JSONObject(), last = null;
+        double trimStart = 0;
+        int n = fixes.length();
+        try {
+            for (int i = 0; i < n; i++) {
+                String fx = fixes.getString(i);
+                JSONObject o = new JSONObject();
+                o.put("path", cur.getAbsolutePath());
+                o.put("op", fx);
+                o.put("strength", a.optDouble("strength", 1));
+                if ("loud".equals(fx)) o.put("target", a.optString("target", "youtube"));
+                if ("eq".equals(fx) && a.has("learned")) o.put("learned", a.get("learned"));
+                JSONObject r = op(c, o, part(p, (double) i / n, (double) (i + 1) / n), cancel);
+                if (r.optJSONObject("report") != null) reports.put(fx, r.getJSONObject("report"));
+                if (r.optBoolean("same")) continue;
+                if (cur != in) cur.delete();
+                cur = new File(r.getString("path"));
+                last = r;
+                if ("trim".equals(fx)) trimStart = r.getJSONObject("report").optDouble("start", 0);
+            }
+        } catch (Exception e) {
+            if (cur != in) cur.delete();
+            throw e;
+        }
+        JSONObject res = last != null ? last : new JSONObject().put("path", in.getAbsolutePath()).put("dur", info(in).frames * 1000.0 / info(in).rate);
+        res.put("reports", reports);
+        res.put("trimStart", trimStart);
+        return res;
     }
 
     // per-job holders for the stage objects whose counters go into the report

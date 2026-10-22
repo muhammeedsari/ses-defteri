@@ -648,7 +648,8 @@ public class MainActivity extends Activity implements Player.Listener {
             return res;
         }
         @JavascriptInterface public boolean recPause() { return Recorder.pause(); }
-        @JavascriptInterface public boolean recResume() { return Recorder.resume(); }
+        @JavascriptInterface public boolean recResume() { return Recorder.resumeManual(); }
+        @JavascriptInterface public String recInfo() { return Recorder.info(); }
         @JavascriptInterface public float recLevel() { return Recorder.level(); }
         @JavascriptInterface public String recStop() {
             ui(new Runnable() { @Override public void run() { getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); } });
@@ -685,7 +686,7 @@ public class MainActivity extends Activity implements Player.Listener {
             jobs.put(id, cancel);
             boolean bg = false;
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
-            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind);
+            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind);
             if (heavy) WorkService.begin(MainActivity.this);
             (bg ? bgPool : heavy || "wsClean".equals(kind) || "tlClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
                 @Override
@@ -728,6 +729,12 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.op(MainActivity.this, a, p, cancel);
                         } else if ("tlAdd".equals(kind)) {
                             res = Timeline.add(MainActivity.this, a, p, cancel);
+                        } else if ("roomTest".equals(kind)) {
+                            res = RoomTest.run(p, cancel);
+                        } else if ("diagnose".equals(kind)) {
+                            res = Workspace.diagnose(MainActivity.this, a, p, cancel);
+                        } else if ("clean".equals(kind)) {
+                            res = Workspace.clean(MainActivity.this, a, p, cancel);
                         } else if ("tlSep".equals(kind)) {
                             res = Separator.split(MainActivity.this, a, p, cancel);
                         } else if ("tlRender".equals(kind)) {

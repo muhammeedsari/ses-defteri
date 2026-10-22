@@ -124,3 +124,22 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tl-empty b{display:block;color:var(--ink);font-size:16px}
 .tl-empty p{margin:6px 0 0;font-size:14px}
 .tl-hint{font-size:12.5px;color:var(--muted);margin:8px 0 0}
+/* 1.7 recorder: purpose, room test, live warnings */
+.rec-purpose{justify-content:center;margin:10px auto 0;padding:0 4px;max-width:100%}
+.rec-sheet .chip{background:transparent;color:var(--stage-muted);border-color:var(--stage-line)}
+.rec-sheet .chip[aria-pressed="true"]{background:var(--stage-ink);color:var(--stage);border-color:var(--stage-ink)}
+.rec-sheet .chip:disabled{opacity:.5}
+.room{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--stage-muted);text-align:center}
+.room .tool{background:transparent;color:var(--stage-ink);border-color:var(--stage-line)}
+.room .good{color:var(--stage-mark)}
+.room .bad,.rec-warn.bad{color:var(--stage-rec)}
+.rec-warn{margin:0;font-size:14px;font-weight:600;color:var(--stage-ink);text-align:center;min-height:1.4em}
+/* 1.7 clean */
+.cl-list{display:grid;gap:12px;margin-top:14px}
+.cl-h{margin:16px 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.cl-play{display:flex;align-items:center;gap:10px;margin-top:14px}
+.cl-play input{flex:1}
+.cl-play .tc{font-size:13px;color:var(--muted);min-width:40px}
+.cl-changes{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.cl-changes li{display:grid;gap:2px;font-size:14px}
+.cl-changes span{color:var(--muted);font-size:13px}

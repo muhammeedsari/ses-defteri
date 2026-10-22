@@ -472,6 +472,25 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tl-empty b{display:block;color:var(--ink);font-size:16px}
 .tl-empty p{margin:6px 0 0;font-size:14px}
 .tl-hint{font-size:12.5px;color:var(--muted);margin:8px 0 0}
+/* 1.7 recorder: purpose, room test, live warnings */
+.rec-purpose{justify-content:center;margin:10px auto 0;padding:0 4px;max-width:100%}
+.rec-sheet .chip{background:transparent;color:var(--stage-muted);border-color:var(--stage-line)}
+.rec-sheet .chip[aria-pressed="true"]{background:var(--stage-ink);color:var(--stage);border-color:var(--stage-ink)}
+.rec-sheet .chip:disabled{opacity:.5}
+.room{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--stage-muted);text-align:center}
+.room .tool{background:transparent;color:var(--stage-ink);border-color:var(--stage-line)}
+.room .good{color:var(--stage-mark)}
+.room .bad,.rec-warn.bad{color:var(--stage-rec)}
+.rec-warn{margin:0;font-size:14px;font-weight:600;color:var(--stage-ink);text-align:center;min-height:1.4em}
+/* 1.7 clean */
+.cl-list{display:grid;gap:12px;margin-top:14px}
+.cl-h{margin:16px 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.cl-play{display:flex;align-items:center;gap:10px;margin-top:14px}
+.cl-play input{flex:1}
+.cl-play .tc{font-size:13px;color:var(--muted);min-width:40px}
+.cl-changes{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.cl-changes li{display:grid;gap:2px;font-size:14px}
+.cl-changes span{color:var(--muted);font-size:13px}
 </style>
 
 <div class="wrap" id="app">
@@ -561,11 +580,14 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       <span style="width:44px"></span>
     </div>
     <p class="mode-hint" id="modeHint"></p>
+    <div class="chips rec-purpose" id="purposeRow" role="radiogroup"></div>
+    <div class="room" id="roomBox"><button class="tool" id="roomBtn" type="button"></button><span id="roomRes"></span></div>
     <div class="stage">
       <div class="rec-state"><span class="led"></span><span id="recStateText"></span></div>
       <div class="timecode" id="recTime">0:00<small>,0</small></div>
       <div class="meter"><span id="recPeak">−∞ dB</span><span class="mk" id="recMarkCount" hidden></span></div>
       <canvas class="live" id="liveWave"></canvas>
+      <p class="rec-warn" id="recWarn" hidden></p>
     </div>
     <div class="rec-controls">
       <button class="ctl-s mk" id="recMark" type="button" disabled style="justify-self:end"><span class="rnd" id="recMarkIc"></span><span data-t="mark"></span></button>
@@ -616,6 +638,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       <button class="tool" id="plRepeat" type="button" aria-pressed="false" hidden></button>
       <button class="tool mark" id="plMark" type="button"></button>
       <button class="tool" id="plEdit2" type="button" hidden></button>
+      <button class="tool" id="plClean" type="button" hidden></button>
     </div>
     <section class="block">
       <h2><span data-t="bookmarks"></span> <span class="n" id="bmCount"></span></h2>
@@ -653,6 +676,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 <script src="i18n3.js"></script>
 <script src="i18n4.js"></script>
 <script src="i18n5.js"></script>
+<script src="i18n6.js"></script>
 <script>
 (() => {
 'use strict';
@@ -663,7 +687,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '1.6.1';
+const VERSION = '1.7';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -869,7 +893,7 @@ const recItems = () => visibleItems().filter(it => kindOf(it) === 'rec');
 const musicItems = () => visibleItems().filter(it => kindOf(it) === 'music');
 const META_KEYS = ['id', 'title', 'userTitle', 'created', 'duration', 'mime', 'size', 'categoryId', 'notes', 'bookmarks', 'fav', 'peaks',
   'source', 'mode', 'sample', 'fileName', 'kind', 'pos', 'src',
-  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm'];
+  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose'];
 function metaOf(it) { const o = {}; for (const k of META_KEYS) if (it[k] !== undefined) o[k] = it[k]; return o; }
 const saveRec = r => db.put('recordings', metaOf(r)).catch(() => toast(t('saveFail')));
 function fromNative(n, meta) {
@@ -1398,7 +1422,7 @@ function rowHTML(r) {
   if (bz) sub += `<span class="busy-pill" data-busy="${esc(r.id)}">${esc(busyLabel(bz))}</span>`;
   return `<article class="rec${S.cur === r.id && !audio.paused ? ' playing' : ''}">
     <button class="rec-open" type="button" data-open="${esc(r.id)}">
-      <span class="rec-top"><span class="rec-title">${esc(r.title)}</span>${r.sample ? `<span class="pill">${esc(t('sample'))}</span>` : ''}</span>
+      <span class="rec-top"><span class="rec-title">${esc(r.title)}</span>${r.sample ? `<span class="pill">${esc(t('sample'))}</span>` : ''}${r.cleaned ? `<span class="pill">${esc(t('clTag'))}</span>` : ''}</span>
       <span class="rec-sub">${sub}</span>${hitLine(r)}${miniWave(r)}
     </button>
     <button class="fav-btn${r.fav ? ' on' : ''}" type="button" data-fav="${esc(r.id)}" aria-pressed="${!!r.fav}" aria-label="${esc(t('fav'))}">${ic(r.fav ? 'starFill' : 'star')}</button>
@@ -1971,7 +1995,7 @@ function fillPlayer(r) {
   const q = NATIVE && audio.st.count > 1;
   $('#plPrev').hidden = !q; $('#plNext').hidden = !q; $('#plShuffle').hidden = !q; $('#plRepeat').hidden = !q;
   updateQueueTools();
-  $('#plEdit').hidden = !NATIVE || !r.src; $('#plEdit2').hidden = !NATIVE || !r.src;
+  $('#plEdit').hidden = !NATIVE || !r.src; $('#plEdit2').hidden = !NATIVE || !r.src; $('#plClean').hidden = !NATIVE || !r.src;
   $('#plWhere').textContent = NATIVE && r.src ? t('where', { p: `${r.folder || ''}${r.name || ''}` }) : '';
   renderBookmarks(); setPlayIcons(); updateTimes();
   renderText(r); loadExtras(r);
@@ -2059,6 +2083,7 @@ $('#plSpeed').addEventListener('click', () => {
 $('#plMark').addEventListener('click', addBookmarkNow);
 $('#plEdit').addEventListener('click', () => openWorkspace(curRec()));
 $('#plEdit2').addEventListener('click', () => openWorkspace(curRec()));
+$('#plClean').addEventListener('click', () => { const r = curRec(); if (r) openClean(r); });
 document.addEventListener('click', e => {
   const s = e.target.closest('[data-seek]'); if (s && (s.closest('#player'))) { seek(parseFloat(s.dataset.seek)); return; }
   const ed = e.target.closest('[data-edit]'); if (ed && ed.closest('#player')) editBookmark(ed.dataset.edit);
@@ -3002,6 +3027,161 @@ function wsSpeedDialog(done) {
 }
 
 
+/* ---------- "Clean": diagnosis + fix everything in one tap, before/after, what changed ---------- */
+const CL = { r: null, diag: null, res: null, job: null, fixes: null, strength: ls.get('clStrength', 1), purpose: 'youtube', cmp: 'after', play: false, pos: 0, raf: 0 };
+const CL_ORDER = ['channels', 'trim', 'hum', 'clicks', 'plosive', 'denoise', 'deess', 'eq', 'level', 'loud'];
+const TARGET_LUFS = { youtube: -14, podcast: -16, whatsapp: -16 };
+function clStopPlay() {
+  if (!CL.play) return;
+  try { const p = AND.tlPos(); if (p >= 0) CL.pos = p; AND.tlStop(); } catch (e) {}
+  CL.play = false; cancelAnimationFrame(CL.raf);
+}
+function clClose() { $('#modalCard').onchange = null; clStopPlay(); if (CL.job) { try { AND.cancelJob(CL.job); } catch (e) {} } CL.r = null; CL.job = null; }
+async function openClean(r) {
+  if (!NATIVE || !r || !r.src) return;
+  tlStop(); if (!audio.paused) audio.pause();
+  Object.assign(CL, { r, diag: null, res: null, fixes: null, cmp: 'after', pos: 0, play: false, purpose: r.purpose || (r.mode === 'music' ? 'music' : ls.get('purpose', 'youtube')) });
+  clCard(`<h3>${esc(t('clClean'))}</h3><p class="mtext">${esc(t('clScan'))}</p><div class="prog"><i id="clBar"></i></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-cl="x">${esc(t('cancel'))}</button></div>`, true);
+  try { CL.diag = await clJob('diagnose', { src: r.src }); } catch (e) { if (CL.r) { toast(errText(e), 5000); closeModal(); } return; }
+  if (CL.r !== r) return;
+  clPlan();
+}
+function clCard(html, fresh) {
+  const card = fresh ? openModal(html, clClose) : $('#modalCard');
+  if (!fresh) card.innerHTML = html;
+  return card;
+}
+function clJob(kind, args) {
+  const p = runJob(kind, args, f => { const b = $('#clBar'); if (b) b.style.width = Math.round(f * 100) + '%'; });
+  CL.job = p.jobId;
+  return p.finally(() => { CL.job = null; });
+}
+/** what the diagnosis found, as a list of fixes (each with a one-line reason) */
+function clIssues() {
+  const d = CL.diag, music = CL.purpose === 'music', n = nf1.format, out = [];
+  const tgt = TARGET_LUFS[purposeTarget(CL.purpose)];
+  if (d.channel) out.push(['channels', t({ identical: 'chIdentical', 'left-silent': 'chSilent', 'right-silent': 'chSilent', 'left-broken': 'chBroken', 'right-broken': 'chBroken', inverted: 'chInverted' }[d.channel] || 'chMono')]);
+  if (d.head > 1 || d.tail > 1.5) out.push(['trim', t('dgTrim', { a: n(d.head), b: n(d.tail) })]);
+  if (d.hum > 6) out.push(['hum', t('dgHum', { hz: d.humHz })]);
+  if (d.clicks >= 3) out.push(['clicks', t('dgClicks', { n: d.clicks })]);
+  if (!music && d.plosive >= 0.2) out.push(['plosive', t('dgPlos', { s: n(d.plosive) })]);
+  if (!music && d.snr < 35) out.push(['denoise', t('dgNoise', { n: String(d.noise).replace('-', '−') })]);
+  if (!music && d.sib >= 1) out.push(['deess', t('dgSib', { s: n(d.sib) })]);
+  if (!music && d.eq >= 2) out.push(['eq', t('dgEq', { m: n(d.eq) })]);
+  if (!music && d.speech && d.lra > 8) out.push(['level', t('dgLevel', { l: n(d.lra) })]);
+  out.push(['loud', t('dgLoud', { l: n(d.lufs).replace('-', '−'), t: String(tgt).replace('-', '−') })]);
+  return out;
+}
+function clPlan() {
+  const d = CL.diag, issues = clIssues(), tgt = TARGET_LUFS[purposeTarget(CL.purpose)];
+  if (!CL.fixes) CL.fixes = new Set(issues.filter(([k]) => k !== 'loud' || Math.abs(d.lufs - tgt) > 1).map(([k]) => k));
+  const real = issues.filter(([k]) => k !== 'loud').length;
+  const card = clCard(`<h3>${esc(t('clReport'))}</h3>
+    <p class="mtext">${esc(real ? t('clFound', { n: real }) : t('clFine'))}${d.clipped > 50 ? ' ' + esc(t('dgClip')) : ''}</p>
+    <div class="modal-body">
+      <div class="set-sub"><span>${esc(t('clPurpose'))}</span><select id="clPu" class="sel-full">${PURPOSES.map(([k]) => `<option value="${k}"${CL.purpose === k ? ' selected' : ''}>${esc(t('pu_' + k))}</option>`).join('')}</select></div>
+      <div class="cl-list">${issues.map(([k, why]) => `<label class="switch"><input type="checkbox" data-fix="${k}"${CL.fixes.has(k) ? ' checked' : ''}><span>${esc(t('op_' + k))}<small>${esc(why)}</small></span></label>`).join('')}</div>
+      <h4 class="cl-h">${esc(t('clStrength'))}</h4>
+      <div class="seg2" role="radiogroup" id="clStr">${[[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([v, k]) => `<button type="button" role="radio" data-str="${v}" aria-checked="${CL.strength === v}">${esc(t(k))}</button>`).join('')}</div>
+    </div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-cl="x">${esc(t('cancel'))}</button>
+      <button class="btn primary" type="button" data-cl="go"${CL.fixes.size ? '' : ' disabled'}>${esc(t('clFixAll', { n: CL.fixes.size }))}</button></div>`);
+  card.onchange = e => {
+    if (e.target.id === 'clPu') { CL.purpose = e.target.value; CL.fixes = null; clPlan(); return; }
+    const f = e.target.dataset.fix; if (!f) return;
+    if (e.target.checked) CL.fixes.add(f); else CL.fixes.delete(f);
+    const go = card.querySelector('[data-cl="go"]'); go.disabled = !CL.fixes.size; go.textContent = t('clFixAll', { n: CL.fixes.size });
+  };
+}
+async function clRun() {
+  const r = CL.r, fixes = CL_ORDER.filter(k => CL.fixes.has(k));
+  clCard(`<h3>${esc(t('clClean'))}</h3><p class="mtext">${esc(t('clWorking'))}</p><div class="prog"><i id="clBar"></i></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-cl="x">${esc(t('cancel'))}</button></div>`);
+  try {
+    CL.res = await clJob('clean', Object.assign({ path: CL.diag.path, fixes, strength: CL.strength, target: purposeTarget(CL.purpose) },
+      fixes.includes('eq') && S.learnVoice ? { learned: await learnedProfile() } : {}));
+  } catch (e) { if (CL.r) { toast(errText(e), 5000); clPlan(); } return; }
+  if (CL.r !== r) return;
+  CL.res.fixes = fixes; CL.cmp = 'after'; CL.pos = 0;
+  clDone();
+}
+function clDone() {
+  const d = CL.diag, res = CL.res, n = nf1.format;
+  const lines = res.fixes.map(k => { const st = Object.assign({}, res, { report: (res.reports || {})[k] || {} }); return `<li><b>${esc(t('op_' + k))}</b><span>${esc(wsReport(k, st) || t('wsDone'))}</span></li>`; }).join('');
+  clCard(`<h3>${esc(t('clDone'))}</h3>
+    <div class="modal-body">
+      <div class="seg2" role="radiogroup" id="clCmp">${['before', 'after'].map(k => `<button type="button" role="radio" data-cmp="${k}" aria-checked="${CL.cmp === k}">${esc(t('cl_' + k))}</button>`).join('')}</div>
+      <div class="cl-play"><button class="ctl" type="button" data-cl="play" id="clPlay" style="width:46px;height:46px">${ic(CL.play ? 'pause' : 'play')}</button>
+        <input type="range" id="clPos" min="0" max="${(res.dur / 1000).toFixed(2)}" step="0.05" value="${CL.pos}"><span class="tc" id="clTime">${fmt(CL.pos)}</span></div>
+      <p class="mtext">${esc(t('clLevels', { a: n(d.lufs).replace('-', '−'), b: n(res.lufs != null ? res.lufs : d.lufs).replace('-', '−'), d: fmt(res.dur / 1000) }))}</p>
+      <h4 class="cl-h">${esc(t('clChanged'))}</h4><ul class="cl-changes">${lines}</ul>
+      <p class="hint">${esc(t('clOrigSafe'))}</p>
+    </div>
+    <div class="modal-actions"><button class="btn" type="button" data-cl="back">${esc(t('clBack'))}</button><span class="spacer"></span>
+      <button class="btn" type="button" data-cl="x">${esc(t('cancel'))}</button><button class="btn primary" type="button" data-cl="save">${esc(t('save'))}</button></div>`);
+  const pos = $('#clPos');
+  pos.oninput = () => { CL.pos = +pos.value; $('#clTime').textContent = fmt(CL.pos); if (CL.play) { clStopPlay(); clPlay(); } };
+}
+function clMix() {
+  const d = CL.diag, res = CL.res, ts = res.trimStart || 0;
+  return [{ path: d.path, at: 0, in: ts, len: Math.max(0, d.dur / 1000 - ts), g: CL.cmp === 'before' ? 1 : 0 },
+    { path: res.path, at: 0, in: 0, len: res.dur / 1000, g: CL.cmp === 'after' ? 1 : 0 }];
+}
+function clPlay() {
+  if (CL.play) { clStopPlay(); clPlayIcon(); return; }
+  if (CL.pos >= CL.res.dur / 1000 - 0.1) CL.pos = 0;
+  const err = AND.tlPlay(JSON.stringify(clMix()), CL.pos);
+  if (err) { toast(err, 4000); return; }
+  CL.play = true; clPlayIcon();
+  const f = () => {
+    if (!CL.play) return;
+    const p = AND.tlPos();
+    if (p < 0) { CL.play = false; clPlayIcon(); return; }
+    CL.pos = p;
+    const el = $('#clPos'); if (el) el.value = p;
+    const tt = $('#clTime'); if (tt) tt.textContent = fmt(p);
+    CL.raf = requestAnimationFrame(f);
+  };
+  CL.raf = requestAnimationFrame(f);
+}
+function clPlayIcon() { const b = $('#clPlay'); if (b) b.innerHTML = ic(CL.play ? 'pause' : 'play'); }
+async function clSave() {
+  const r = CL.r, res = CL.res; if (!r || !res) return;
+  clStopPlay();
+  const name = t('clName', { t: r.title });
+  clCard(`<h3>${esc(t('clClean'))}</h3><p class="mtext">${esc(t('op_save'))}</p><div class="prog"><i id="clBar"></i></div>`);
+  try {
+    const sv = await clJob('wsSave', { path: res.path, name: safeName(name), format: 'm4a' });
+    const it = fromNative(sv.item, null);
+    Object.assign(it, { title: name, userTitle: true, created: Date.now(), notes: r.notes || '', categoryId: r.categoryId || null, kind: 'rec', source: 'edit',
+      fav: false, bookmarks: [], cleaned: true, cleanOf: r.id, purpose: CL.purpose });
+    S.items.set(it.id, it); await saveRec(it);
+    closeModal(); render();
+    toast(t('clSaved'), 3000);
+  } catch (e) { toast(errText(e), 5000); clDone(); }
+}
+$('#modalCard').addEventListener('click', e => {
+  if (!CL.r) return;
+  const cmp = e.target.closest('[data-cmp]');
+  if (cmp) {
+    CL.cmp = cmp.dataset.cmp;
+    document.querySelectorAll('#clCmp [data-cmp]').forEach(b => b.setAttribute('aria-checked', b === cmp));
+    if (CL.play) try { AND.tlUpdate(JSON.stringify(clMix())); } catch (x) {}
+    return;
+  }
+  const st = e.target.closest('[data-str]');
+  if (st) { CL.strength = +st.dataset.str; ls.set('clStrength', CL.strength); document.querySelectorAll('#clStr [data-str]').forEach(b => b.setAttribute('aria-checked', b === st)); return; }
+  const b = e.target.closest('[data-cl]'); if (!b || b.disabled) return;
+  const k = b.dataset.cl;
+  if (k === 'x') closeModal();
+  else if (k === 'go') clRun();
+  else if (k === 'play') clPlay();
+  else if (k === 'back') { clStopPlay(); clPlan(); }
+  else if (k === 'save') clSave();
+});
+
+
 /* ---------- recorder ---------- */
 const R = { state: 'idle', mode: ls.get('mode', 'voice'), stream: null, ctx: null, an: null, mr: null, mime: '', chunks: [], idx: 0,
   draftId: null, t0: 0, acc: 0, started: 0, levels: [], marks: [], curMax: 0, raf: 0, wake: null, lastSave: 0, peakDb: -Infinity, peakAt: 0, cancel: false, endEl: 0, native: false };
@@ -3019,7 +3199,9 @@ function pickMime() {
   return '';
 }
 function openRecorder() {
-  R.state = 'idle'; R.levels = []; R.marks = []; R.acc = 0;
+  R.state = 'idle'; R.levels = []; R.marks = []; R.acc = 0; R.win = []; R.warnClip = 0; R.callPaused = false;
+  if (!R.purpose) R.purpose = ls.get('purpose', R.mode === 'music' ? 'music' : 'youtube');
+  $('#roomRes').textContent = ''; $('#roomBtn').innerHTML = ic('wave') + esc(t('roomBtn'));
   setMode(R.mode); updateRecUI(); showRecTime(0); $('#recPeak').textContent = '−∞ dB';
   $('#recFoot').textContent = t(NATIVE ? 'recFootN' : 'recFootW');
   openOverlay('rec'); updateMini();
@@ -3085,6 +3267,7 @@ function pauseRec() {
 }
 function resumeRec() {
   if (R.state !== 'paused') return;
+  R.callPaused = false; showRecWarn(null);
   if (R.native) { try { AND.recResume(); } catch (e) {} } else { try { R.mr.resume(); } catch (e) {} }
   R.t0 = performance.now(); R.state = 'rec'; updateRecUI();
 }
@@ -3109,12 +3292,13 @@ async function finishNative() {
   it.autoTitle = true;
   S.items.set(it.id, it); await saveRec(it);
   await storePeaks(it.id, toBytes(R.levels), LR); storedPeakIds.add(it.id);
+  it.purpose = R.purpose; await saveRec(it);
   R.state = 'idle'; R.levels = [];
   if (S.tab === 'music') { S.tab = 'rec'; ls.set('tab', 'rec'); }
   render();
-  await openPlayer(it.id, { replace: 'rec' });
-  toast(t('recSaved'));
-  updateRecUI();
+  closeOverlay('rec'); updateRecUI();
+  const v = await chooseBox(t('recSaved'), t('clAfterD', { d: fmt(it.duration || 0) }), [{ value: 'clean', label: t('clClean'), desc: t('clCleanD') }, { value: 'exit', label: t('clExit'), desc: t('clExitD') }]);
+  if (v === 'clean') openClean(it);
 }
 function releaseMic() {
   cancelAnimationFrame(R.raf);
@@ -3185,6 +3369,8 @@ function loopRec() {
       if (!R.native && performance.now() - R.lastSave > 10000) saveDraft();
     }
     showRecTime(el);
+    if (R.state === 'rec') recWarnCheck(m);
+    if (R.native && frame % 20 === 0) recCallSync();
     const lvl = m > 0 ? 20 * Math.log10(m) : -Infinity, now = performance.now();
     if (lvl > R.peakDb || now - R.peakAt > 900) { R.peakDb = lvl; R.peakAt = now; }
     if (++frame % 4 === 0) {
@@ -3194,6 +3380,61 @@ function loopRec() {
   };
   tick();
 }
+/* live warnings: clipping, too close to the mic, too quiet; pause during calls */
+function recWarnCheck(m) {
+  const now = performance.now(), w = R.win || (R.win = []);
+  w.push([now, m]); while (w.length && now - w[0][0] > 5000) w.shift();
+  if (m >= 0.99) R.warnClip = now;
+  let k = null;
+  if (now - (R.warnClip || -1e9) < 2500) k = 'wClip';
+  else if (w.length > 30 && now - w[0][0] > 1800) {
+    const recent = w.filter(x => now - x[0] < 2000), hot = recent.filter(x => x[1] > 0.7).length;
+    const mx = w.reduce((a, x) => Math.max(a, x[1]), 0);
+    if (hot / recent.length > 0.3) k = 'wClose';
+    else if (elapsed() > 4 && now - w[0][0] > 4500 && mx > 0.004 && mx < 0.04) k = 'wQuiet';
+  }
+  showRecWarn(k);
+}
+function showRecWarn(k) {
+  if (R.warnK === k) return;
+  R.warnK = k;
+  const el = $('#recWarn'); el.hidden = !k; el.className = 'rec-warn' + (k === 'wClip' || k === 'wClose' ? ' bad' : '');
+  if (k) el.textContent = t(k);
+}
+function recCallSync() {
+  let i = {}; try { i = JSON.parse(AND.recInfo()); } catch (e) { return; }
+  if (i.call && R.state === 'rec') { R.acc = elapsed(); R.state = 'paused'; R.callPaused = true; updateRecUI(); showRecWarn('wCall'); }
+  else if (R.callPaused && i.state === 'rec' && R.state === 'paused') { R.callPaused = false; R.t0 = performance.now(); R.state = 'rec'; updateRecUI(); showRecWarn(null); }
+}
+
+/* purpose of the recording: sets the mode and what "Clean" aims for */
+const PURPOSES = [['youtube', 'youtube'], ['podcast', 'podcast'], ['meeting', 'podcast'], ['note', 'podcast'], ['music', 'youtube']];
+const purposeTarget = p => (PURPOSES.find(x => x[0] === p) || PURPOSES[0])[1];
+function renderPurpose() {
+  const row = $('#purposeRow'); if (!row) return;
+  row.innerHTML = PURPOSES.map(([k]) => `<button class="chip" type="button" role="radio" data-purpose="${k}" aria-pressed="${R.purpose === k}"${R.state !== 'idle' ? ' disabled' : ''}>${esc(t('pu_' + k))}</button>`).join('');
+}
+$('#purposeRow').addEventListener('click', e => {
+  const b = e.target.closest('[data-purpose]'); if (!b || R.state !== 'idle') return;
+  R.purpose = b.dataset.purpose; ls.set('purpose', R.purpose);
+  setMode(R.purpose === 'music' ? 'music' : 'voice');
+  renderPurpose();
+});
+$('#roomBtn').addEventListener('click', async () => {
+  if (R.state !== 'idle' || R.roomBusy) return;
+  const res = $('#roomRes');
+  if (!CAPS.mic && !(await askPerm('mic'))) { res.textContent = t('micPerm'); return; }
+  CAPS.mic = true;
+  R.roomBusy = true; $('#roomBtn').disabled = true; res.className = ''; res.textContent = t('roomBusy');
+  try {
+    const r = await runJob('roomTest', {}, f => { res.textContent = t('roomBusy') + ' ' + Math.round(f * 100) + '%'; });
+    const n = r.noise, k = n < -60 ? 'roomQuiet' : n < -48 ? 'roomSome' : 'roomLoud';
+    res.className = k === 'roomLoud' ? 'bad' : k === 'roomQuiet' ? 'good' : '';
+    res.textContent = t(k, { n: String(n).replace('-', '−') });
+  } catch (e) { res.textContent = errText(e); }
+  R.roomBusy = false; $('#roomBtn').disabled = false;
+});
+
 function drawLive() {
   const cv = $('#liveWave'); if ($('#recSheet').hidden) return;
   const c = sizeCanvas(cv); if (!c) return;
@@ -3222,6 +3463,8 @@ function updateRecUI() {
   main.disabled = R.state === 'starting' || R.state === 'stopping';
   $('#recMark').disabled = !active; $('#recDone').disabled = !active;
   $('#modeSeg').querySelectorAll('button').forEach(b => { b.disabled = R.state !== 'idle'; });
+  $('#roomBox').hidden = R.state !== 'idle' || !NATIVE; renderPurpose();
+  if (R.state === 'idle' || R.state === 'stopping') showRecWarn(null);
   const mc = $('#recMarkCount');
   mc.hidden = !R.marks.length; mc.innerHTML = R.marks.length ? `${ic('flag')}${esc(t('nMarks', { n: R.marks.length }))}` : '';
 }
@@ -3442,7 +3685,7 @@ async function boot() {
   $('#recClose').innerHTML = ic('close'); $('#recMarkIc').innerHTML = ic('flag'); $('#recDoneIc').innerHTML = ic('check', 2.2);
   $('#plBack').innerHTML = ic('back', 2); $('#collBack').innerHTML = ic('back', 2); $('#plB10').innerHTML = ic('b10'); $('#plF10').innerHTML = ic('f10');
   $('#plPrev').innerHTML = ic('prev'); $('#plNext').innerHTML = ic('next'); $('#miniNext').innerHTML = ic('next');
-  $('#plMark').innerHTML = ic('flag') + esc(t('mark')); $('#plEdit').innerHTML = ic('scissors'); $('#plEdit2').innerHTML = ic('scissors') + esc(t('edit'));
+  $('#plMark').innerHTML = ic('flag') + esc(t('mark')); $('#plEdit').innerHTML = ic('scissors'); $('#plEdit2').innerHTML = ic('scissors') + esc(t('edit')); $('#plClean').innerHTML = ic('spark') + esc(t('clClean'));
   $('#plCopy').innerHTML = ic('copy') + esc(t('copyNotes'));
   $('#plShare').innerHTML = ic('share') + esc(t(AND || (!IN_FRAME && navigator.canShare) ? 'share' : 'download'));
   $('#plDelete').innerHTML = ic('trash') + esc(t('delete'));

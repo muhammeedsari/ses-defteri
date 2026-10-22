@@ -132,7 +132,43 @@ final class Recorder {
         startService(c, false);
     }
 
+    /* ---------- pause during phone calls (also VoIP calls), resume afterwards ---------- */
+    private static boolean auto;
+    private static android.os.Handler calls;
+    private static Runnable poll;
+
+    private static void watchCalls(final Context c, boolean on) {
+        if (calls == null) calls = new android.os.Handler(android.os.Looper.getMainLooper());
+        if (poll != null) calls.removeCallbacks(poll);
+        poll = null;
+        auto = false;
+        if (!on) return;
+        final AudioManager am = (AudioManager) c.getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
+        if (am == null) return;
+        poll = new Runnable() {
+            @Override public void run() {
+                int m = am.getMode();
+                boolean call = m == AudioManager.MODE_IN_CALL || m == AudioManager.MODE_IN_COMMUNICATION || m == AudioManager.MODE_RINGTONE;
+                synchronized (Recorder.class) {
+                    if (mr == null) return;
+                    if (call && "rec".equals(state)) { try { mr.pause(); state = "paused"; auto = true; } catch (Exception ignored) { } }
+                    else if (!call && auto && "paused".equals(state)) { try { mr.resume(); state = "rec"; } catch (Exception ignored) { } auto = false; }
+                }
+                if (poll == this) calls.postDelayed(this, 700);
+            }
+        };
+        calls.postDelayed(poll, 700);
+    }
+
+    /** {"state": rec|paused|idle, "call": paused because of a call} */
+    static synchronized String info() {
+        return "{\"state\":\"" + state + "\",\"call\":" + auto + "}";
+    }
+
+    static synchronized boolean resumeManual() { auto = false; return resume(); }
+
     private static void startService(Context c, boolean on) {
+        watchCalls(c, on);
         Intent svc = new Intent(c, RecordService.class);
         try {
             if (on) {

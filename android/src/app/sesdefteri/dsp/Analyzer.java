@@ -173,6 +173,7 @@ public final class Analyzer extends Node {
         Analysis a = new Analysis();
         a.fs = fs; a.inCh = inCh; a.samples = samples; a.frameHop = hop; a.fftSize = N;
         a.peak = peak;
+        a.clipped = clipL + clipR;
         // ---- channels ----
         int view = 0;
         a.channelMode = Stages.ChannelMap.KEEP;
@@ -325,7 +326,7 @@ public final class Analyzer extends Node {
         public long samples, activeStart, activeEnd, speechFrames;
         public double peak, leftDb, rightDb, corr, flatL, flatR;
         public double lra, inLufs, sLevel90;
-        public long sFrames;
+        public long sFrames, clipped;
         public double noiseDb, speechDb, snr, speechThrDb, speechMeanDb, speechStdDb, sibP98, sibP50;
         public double[] noisePower, ltasPower, humRatioDb;
         public float[] onset;
