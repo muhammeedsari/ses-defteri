@@ -177,3 +177,8 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .song-more .ic{width:20px;height:20px}
 .about-btns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px}
 .priv .mtext{margin:0 0 10px}
+.lang-first{position:fixed;inset:0;z-index:999;background:var(--bg);display:grid;place-items:center;padding:24px 16px;overflow:auto}
+.lang-card{width:100%;max-width:420px;display:grid;gap:16px;text-align:center}
+.lang-card h2{margin:0;font-size:26px}
+.lang-card p{margin:0;color:var(--muted)}
+.lang-card .langs{justify-content:center}

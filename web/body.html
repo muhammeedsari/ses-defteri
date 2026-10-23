@@ -204,7 +204,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '2.3';
+const VERSION = '2.3.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -222,7 +222,7 @@ const LOCALES = { tr: 'tr-TR', en: 'en-GB', de: 'de-DE', fr: 'fr-FR', es: 'es-ES
 const LANG = (() => {
   let l = ls.get('lang', '');
   if (!l && AND && AND.getLang) { try { l = AND.getLang(); } catch (e) {} }
-  if (!LOCALES[l]) { const nav = (navigator.language || 'tr').slice(0, 2).toLowerCase(); l = LOCALES[nav] ? nav : 'tr'; }
+  if (!LOCALES[l]) l = 'en';   // English until a language is picked on first start
   return l;
 })();
 const LOC = LOCALES[LANG];
@@ -891,7 +891,7 @@ function openSettings() {
   card.addEventListener('click', e => {
     const lb = e.target.closest('[data-lang]');
     if (lb && lb.dataset.lang !== LANG) {
-      ls.set('lang', lb.dataset.lang);
+      ls.set('lang', lb.dataset.lang); ls.set('textLang', lb.dataset.lang);   // speech-to-text follows the app language
       if (AND && AND.setLang) { try { AND.setLang(lb.dataset.lang); } catch (x) {} }
       card.querySelectorAll('[data-lang]').forEach(b => b.setAttribute('aria-checked', b === lb));
       setTimeout(() => location.reload(), 150);
@@ -4110,7 +4110,33 @@ function openFeedback() {
 
 /* ---------- boot ---------- */
 let booted = false;
+/* first start: pick the app language (English preselected); speech-to-text uses the same language */
+function needLang() {
+  if (ls.get('lang', '')) return false;
+  let l = ''; if (AND && AND.getLang) { try { l = AND.getLang(); } catch (e) {} }
+  if (LOCALES[l]) { ls.set('lang', l); return false; }
+  return true;
+}
+function showLangPick() {
+  const d = document.createElement('div');
+  d.className = 'lang-first';
+  d.innerHTML = `<div class="lang-card"><h2>Ses Defteri</h2><p>Choose your language · Dilini seç</p>
+    <div class="langs" role="radiogroup">${LANGS.map(([c, n]) => `<button type="button" role="radio" data-lang="${c}" aria-checked="${c === 'en'}" lang="${c}">${esc(n)}</button>`).join('')}</div>
+    <button class="btn primary" type="button" id="langGo">Continue · Devam</button></div>`;
+  document.body.appendChild(d);
+  let pick = 'en';
+  d.addEventListener('click', e => {
+    const b = e.target.closest('[data-lang]');
+    if (b) { pick = b.dataset.lang; d.querySelectorAll('[data-lang]').forEach(x => x.setAttribute('aria-checked', x === b)); return; }
+    if (e.target.closest('#langGo')) {
+      ls.set('lang', pick); ls.set('textLang', pick);
+      if (AND && AND.setLang) { try { AND.setLang(pick); } catch (x) {} }
+      location.reload();
+    }
+  });
+}
 async function boot() {
+  if (needLang()) { showLangPick(); return; }
   applyStatic();
   $('#importIc').innerHTML = ic('import'); $('#searchIc').innerHTML = ic('search'); $('#setBtn').innerHTML = ic('gear');
   $('#qClear').innerHTML = ic('close'); $('#micNoteX').innerHTML = ic('close'); $('#libNoteX').innerHTML = ic('close');
