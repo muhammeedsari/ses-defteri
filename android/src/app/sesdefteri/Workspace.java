@@ -150,6 +150,9 @@ final class Workspace {
         try {
             if ("insert".equals(op)) return insert(c, in, inf, out, a, p, cancel);
             if ("aidenoise".equals(op)) return aiDenoise(c, in, inf, p, cancel);
+            if ("pauses".equals(op)) return pauses(in, inf, out, a, p, cancel);
+            if ("breaths".equals(op)) return breaths(in, inf, out, str, p, cancel);
+            if ("declip".equals(op)) return declip(in, inf, out, p, cancel);
             Node head;
             Meter m;
             double[] slice = { 0.3, 1 };
@@ -276,6 +279,14 @@ final class Workspace {
                     slice = new double[] { 0.6, 1 };
                     break;
                 }
+                case "eqpreset": {
+                    double[] g = Studio.doubles(a.getJSONArray("gains"));
+                    m = new Meter(ch, fs);
+                    head = Stages.Filters.eq5(ch, fs, g);
+                    head.to(new Limiter(ch, fs, -1.0, 0)).to(m);   // boosts must not clip
+                    slice = new double[] { 0, 1 };
+                    break;
+                }
                 case "speed": {
                     double sp = Math.max(0.5, Math.min(2, a.optDouble("speed", 1))), st = Math.max(-12, Math.min(12, a.optDouble("semitones", 0)));
                     m = new Meter(ch, fs);
@@ -314,6 +325,143 @@ final class Workspace {
             out.delete();
             throw e;
         }
+    }
+
+    /* ---------- 1.9: shorter pauses, quieter breaths, repaired clipping ---------- */
+
+    /** pauses longer than max become `keep` long (the middle is cut, the edges stay so speech keeps its rhythm) */
+    static JSONObject pauses(File in, Info inf, File out, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        double max = Math.max(0.3, a.optDouble("max", 0.8)), keep = Math.min(max, Math.max(0.15, a.optDouble("keep", 0.45)));
+        Speech.Scan sc = Speech.scan(in, inf, part(p, 0, 0.4), cancel);
+        java.util.ArrayList<int[]> l = Speech.pauses(sc, max);
+        JSONObject rep = new JSONObject();
+        if (l.isEmpty()) { rep.put("none", true); return same(a, rep); }
+        JSONArray ranges = new JSONArray(), cuts = new JSONArray();
+        double pos = 0, outT = 0, saved = 0, dur = inf.frames / (double) inf.rate;
+        for (int[] r : l) {
+            double t0 = r[0] * Speech.FR + keep / 2, t1 = r[1] * Speech.FR - keep / 2;
+            if (t1 - t0 < 0.05) continue;
+            ranges.put(new JSONArray().put(pos * 1000).put(t0 * 1000));
+            outT += t0 - pos;
+            cuts.put(new JSONArray().put(Math.round(outT * 1000) / 1000.0).put(Math.round((t1 - t0) * 1000) / 1000.0));
+            saved += t1 - t0;
+            pos = t1;
+        }
+        ranges.put(new JSONArray().put(pos * 1000).put(dur * 1000 + 1000));
+        Meter m = new Meter(inf.ch, inf.rate);
+        Keep k = new Keep(ranges, inf.rate);
+        k.to(m).to(new Studio.WavNode(out, inf.rate));
+        wav(in, inf, part(p, 0.4, 1), new double[] { 0, 1 }, cancel).run(k);
+        rep.put("count", cuts.length());
+        rep.put("saved", Math.round(saved * 10) / 10.0);
+        rep.put("cuts", cuts);
+        return done(out, m, rep);
+    }
+
+    /** turns the found regions down by `db`, with short ramps */
+    static final class GainRegions extends Node {
+        final long[] a, b;
+        final double g;
+        final int ramp;
+        long pos;
+        int i;
+        GainRegions(java.util.ArrayList<int[]> l, int hop, double db, int ramp) {
+            a = new long[l.size()]; b = new long[l.size()];
+            for (int k = 0; k < a.length; k++) { a[k] = (long) l.get(k)[0] * hop; b[k] = (long) l.get(k)[1] * hop; }
+            g = Math.pow(10, db / 20); this.ramp = ramp;
+        }
+        @Override public void push(float[][] x, int n) throws Exception {
+            for (int k = 0; k < n; k++, pos++) {
+                while (i < a.length && pos >= b[i] + ramp) i++;
+                if (i >= a.length || pos < a[i] - ramp) continue;
+                double d = Math.min(Math.min(pos - (a[i] - ramp), (b[i] + ramp) - pos), ramp) / (double) ramp;   // 0 at the ramp ends, 1 inside
+                float gg = (float) (1 - (1 - g) * Math.max(0, Math.min(1, d)));
+                for (float[] c : x) c[k] *= gg;
+            }
+            next.push(x, n);
+        }
+    }
+
+    static JSONObject breaths(File in, Info inf, File out, double str, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        Speech.Scan sc = Speech.scan(in, inf, part(p, 0, 0.4), cancel);
+        java.util.ArrayList<int[]> l = Speech.breaths(sc);
+        JSONObject rep = new JSONObject();
+        if (l.isEmpty()) { rep.put("none", true); return same(null, rep); }
+        Meter m = new Meter(inf.ch, inf.rate);
+        GainRegions gr = new GainRegions(l, sc.hop, -(4 + 6 * str), (int) (inf.rate * 0.015));
+        gr.to(m).to(new Studio.WavNode(out, inf.rate));
+        wav(in, inf, part(p, 0.4, 1), new double[] { 0, 1 }, cancel).run(gr);
+        rep.put("count", l.size());
+        return done(out, m, rep);
+    }
+
+    /**
+     * Clipped runs (|x| ≥ 0.985, up to 3 ms) are redrawn with a cubic through two good samples on each side,
+     * then the whole file is scaled so the rebuilt peaks fit.
+     */
+    static JSONObject declip(File in, Info inf, File out, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        final int ch = inf.ch, B = 1 << 16, M = 256;
+        final float CL = 0.985f;
+        final int maxRun = Math.max(8, inf.rate * 3 / 1000);
+        RandomAccessFile r = new RandomAccessFile(in, "r");
+        int[] runs = new int[1];
+        double peak = 0;
+        Meter m = null;
+        try {
+            for (int pass = 0; pass < 2; pass++) {
+                double gain = pass == 0 ? 1 : Math.min(1, 0.97 / Math.max(1e-6, peak));
+                Node sink = null;
+                if (pass == 1) { m = new Meter(ch, inf.rate); m.to(new Studio.WavNode(out, inf.rate)); sink = m; }
+                float[][] x = new float[ch][B + 2 * M], o = new float[ch][B];
+                byte[] buf = new byte[(B + 2 * M) * ch * 2];
+                for (long s = 0; s < inf.frames; s += B) {
+                    if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
+                    long A = Math.max(0, s - M), E = Math.min(inf.frames, s + B + M);
+                    int n = (int) (E - A), off = (int) (s - A), keep = (int) Math.min(B, inf.frames - s);
+                    r.seek(44 + A * ch * 2);
+                    r.readFully(buf, 0, n * ch * 2);
+                    for (int i = 0, q = 0; i < n; i++) for (int c = 0; c < ch; c++, q += 2) x[c][i] = (short) ((buf[q] & 0xff) | (buf[q + 1] << 8)) / 32768f;
+                    for (int c = 0; c < ch; c++) {
+                        float[] v = x[c];
+                        for (int i = 2; i < n - 2; i++) {
+                            if (Math.abs(v[i]) < CL) continue;
+                            int e = i;
+                            while (e + 1 < n - 2 && Math.abs(v[e + 1]) >= CL && Math.signum(v[e + 1]) == Math.signum(v[i])) e++;
+                            int len = e - i + 1;
+                            if (len >= 2 && len <= maxRun && i - 2 >= 0 && e + 2 < n) {
+                                // cubic through (−2, −1) on the left and (len, len+1) on the right, in local coordinates
+                                double[] tx = { -2, -1, len, len + 1 }, ty = { v[i - 2], v[i - 1], v[e + 1], v[e + 2] };
+                                for (int k = 0; k < len; k++) {
+                                    double t = k, y = 0;
+                                    for (int a2 = 0; a2 < 4; a2++) {
+                                        double w = 1;
+                                        for (int b2 = 0; b2 < 4; b2++) if (b2 != a2) w *= (t - tx[b2]) / (tx[a2] - tx[b2]);
+                                        y += w * ty[a2];
+                                    }
+                                    if (Math.abs(y) > Math.abs(v[i + k]) && Math.signum(y) == Math.signum(v[i + k])) v[i + k] = (float) Math.max(-4, Math.min(4, y));
+                                }
+                                if (pass == 0 && i >= off && i < off + keep) runs[0]++;
+                            }
+                            i = e;
+                        }
+                        for (int i = off; i < off + keep; i++) { double a3 = Math.abs(v[i]); if (a3 > peak && pass == 0) peak = a3; }
+                    }
+                    if (pass == 1) {
+                        for (int c = 0; c < ch; c++) for (int i = 0; i < keep; i++) o[c][i] = (float) (x[c][off + i] * gain);
+                        sink.push(o, keep);
+                    }
+                    p.on(0.5 * pass + 0.5 * (s + keep) / inf.frames);
+                }
+                if (pass == 0 && runs[0] == 0) { JSONObject rep = new JSONObject(); rep.put("none", true); return same(null, rep); }
+                if (pass == 1) sink.end();
+            }
+        } finally {
+            r.close();
+        }
+        JSONObject rep = new JSONObject();
+        rep.put("count", runs[0]);
+        rep.put("gain", Math.round(20 * Math.log10(Math.min(1, 0.97 / Math.max(1e-6, peak))) * 10) / 10.0);
+        return done(out, m, rep);
     }
 
     /** noise removal with the voice-separation model: keeps the voice, drops everything else */
@@ -422,6 +570,14 @@ final class Workspace {
         for (double x : g) mean += Math.abs(x) / g.length;
         o.put("eq", Math.round(mean * 10) / 10.0);
         o.put("speech", an.speechFrames > 0);
+        // long pauses and breaths (frame scan of the same file)
+        Speech.Scan sc = Speech.scan(w, inf, null, cancel);
+        java.util.ArrayList<int[]> ps = Speech.pauses(sc, 1.0);
+        double extra = 0;
+        for (int[] r : ps) extra += (r[1] - r[0]) * Speech.FR - 0.45;
+        o.put("pauses", ps.size());
+        o.put("pauseSec", Math.round(extra * 10) / 10.0);
+        o.put("breaths", Speech.breaths(sc).size());
         return o;
     }
 

@@ -78,6 +78,15 @@ public final class Stages {
             for (Biquad q : list) for (int c = 0; c < ch; c++) q.process(c, b[c], 0, n);
             next.push(b, n);
         }
+        /** 5-band EQ: low shelf 100 Hz, peaks at 300 Hz, 1 kHz, 3 kHz, high shelf 8 kHz (gains in dB) */
+        public static Filters eq5(int ch, double fs, double[] g) {
+            Filters f = new Filters(ch, fs, 0, null);
+            if (g[0] != 0) f.list.add(new Biquad(ch).setLowShelf(fs, 100, 0.707, g[0]));
+            double[] mid = { 300, 1000, 3000 };
+            for (int i = 0; i < 3; i++) if (g[i + 1] != 0) f.list.add(Biquad.peaking(ch, fs, mid[i], 0.9, g[i + 1]));
+            if (g[4] != 0 && fs > 18000) f.list.add(new Biquad(ch).setHighShelf(fs, 8000, 0.707, g[4]));
+            return f;
+        }
     }
 
     /**

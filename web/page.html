@@ -499,6 +499,9 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #setTplC{margin-top:8px}
 .set-sub small.hint{display:block;margin-top:6px;font-size:12px;color:var(--muted)}
 .about+.about{margin-top:6px;font-family:inherit;font-size:11.5px}
+/* 1.9 */
+.eq-pre{flex-wrap:wrap;margin-bottom:6px}
+.listbar #batchBtn{height:32px;padding:0 11px;font-size:13px;margin-inline-start:auto;margin-inline-end:8px}
 </style>
 
 <div class="wrap" id="app">
@@ -538,7 +541,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   <div class="toolbar">
     <label class="search"><span id="searchIc"></span><input id="q" type="search" data-tp="searchRec" autocomplete="off" enterkeyhint="search"><button class="icon-btn" id="qClear" type="button" data-ta="clearSearch" hidden></button></label>
     <div class="chips" id="chips" role="toolbar" data-ta="categories"></div>
-    <div class="listbar" id="listbar"><span id="count"></span>
+    <div class="listbar" id="listbar"><span id="count"></span><button class="tool" id="batchBtn" type="button" hidden></button>
       <select class="sort" id="sort" data-ta="sort">
         <option value="new" data-t="sortNew"></option>
         <option value="old" data-t="sortOld"></option>
@@ -687,6 +690,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 <script src="i18n6.js"></script>
 <script src="i18n7.js"></script>
 <script src="i18n8.js"></script>
+<script src="i18n9.js"></script>
 <script>
 (() => {
 'use strict';
@@ -697,7 +701,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '1.8';
+const VERSION = '1.9';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1537,6 +1541,7 @@ function renderTabs() {
   $('#list').hidden = music || edit; $('#music').hidden = !music; $('#editTab').hidden = !edit;
   document.querySelector('.toolbar').hidden = edit;
   $('#listbar').hidden = music;
+  const bb = $('#batchBtn'); bb.hidden = !NATIVE || S.tab !== 'rec'; bb.innerHTML = ic('spark') + esc(t('batch'));
   if (edit) { $('#empty').hidden = true; renderEdit(); }
   $('#q').placeholder = t(music ? 'searchMusic' : 'searchRec');
   $('#libNote').hidden = music || S.media || ls.get('libNoteX', false);
@@ -2585,7 +2590,7 @@ function tlTrack() {
     { id: 'td', value: !!tr.duck, html: `<label class="switch"><input type="checkbox" id="td"${tr.duck ? ' checked' : ''}><span>${esc(t('tlDuck'))}<small>${esc(t('tlDuckD'))}</small></span></label>` },
     { id: 'tdd', label: t('tlDuckAmt'), min: -30, max: -3, step: 1, value: tr.duckDb || -12, fmt: dbTxt }], v => { tr.vol = v.tv; tr.mute = v.tm; tr.duck = v.td; tr.duckDb = v.tdd; });
 }
-const TL_FX = ['aidenoise', 'denoise', 'hum', 'clicks', 'plosive', 'deess', 'channels', 'eq', 'level', 'loud', 'trim', 'silence'];
+const TL_FX = ['aidenoise', 'denoise', 'hum', 'clicks', 'plosive', 'deess', 'declip', 'breaths', 'channels', 'eq', 'level', 'loud', 'trim', 'pauses', 'silence'];
 async function tlFx() {
   const c = tlSel(); if (!c || TL.busy) return;
   const op = await chooseBox(t('tlFx'), t('tlFxD'), TL_FX.filter(x => x !== 'aidenoise' || CAPS.sep).map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
@@ -2597,6 +2602,11 @@ async function tlFx() {
   }
   if (op === 'eq') return tlEffect(c, 'eq', { learned: S.learnVoice ? await learnedProfile() : null });
   if (op === 'silence') return tlSilence(c);
+  if (op === 'pauses') {
+    const v = await chooseBox(t('op_pauses'), t('pauseD'), [['0.5', '0.3', 'pauseShort'], ['0.8', '0.45', 'pauseMid'], ['1.2', '0.7', 'pauseLong']].map(([mx, kp, k]) => ({ value: mx + ':' + kp, label: t(k), desc: t('pauseX', { a: nf1.format(+mx), b: nf1.format(+kp) }) })));
+    if (v) { const [mx, kp] = v.split(':'); tlEffect(c, 'pauses', { max: +mx, keep: +kp }); }
+    return;
+  }
   tlEffect(c, op);
 }
 function tlSpeed() {
@@ -2680,6 +2690,10 @@ function wsReport(op, st) {
     case 'level': return t('rpw_level', { a: n(r.lraBefore || 0), b: n(st.lra || 0) });
     case 'loud': return t('rpw_loud', { l: n(st.lufs).replace('-', '−'), p: n(st.peak).replace('-', '−'), t: t('tg_' + (r.target || 'youtube')) });
     case 'speed': return t('rpw_speed', { s: nf2.format(r.speed || 1), p: (r.semitones > 0 ? '+' : '') + (r.semitones || 0) });
+    case 'pauses': return t('rpw_pauses', { n: r.count || 0, s: n(r.saved || 0) });
+    case 'breaths': return t('rpw_breaths', { n: r.count || 0 });
+    case 'declip': return t('rpw_declip', { n: r.count || 0 });
+    case 'eqpreset': return t('rpw_eq5');
   }
   return '';
 }
@@ -2750,7 +2764,7 @@ function renderTlBar() {
   const b = (k, icn, lab, extra) => `<button class="tool" type="button" data-tl="${k}"${dis}${extra || ''}>${ic(icn)}${esc(lab)}</button>`;
   bar.innerHTML = c
     ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
-      b('merge', 'copy', t('tlMerge')) + b('sep', 'mixer', t('tlSep')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
+      b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('sep', 'mixer', t('tlSep')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
     : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (TL.p.clips.length ? b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
   if (TL.rec) bar.innerHTML = `<button class="btn danger-fill" type="button" data-tl="rec">${ic('pause')} ${esc(t('tlRecStop'))} <span class="tc" id="tlRecT"></span></button><span class="hint">${esc(t('tlRecHint'))}</span>`;
 }
@@ -2980,6 +2994,7 @@ $('#editTab').addEventListener('click', e => {
   else if (k === 'track') tlTrack();
   else if (k === 'sep') tlSep();
   else if (k === 'merge') tlMerge();
+  else if (k === 'eq5') tlEq();
   else if (k === 'beats') tlBeats();
   else if (k === 'rec') tlRec();
 });
@@ -3008,6 +3023,28 @@ async function tlSep() {
   c.beats = null;
   tlCommit(before);
   toast(t('sepDone'), 3000);
+}
+const EQ_BANDS = ['100', '300', '1k', '3k', '8k'];
+const EQ_PRESETS = [['flat', [0, 0, 0, 0, 0]], ['bright', [-1, 0, 0, 2, 5]], ['deep', [4, 2, 0, -1, -1]], ['bass', [7, 2, 0, 0, 0]], ['clear', [0, -2, 0, 4, 2]], ['warm', [2, 1, 0, -1, -3]]];
+function tlEq() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  let g = (ls.get('eqLast', null) || [0, 0, 0, 0, 0]).slice();
+  const card = openModal(`<h3>${esc(t('tlEq'))}</h3><p class="mtext">${esc(t('eqD'))}</p>
+    <div class="modal-body"><div class="chips eq-pre">${EQ_PRESETS.map(([k]) => `<button class="chip" type="button" data-eqp="${k}">${esc(t('eq_' + k))}</button>`).join('')}</div>
+      ${EQ_BANDS.map((b, i) => `<div class="slider"><span>${b}Hz</span><input type="range" min="-12" max="12" step="1" value="${g[i]}" data-eqb="${i}"><span class="tc" id="eqv${i}"></span></div>`).join('')}</div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`);
+  const show = () => g.forEach((v, i) => { card.querySelector('#eqv' + i).textContent = (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v); card.querySelector(`[data-eqb="${i}"]`).value = v; });
+  show();
+  card.oninput = e => { const i = e.target.dataset.eqb; if (i != null) { g[+i] = +e.target.value; show(); } };
+  card.onclick = e => {
+    const p = e.target.closest('[data-eqp]'); if (p) { g = EQ_PRESETS.find(x => x[0] === p.dataset.eqp)[1].slice(); show(); return; }
+    if (e.target.closest('[data-x]')) { card.oninput = card.onclick = null; closeModal(); return; }
+    if (e.target.closest('[data-ok]')) {
+      card.oninput = card.onclick = null; closeModal();
+      if (g.every(v => v === 0)) return;
+      ls.set('eqLast', g); tlEffect(c, 'eqpreset', { gains: g });
+    }
+  };
 }
 /** joins the selected clip with the next one on its track into a single clip (the gap between them stays as silence) */
 async function tlMerge() {
@@ -3170,7 +3207,7 @@ function openTrash() {
 
 /* ---------- "Clean": diagnosis + fix everything in one tap, before/after, what changed ---------- */
 const CL = { r: null, diag: null, res: null, job: null, fixes: null, strength: ls.get('clStrength', 1), purpose: 'youtube', cmp: 'after', play: false, pos: 0, raf: 0 };
-const CL_ORDER = ['channels', 'trim', 'hum', 'clicks', 'plosive', 'denoise', 'deess', 'eq', 'level', 'loud'];
+const CL_ORDER = ['channels', 'declip', 'trim', 'hum', 'clicks', 'plosive', 'denoise', 'breaths', 'deess', 'eq', 'level', 'pauses', 'loud'];
 const TARGET_LUFS = { youtube: -14, podcast: -16, whatsapp: -16 };
 function clStopPlay() {
   if (!CL.play) return;
@@ -3200,9 +3237,11 @@ function clJob(kind, args) {
   return p.finally(() => { CL.job = null; });
 }
 /** what the diagnosis found, as a list of fixes (each with a one-line reason) */
-function clIssues() {
-  const d = CL.diag, music = CL.purpose === 'music', n = nf1.format, out = [];
-  const tgt = TARGET_LUFS[purposeTarget(CL.purpose)];
+function clIssues(d, purpose) {
+  d = d || CL.diag; purpose = purpose || CL.purpose;
+  const music = purpose === 'music', n = nf1.format, out = [];
+  const tgt = TARGET_LUFS[purposeTarget(purpose)];
+  if (d.clipped > 50) out.push(['declip', t('dgClip2', { n: d.clipped })]);
   if (d.channel) out.push(['channels', t({ identical: 'chIdentical', 'left-silent': 'chSilent', 'right-silent': 'chSilent', 'left-broken': 'chBroken', 'right-broken': 'chBroken', inverted: 'chInverted' }[d.channel] || 'chMono')]);
   if (d.head > 1 || d.tail > 1.5) out.push(['trim', t('dgTrim', { a: n(d.head), b: n(d.tail) })]);
   if (d.hum > 6) out.push(['hum', t('dgHum', { hz: d.humHz })]);
@@ -3212,15 +3251,18 @@ function clIssues() {
   if (!music && d.sib >= 1) out.push(['deess', t('dgSib', { s: n(d.sib) })]);
   if (!music && d.eq >= 2) out.push(['eq', t('dgEq', { m: n(d.eq) })]);
   if (!music && d.speech && d.lra > 8) out.push(['level', t('dgLevel', { l: n(d.lra) })]);
-  out.push(['loud', t('dgLoud', { l: n(d.lufs).replace('-', '−'), t: String(tgt).replace('-', '−') })]);
+  if (!music && d.breaths >= 2) out.push(['breaths', t('dgBreath', { n: d.breaths }), false]);
+  if (!music && d.pauses >= 1) out.push(['pauses', t('dgPause', { n: d.pauses, s: n(d.pauseSec) }), purpose === 'youtube' || purpose === 'podcast']);
+  out.push(['loud', t('dgLoud', { l: n(d.lufs).replace('-', '−'), t: String(tgt).replace('-', '−') }), Math.abs(d.lufs - tgt) > 1]);
   return out;
 }
+const defaultFixes = issues => new Set(issues.filter(x => x[2] !== false).map(x => x[0]));
 function clPlan() {
   const d = CL.diag, issues = clIssues(), tgt = TARGET_LUFS[purposeTarget(CL.purpose)];
-  if (!CL.fixes) CL.fixes = new Set(issues.filter(([k]) => k !== 'loud' || Math.abs(d.lufs - tgt) > 1).map(([k]) => k));
+  if (!CL.fixes) CL.fixes = defaultFixes(issues);
   const real = issues.filter(([k]) => k !== 'loud').length;
   const card = clCard(`<h3>${esc(t('clReport'))}</h3>
-    <p class="mtext">${esc(real ? t('clFound', { n: real }) : t('clFine'))}${d.clipped > 50 ? ' ' + esc(t('dgClip')) : ''}</p>
+    <p class="mtext">${esc(real ? t('clFound', { n: real }) : t('clFine'))}</p>
     <div class="modal-body">
       <div class="set-sub"><span>${esc(t('clPurpose'))}</span><select id="clPu" class="sel-full">${PURPOSES.map(([k]) => `<option value="${k}"${CL.purpose === k ? ' selected' : ''}>${esc(t('pu_' + k))}</option>`).join('')}</select></div>
       <div class="cl-list">${issues.map(([k, why]) => `<label class="switch"><input type="checkbox" data-fix="${k}"${CL.fixes.has(k) ? ' checked' : ''}><span>${esc(t('op_' + k))}<small>${esc(why)}</small></span></label>`).join('')}</div>
@@ -3268,20 +3310,30 @@ function clDone() {
   const pos = $('#clPos');
   pos.oninput = () => { CL.pos = +pos.value; $('#clTime').textContent = fmt(CL.pos); if (CL.play) { clStopPlay(); clPlay(); } };
 }
+const clCuts = () => (((CL.res || {}).reports || {}).pauses || {}).cuts || [];
+function clToBefore(t) { let x = t; for (const [o, r] of clCuts()) if (o <= t) x += r; return x + (CL.res.trimStart || 0); }
+function clToAfter(tb) {
+  let acc = 0; const ts = CL.res.trimStart || 0;
+  for (const [o, r] of clCuts()) { const b0 = o + acc + ts; if (tb >= b0 + r) acc += r; else if (tb >= b0) return o; else break; }
+  return Math.max(0, tb - ts - acc);
+}
 function clMix() {
   const d = CL.diag, res = CL.res, ts = res.trimStart || 0;
+  if (clCuts().length) return CL.cmp === 'before' ? [{ path: d.path, at: 0, in: 0, len: d.dur / 1000, g: 1 }] : [{ path: res.path, at: 0, in: 0, len: res.dur / 1000, g: 1 }];
   return [{ path: d.path, at: 0, in: ts, len: Math.max(0, d.dur / 1000 - ts), g: CL.cmp === 'before' ? 1 : 0 },
     { path: res.path, at: 0, in: 0, len: res.dur / 1000, g: CL.cmp === 'after' ? 1 : 0 }];
 }
 function clPlay() {
   if (CL.play) { clStopPlay(); clPlayIcon(); return; }
   if (CL.pos >= CL.res.dur / 1000 - 0.1) CL.pos = 0;
-  const err = AND.tlPlay(JSON.stringify(clMix()), CL.pos);
+  const mapped = clCuts().length && CL.cmp === 'before';
+  const err = AND.tlPlay(JSON.stringify(clMix()), mapped ? clToBefore(CL.pos) : CL.pos);
   if (err) { toast(err, 4000); return; }
   CL.play = true; clPlayIcon();
   const f = () => {
     if (!CL.play) return;
-    const p = AND.tlPos();
+    let p = AND.tlPos();
+    if (p >= 0 && mapped) p = clToAfter(p);
     if (p < 0) { CL.play = false; clPlayIcon(); return; }
     CL.pos = p;
     const el = $('#clPos'); if (el) el.value = p;
@@ -3312,7 +3364,7 @@ $('#modalCard').addEventListener('click', e => {
   if (cmp) {
     CL.cmp = cmp.dataset.cmp;
     document.querySelectorAll('#clCmp [data-cmp]').forEach(b => b.setAttribute('aria-checked', b === cmp));
-    if (CL.play) try { AND.tlUpdate(JSON.stringify(clMix())); } catch (x) {}
+    if (CL.play) { if (clCuts().length) { clStopPlay(); clPlay(); } else try { AND.tlUpdate(JSON.stringify(clMix())); } catch (x) {} }
     return;
   }
   const st = e.target.closest('[data-str]');
@@ -3326,6 +3378,70 @@ $('#modalCard').addEventListener('click', e => {
   else if (k === 'save') clSave();
 });
 
+
+/* ---------- batch Clean: the same settings for several recordings ---------- */
+const BT = { run: false, stop: false, job: null };
+function openBatch() {
+  const list = recItems().filter(r => r.src && !r.cleaned).sort((a, b) => (b.created || 0) - (a.created || 0)).slice(0, 100);
+  if (!list.length) { toast(t('batchNone')); return; }
+  const sel = new Set();
+  let purpose = ls.get('purpose', 'youtube'), strength = CL.strength;
+  const card = openModal(`<h3>${esc(t('batch'))}</h3><p class="mtext">${esc(t('batchD'))}</p>
+    <div class="modal-body">
+      <div class="set-sub"><span>${esc(t('clPurpose'))}</span><select id="btPu" class="sel-full">${PURPOSES.map(([k]) => `<option value="${k}"${purpose === k ? ' selected' : ''}>${esc(t('pu_' + k))}</option>`).join('')}</select></div>
+      <div class="seg2" role="radiogroup" id="btStr">${[[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([v, k]) => `<button type="button" role="radio" data-bs="${v}" aria-checked="${strength === v}">${esc(t(k))}</button>`).join('')}</div>
+      <div class="cl-list" id="btList">${list.map(r => `<label class="switch"><input type="checkbox" data-bt="${esc(r.id)}"><span>${esc(r.title)}<small>${fmt(r.duration || 0)} · ${esc(dfShort.format(r.created || Date.now()))}</small></span></label>`).join('')}</div>
+      <div id="btProg" hidden><p class="mtext" id="btText"></p><div class="prog"><i id="clBar"></i></div></div>
+    </div>
+    <div class="modal-actions"><button class="btn sm" type="button" data-bt-all>${esc(t('selectAll'))}</button><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-go disabled>${esc(t('batchGo', { n: 0 }))}</button></div>`,
+    () => { if (BT.run) { BT.stop = true; if (BT.job) try { AND.cancelJob(BT.job); } catch (e) {} } });
+  const go = card.querySelector('[data-go]');
+  const upd = () => { go.disabled = !sel.size || BT.run; go.textContent = t('batchGo', { n: sel.size }); };
+  card.onchange = e => {
+    if (e.target.id === 'btPu') { purpose = e.target.value; return; }
+    const id = e.target.dataset.bt; if (!id) return;
+    if (e.target.checked) sel.add(id); else sel.delete(id);
+    upd();
+  };
+  card.onclick = async e => {
+    const bs = e.target.closest('[data-bs]');
+    if (bs) { strength = +bs.dataset.bs; card.querySelectorAll('[data-bs]').forEach(b => b.setAttribute('aria-checked', b === bs)); return; }
+    if (e.target.closest('[data-bt-all]')) { const all = sel.size < list.length; card.querySelectorAll('[data-bt]').forEach(b => { b.checked = all; if (all) sel.add(b.dataset.bt); else sel.delete(b.dataset.bt); }); upd(); return; }
+    if (e.target.closest('[data-x]')) { closeModal(); return; }
+    if (e.target.closest('[data-go]') && !BT.run) runBatch(list.filter(r => sel.has(r.id)), purpose, strength, card);
+  };
+}
+async function runBatch(items, purpose, strength, card) {
+  Object.assign(BT, { run: true, stop: false });
+  tlStop(); if (!audio.paused) audio.pause();
+  card.querySelector('#btList').hidden = true; card.querySelector('#btProg').hidden = false;
+  card.querySelector('[data-go]').disabled = true;
+  let ok = 0;
+  const step = (p, kind, args) => { const j = runJob(kind, args, f => { const b = $('#clBar'); if (b) b.style.width = Math.round(f * 100) + '%'; }); BT.job = j.jobId; return j; };
+  for (let i = 0; i < items.length && !BT.stop; i++) {
+    const r = items[i];
+    const tx = card.querySelector('#btText'); if (tx) tx.textContent = t('batchNow', { i: i + 1, n: items.length, t: r.title });
+    try {
+      const d = await step(0, 'diagnose', { src: r.src });
+      if (BT.stop) break;
+      const fixes = CL_ORDER.filter(k => defaultFixes(clIssues(d, purpose)).has(k));
+      const res = await step(0, 'clean', { path: d.path, fixes, strength, target: purposeTarget(purpose), ai: !!CAPS.sep && strength >= 1 && purpose !== 'music' });
+      if (BT.stop) break;
+      const name = t('clName', { t: r.title });
+      const sv = await step(0, 'wsSave', Object.assign({ path: res.path, name: fileName(r.title, 'clean') }, fmtArgs()));
+      const it = fromNative(sv.item, null);
+      Object.assign(it, { title: name, userTitle: true, created: Date.now(), notes: r.notes || '', categoryId: r.categoryId || null, kind: 'rec', source: 'edit',
+        fav: false, bookmarks: [], cleaned: true, cleanOf: r.id, purpose });
+      S.items.set(it.id, it); await saveRec(it);
+      ok++;
+    } catch (e) { if (!BT.stop) toast(r.title + ': ' + errText(e), 4000); }
+  }
+  BT.run = false; BT.job = null;
+  if (card.isConnected && stack.includes('modal')) closeModal();
+  render();
+  toast(t('batchDone', { n: ok }), 4000);
+}
+$('#batchBtn').addEventListener('click', openBatch);
 
 /* ---------- recorder ---------- */
 const R = { state: 'idle', mode: ls.get('mode', 'voice'), stream: null, ctx: null, an: null, mr: null, mime: '', chunks: [], idx: 0,
