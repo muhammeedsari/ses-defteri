@@ -203,6 +203,24 @@ final class MediaLib {
         String name;
     }
 
+    /** a ringtone: Ringtones/ on Android 10+, flagged so the system sound picker lists it */
+    static Target createRingtone(Context c, String displayName, String mime) throws IOException {
+        if (!scoped()) return create(c, displayName, mime);
+        ContentValues v = new ContentValues();
+        v.put(MediaStore.MediaColumns.DISPLAY_NAME, displayName);
+        v.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+        v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_RINGTONES);
+        v.put(MediaStore.Audio.Media.IS_RINGTONE, 1);
+        v.put(MediaStore.Audio.Media.IS_MUSIC, 0);
+        v.put(MediaStore.MediaColumns.IS_PENDING, 1);
+        Uri u = c.getContentResolver().insert(audioCollection(), v);
+        if (u == null) throw new IOException("insert failed");
+        Target t = new Target();
+        t.name = displayName;
+        t.uri = u;
+        return t;
+    }
+
     static Target create(Context c, String displayName, String mime) throws IOException {
         Target t = new Target();
         t.name = displayName;

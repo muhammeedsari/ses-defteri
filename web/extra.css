@@ -154,3 +154,6 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* 1.9 */
 .eq-pre{flex-wrap:wrap;margin-bottom:6px}
 .listbar #batchBtn{height:32px;padding:0 11px;font-size:13px;margin-inline-start:auto;margin-inline-end:8px}
+/* 2.0 */
+.tl-snap{color:var(--muted)}
+.tl-snap.on{color:var(--accent);background:var(--accent-soft)}

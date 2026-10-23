@@ -364,6 +364,12 @@ final class AudioTools {
     /* ---------- editing: keep the listed ranges, re-encode to AAC ---------- */
 
     static JSONObject render(Context c, JSONObject src, JSONArray keepMs, String displayName, Progress prog, AtomicBoolean cancel) throws Exception {
+        return render(c, src, keepMs, MediaLib.create(c, displayName, "audio/mp4"), 0.008, false, prog, cancel);
+    }
+
+    /** fadeSec: ramps at the joins; edges: also fade in at the very start and out at the very end */
+    static JSONObject render(Context c, JSONObject src, JSONArray keepMs, final MediaLib.Target target, final double fadeSec, final boolean edges,
+                             Progress prog, AtomicBoolean cancel) throws Exception {
         final int n = keepMs.length();
         if (n == 0) throw new IllegalArgumentException("nothing to keep");
         final long[] ks = new long[n], ke = new long[n];
@@ -372,7 +378,6 @@ final class AudioTools {
             ks[i] = r.getLong(0);
             ke[i] = r.getLong(1);
         }
-        final MediaLib.Target target = MediaLib.create(c, displayName, "audio/mp4");
         final File tmp = new File(c.getCacheDir(), "render-" + System.currentTimeMillis() + ".m4a");
         final Encoder enc = new Encoder(tmp);
         try {
@@ -388,7 +393,7 @@ final class AudioTools {
                     int frames = count / ch;
                     if (buf.length < frames * outCh) buf = new short[frames * outCh];
                     int w = 0;
-                    double fadeFrames = rate * 0.008; // 8 ms ramps hide clicks at the joins
+                    double fadeFrames = rate * fadeSec; // short ramps hide clicks at the joins
                     for (int f = 0; f < frames; f++) {
                         long tMs = (frame + f) * 1000L / rate;
                         while (seg < n && tMs >= ke[seg]) seg++;
@@ -397,8 +402,8 @@ final class AudioTools {
                         double fromStart = ((frame + f) - ks[seg] * (double) rate / 1000.0);
                         double toEnd = (ke[seg] * (double) rate / 1000.0) - (frame + f);
                         double g = 1.0;
-                        if (ks[seg] > 0 && fromStart < fadeFrames) g = Math.min(g, fromStart / fadeFrames);
-                        if (seg < n - 1 && toEnd < fadeFrames) g = Math.min(g, toEnd / fadeFrames);
+                        if ((ks[seg] > 0 || edges) && fromStart < fadeFrames) g = Math.min(g, fromStart / fadeFrames);
+                        if ((seg < n - 1 || edges) && toEnd < fadeFrames) g = Math.min(g, toEnd / fadeFrames);
                         int base = f * ch;
                         for (int k = 0; k < outCh; k++) {
                             buf[w++] = g >= 1.0 ? d[base + k] : (short) Math.round(d[base + k] * Math.max(0, g));

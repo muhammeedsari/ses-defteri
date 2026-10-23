@@ -464,6 +464,52 @@ final class Workspace {
         return done(out, m, rep);
     }
 
+    /* ---------- 2.0: ringtone, chapters ---------- */
+
+    static JSONObject ringtone(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        long st = Math.max(0, a.getLong("startMs")), len = Math.max(1000, Math.min(40000, a.getLong("lenMs")));
+        JSONArray keep = new JSONArray().put(new JSONArray().put(st).put(st + len));
+        String name = Studio.safe(a.optString("name", "Zil")) + ".m4a";
+        JSONObject item = AudioTools.render(c, a.getJSONObject("src"), keep, MediaLib.createRingtone(c, name, "audio/mp4"), Math.min(1.0, len / 8000.0), true, p, cancel);
+        JSONObject r = new JSONObject();
+        r.put("item", item);
+        return r;
+    }
+
+    /** chapter marks at the longest pauses, roughly every 1.5–5 minutes */
+    static JSONObject chapters(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        File w = new File(c.getCacheDir(), "ch" + System.nanoTime() + ".wav");
+        try {
+            decodeTo(c, a.getJSONObject("src"), 1, 16000, p, new double[] { 0, 0.8 }, cancel, w);
+            Info inf = info(w);
+            Speech.Scan sc = Speech.scan(w, inf, part(p, 0.8, 1), cancel);
+            java.util.ArrayList<int[]> ps = Speech.pauses(sc, 0.8);
+            double dur = inf.frames / (double) inf.rate, last = 0, minGap = a.optDouble("min", 90), maxGap = a.optDouble("max", 300);
+            JSONArray times = new JSONArray();
+            while (true) {
+                int[] best = null;
+                for (int[] r : ps) {
+                    double mid = (r[0] + r[1]) * Speech.FR / 2;
+                    if (mid < last + minGap || mid > last + maxGap || mid > dur - 30) continue;
+                    if (best == null || r[1] - r[0] > best[1] - best[0]) best = r;
+                }
+                if (best == null) {
+                    // no pause in the window: move on so a long monologue still gets later chapters
+                    if (last + maxGap >= dur - 30) break;
+                    last += maxGap;
+                    continue;
+                }
+                last = (best[0] + best[1]) * Speech.FR / 2;
+                times.put(Math.round(last * 10) / 10.0);
+            }
+            JSONObject r = new JSONObject();
+            r.put("times", times);
+            return r;
+        } finally {
+            w.delete();
+        }
+    }
+
     /** noise removal with the voice-separation model: keeps the voice, drops everything else */
     static JSONObject aiDenoise(Context c, File in, Info inf, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         if (!Separator.available()) throw new IllegalStateException("sep-unavailable");

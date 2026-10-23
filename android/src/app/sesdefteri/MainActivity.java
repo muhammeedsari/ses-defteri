@@ -59,6 +59,8 @@ public class MainActivity extends Activity implements Player.Listener {
     private static final int REQ_MEDIA = 13;
     private static final int REQ_PICK = 14;
     private static final int REQ_DELETE = 15;
+    private static final int REQ_VIDEO = 16;
+    private volatile String videoBusy;
 
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
@@ -281,6 +283,9 @@ public class MainActivity extends Activity implements Player.Listener {
         if (code == REQ_FILE && fileCallback != null) {
             fileCallback.onReceiveValue(result == RESULT_OK ? urisFrom(data) : null);
             fileCallback = null;
+        } else if (code == REQ_VIDEO) {
+            Uri[] uris = result == RESULT_OK ? urisFrom(data) : null;
+            if (uris != null && uris.length > 0) importVideos(uris);
         } else if (code == REQ_PICK) {
             Uri[] uris = result == RESULT_OK ? urisFrom(data) : null;
             if (uris != null && uris.length > 0) importUris(uris, true);
@@ -350,6 +355,33 @@ public class MainActivity extends Activity implements Player.Listener {
                 String payload = "{\"items\":" + items.toString() + ",\"failed\":" + failed + ",\"picked\":" + picked + "}";
                 importedQueue.add(payload);
                 pushImported();
+            }
+        });
+    }
+
+    /** the sound of picked videos becomes new recordings (AAC in Music/Ses Defteri) */
+    private void importVideos(final Uri[] uris) {
+        js("window.__sdBusy && window.__sdBusy(" + q(videoBusy == null ? "…" : videoBusy) + ")");
+        studioPool.execute(new Runnable() {
+            @Override
+            public void run() {
+                JSONArray items = new JSONArray();
+                int failed = 0;
+                for (Uri u : uris) {
+                    try {
+                        String name = MediaLib.displayName(getContentResolver(), u);
+                        int dot = name == null ? -1 : name.lastIndexOf('.');
+                        String stem = name == null ? "Video" : dot > 0 ? name.substring(0, dot) : name;
+                        JSONObject src = new JSONObject();
+                        src.put("uri", u.toString());
+                        JSONArray keep = new JSONArray().put(new JSONArray().put(0).put(Long.MAX_VALUE / 4));
+                        items.put(AudioTools.render(MainActivity.this, src, keep, safeFileName(stem) + ".m4a", null, null));
+                    } catch (Exception e) {
+                        failed++;
+                    }
+                }
+                importedQueue.add("{\"items\":" + items.toString() + ",\"failed\":" + failed + ",\"picked\":true}");
+                ui(new Runnable() { @Override public void run() { pushImported(); } });
             }
         });
     }
@@ -537,6 +569,36 @@ public class MainActivity extends Activity implements Player.Listener {
                     try { startActivityForResult(i, REQ_PICK); } catch (Exception ignored) { }
                 }
             });
+        }
+
+        @JavascriptInterface public void pickVideo(final String busy) {
+            videoBusy = busy;
+            ui(new Runnable() {
+                @Override public void run() {
+                    Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("video/*");
+                    i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                    try { startActivityForResult(i, REQ_VIDEO); } catch (Exception ignored) { }
+                }
+            });
+        }
+
+        @JavascriptInterface public void openSoundSettings() {
+            ui(new Runnable() {
+                @Override public void run() {
+                    try { startActivity(new Intent(android.provider.Settings.ACTION_SOUND_SETTINGS)); } catch (Exception ignored) { }
+                }
+            });
+        }
+
+        @JavascriptInterface public void vibrate(int ms) {
+            try {
+                android.os.Vibrator v = (android.os.Vibrator) getSystemService(VIBRATOR_SERVICE);
+                if (v == null) return;
+                if (Build.VERSION.SDK_INT >= 26) v.vibrate(android.os.VibrationEffect.createOneShot(Math.max(5, ms), 60));
+                else v.vibrate(Math.max(5, ms));
+            } catch (Exception ignored) { }
         }
 
         @JavascriptInterface public String takeImported() {
@@ -730,6 +792,10 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.op(MainActivity.this, a, p, cancel);
                         } else if ("tlAdd".equals(kind)) {
                             res = Timeline.add(MainActivity.this, a, p, cancel);
+                        } else if ("ringtone".equals(kind)) {
+                            res = Workspace.ringtone(MainActivity.this, a, p, cancel);
+                        } else if ("chapters".equals(kind)) {
+                            res = Workspace.chapters(MainActivity.this, a, p, cancel);
                         } else if ("roomTest".equals(kind)) {
                             res = RoomTest.run(p, cancel);
                         } else if ("diagnose".equals(kind)) {
