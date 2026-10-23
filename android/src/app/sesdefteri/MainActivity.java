@@ -737,6 +737,12 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public void plRepeat(final int r) { ui(new Runnable() { @Override public void run() { Player.I.setRepeat(r); } }); }
         @JavascriptInterface public void plStop() { ui(new Runnable() { @Override public void run() { Player.I.stop(); } }); }
         @JavascriptInterface public String plState() { return Player.I.state(); }
+        @JavascriptInterface public void plGain(final String id, final double db) { ui(new Runnable() { @Override public void run() { Player.I.setGain(id, db); } }); }
+        @JavascriptInterface public void plEq(final String json) { ui(new Runnable() { @Override public void run() { Player.I.setEq(json); } }); }
+        @JavascriptInterface public void plXfade(final int ms, final boolean gapless) { ui(new Runnable() { @Override public void run() { Player.I.setXfade(ms, gapless); } }); }
+        @JavascriptInterface public void plLoop(final double a, final double b) { ui(new Runnable() { @Override public void run() { Player.I.setLoop((long) a, (long) b); } }); }
+        @JavascriptInterface public void plSkips(final String id, final String json) { ui(new Runnable() { @Override public void run() { Player.I.setSkips(id, json); } }); }
+        @JavascriptInterface public void plSleep(final double ms, final boolean end) { ui(new Runnable() { @Override public void run() { Player.I.setSleep((long) ms, end); } }); }
         @JavascriptInterface public String tlPlay(String json, double sec) { try { Timeline.play(json, sec); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
         @JavascriptInterface public void tlUpdate(String json) { try { Timeline.update(json); } catch (Exception ignored) { } }
         @JavascriptInterface public void tlStop() { Timeline.stop(); }
@@ -749,7 +755,7 @@ public class MainActivity extends Activity implements Player.Listener {
             jobs.put(id, cancel);
             boolean bg = false;
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
-            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind);
+            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind);
             if (heavy) WorkService.begin(MainActivity.this);
             (bg ? bgPool : heavy || "wsClean".equals(kind) || "tlClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
                 @Override
@@ -792,6 +798,8 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.op(MainActivity.this, a, p, cancel);
                         } else if ("tlAdd".equals(kind)) {
                             res = Timeline.add(MainActivity.this, a, p, cancel);
+                        } else if ("loudness".equals(kind)) {
+                            res = Workspace.loudness(MainActivity.this, a, p, cancel);
                         } else if ("ringtone".equals(kind)) {
                             res = Workspace.ringtone(MainActivity.this, a, p, cancel);
                         } else if ("chapters".equals(kind)) {

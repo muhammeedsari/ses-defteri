@@ -167,7 +167,9 @@ final class Workspace {
                 case "denoise": {
                     Analyzer.Analysis an = analyze(in, inf, p, cancel);
                     double nr = Math.max(4, Math.min(24, (Math.max(6, Math.min(18, (42 - an.snr) * 0.55 + 6))) * str));
-                    Spectral s = new Spectral(ch, fs).noise(an.noisePower, nr, 1.0);
+                    double[] prof = a.has("profile") ? Studio.doubles(a.optJSONArray("profile")) : null;
+                    if (prof != null && prof.length == an.noisePower.length) rep.put("room", true); else prof = an.noisePower;
+                    Spectral s = new Spectral(ch, fs).noise(prof, nr, 1.0);
                     Analyzer after = new Analyzer(ch, fs);
                     m = new Meter(ch, fs);
                     s.to(new Tee(after)).to(m);
@@ -277,6 +279,38 @@ final class Workspace {
                     head = new Limiter(ch, fs, t.ceilingDb, gain);
                     head.to(m);
                     slice = new double[] { 0.6, 1 };
+                    break;
+                }
+                case "dereverb": {
+                    Spectral sp = new Spectral(ch, fs).dereverb(fs, a.optDouble("t60", 0.6), Math.max(0.5, Math.min(1.5, str)));
+                    m = new Meter(ch, fs);
+                    sp.to(m);
+                    head = sp;
+                    slice = new double[] { 0, 1 };
+                    break;
+                }
+                case "comp": {
+                    double thr = Math.max(-50, Math.min(-6, a.optDouble("thr", -24))), ratio = Math.max(1.2, Math.min(10, a.optDouble("ratio", 3)));
+                    double makeup = Math.min(12, -thr * (1 - 1 / ratio) * 0.5);
+                    m = new Meter(ch, fs);
+                    head = new Stages.Compressor(ch, fs, thr, ratio);
+                    head.to(new Limiter(ch, fs, -1.0, makeup)).to(m);
+                    rep.put("makeup", Math.round(makeup * 10) / 10.0);
+                    slice = new double[] { 0, 1 };
+                    break;
+                }
+                case "reverb": {
+                    m = new Meter(ch, fs);
+                    head = new Stages.Reverb(ch, fs, a.optDouble("room", 0.5), a.optDouble("mix", 0.3));
+                    head.to(new Limiter(ch, fs, -1.0, 0)).to(m);
+                    slice = new double[] { 0, 1 };
+                    break;
+                }
+                case "delay": {
+                    m = new Meter(ch, fs);
+                    head = new Stages.Delay(ch, fs, a.optDouble("ms", 300), a.optDouble("fb", 0.35), a.optDouble("mix", 0.35));
+                    head.to(new Limiter(ch, fs, -1.0, 0)).to(m);
+                    slice = new double[] { 0, 1 };
                     break;
                 }
                 case "eqpreset": {
@@ -464,6 +498,19 @@ final class Workspace {
         return done(out, m, rep);
     }
 
+    /** integrated loudness of any audio (for level matching in the player) */
+    static JSONObject loudness(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        JSONObject src = a.getJSONObject("src");
+        Studio.Fmt f = Studio.probe(c, src);
+        Loudness l = new Loudness(f.ch, f.rate);
+        l.to(new Sink());
+        Studio.source(c, src, f, p, new double[][] { { 0, 1 } }, cancel).run(l);
+        double v = l.integrated();
+        JSONObject o = new JSONObject();
+        o.put("lufs", Double.isInfinite(v) ? -70 : Math.round(v * 10) / 10.0);
+        return o;
+    }
+
     /* ---------- 2.0: ringtone, chapters ---------- */
 
     static JSONObject ringtone(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
@@ -616,6 +663,7 @@ final class Workspace {
         for (double x : g) mean += Math.abs(x) / g.length;
         o.put("eq", Math.round(mean * 10) / 10.0);
         o.put("speech", an.speechFrames > 0);
+        o.put("noiseP", Studio.json(an.noisePower));
         // long pauses and breaths (frame scan of the same file)
         Speech.Scan sc = Speech.scan(w, inf, null, cancel);
         java.util.ArrayList<int[]> ps = Speech.pauses(sc, 1.0);
@@ -643,6 +691,7 @@ final class Workspace {
                 o.put("strength", a.optDouble("strength", 1));
                 if ("loud".equals(fx)) o.put("target", a.optString("target", "youtube"));
                 if ("eq".equals(fx) && a.has("learned")) o.put("learned", a.get("learned"));
+                if ("denoise".equals(fx) && a.has("profile")) o.put("profile", a.get("profile"));
                 JSONObject r = op(c, o, part(p, (double) i / n, (double) (i + 1) / n), cancel);
                 if (r.optJSONObject("report") != null) reports.put(fx, r.getJSONObject("report"));
                 if (r.optBoolean("same")) continue;
@@ -876,7 +925,7 @@ final class Workspace {
         boolean wavFmt = "wav".equals(fmt);
         File out = new File(d, Studio.safe(a.optString("name", "Ses")) + "." + fmt);
         if ("mp3".equals(fmt)) {
-            mp3(in, inf, out, a.optInt("kbps", 192), p, cancel);
+            mp3(in, inf, out, a.optInt("kbps", 192), p, cancel, a);
         } else if (wavFmt) {
             java.io.FileInputStream is = new java.io.FileInputStream(in);
             java.io.FileOutputStream os = new java.io.FileOutputStream(out);
@@ -900,10 +949,11 @@ final class Workspace {
         return "wav".equals(f) || "mp3".equals(f) ? f : "m4a";
     }
 
-    static void mp3(File in, Info inf, File out, int kbps, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+    static void mp3(File in, Info inf, File out, int kbps, AudioTools.Progress p, AtomicBoolean cancel, JSONObject meta) throws Exception {
         long h = Mp3.init(inf.rate, inf.ch, kbps);
         if (h == 0) throw new IllegalStateException("mp3");
         java.io.OutputStream os = new java.io.BufferedOutputStream(new java.io.FileOutputStream(out), 1 << 16);
+        if (meta != null) os.write(id3(meta.optString("title", ""), meta.optString("artist", ""), meta.optString("cover", "")));
         RandomAccessFile r = new RandomAccessFile(in, "r");
         try {
             r.seek(44);
@@ -930,6 +980,42 @@ final class Workspace {
         }
     }
 
+    /** ID3v2.3 tag: title, artist and a JPEG cover (UTF-16 text so Turkish letters survive) */
+    static byte[] id3(String title, String artist, String coverB64) throws Exception {
+        java.io.ByteArrayOutputStream f = new java.io.ByteArrayOutputStream();
+        text(f, "TIT2", title);
+        text(f, "TPE1", artist);
+        if (coverB64 != null && !coverB64.isEmpty()) {
+            byte[] img = android.util.Base64.decode(coverB64, android.util.Base64.DEFAULT);
+            java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+            b.write(0); b.write("image/jpeg".getBytes("ISO-8859-1")); b.write(0); b.write(3); b.write(0); b.write(img);
+            frame(f, "APIC", b.toByteArray());
+        }
+        byte[] body = f.toByteArray();
+        if (body.length == 0) return new byte[0];
+        java.io.ByteArrayOutputStream t = new java.io.ByteArrayOutputStream();
+        t.write("ID3".getBytes("ISO-8859-1")); t.write(3); t.write(0); t.write(0);
+        int n = body.length;
+        t.write((n >> 21) & 0x7f); t.write((n >> 14) & 0x7f); t.write((n >> 7) & 0x7f); t.write(n & 0x7f);
+        t.write(body);
+        return t.toByteArray();
+    }
+
+    private static void text(java.io.ByteArrayOutputStream f, String id, String v) throws Exception {
+        if (v == null || v.isEmpty()) return;
+        java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+        b.write(1); b.write(0xff); b.write(0xfe); b.write(v.getBytes("UTF-16LE")); b.write(0); b.write(0);
+        frame(f, id, b.toByteArray());
+    }
+
+    private static void frame(java.io.ByteArrayOutputStream f, String id, byte[] data) throws Exception {
+        f.write(id.getBytes("ISO-8859-1"));
+        int n = data.length;
+        f.write((n >> 24) & 0xff); f.write((n >> 16) & 0xff); f.write((n >> 8) & 0xff); f.write(n & 0xff);
+        f.write(0); f.write(0);
+        f.write(data);
+    }
+
     /* ---------- save the current step as a real file ---------- */
 
     static JSONObject save(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
@@ -942,7 +1028,7 @@ final class Workspace {
         if ("mp3".equals(fmt)) {
             File out = new File(dir(c), "e" + System.nanoTime() + ".mp3");
             try {
-                mp3(in, inf, out, a.optInt("kbps", 192), p, cancel);
+                mp3(in, inf, out, a.optInt("kbps", 192), p, cancel, a);
                 MediaLib.Target tg = MediaLib.create(c, name + ".mp3", "audio/mpeg");
                 item = MediaLib.copyInTarget(c, tg, out);
                 if (item == null) { MediaLib.discard(c, tg); throw new IllegalStateException("publish"); }
@@ -965,6 +1051,7 @@ final class Workspace {
                 out.delete();
             }
         }
+        if (item != null && (a.has("title") || a.has("artist"))) MediaLib.tags(c, item, a.optString("title", ""), a.optString("artist", ""));
         JSONObject res = new JSONObject();
         res.put("item", item);
         if (a.has("replace")) res.put("replaced", MediaLib.deleteOwn(c, a.getJSONObject("replace")));

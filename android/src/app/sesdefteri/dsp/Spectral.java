@@ -22,6 +22,11 @@ public final class Spectral extends Node {
     final double[][] prevG2, prevGamma;
     // equaliser (linear gain per bin); null = flat
     double[] eq;
+    // late-reverb suppression (Lebart): reverb power ≈ decay · smoothed power 50 ms ago
+    double[][][] past;             // [ch][slot][bin]
+    double[][] ps;                 // smoothed power per channel
+    double revDecay, revBeta, revFloor;
+    int revD, revSlot;
     final double[] g, gs;
     float[][] out;
     int outN;
@@ -58,6 +63,18 @@ public final class Spectral extends Node {
         for (int k = 0; k < bins; k++) noise[k] = hannPower[k] * eS / eH;
         floor = Math.pow(10, -reductionDb / 20);
         overSub = overSubtract;
+        return this;
+    }
+
+    /** late-reverb suppression for a room with the given T60 (s); strength 0.5–1.5 */
+    public Spectral dereverb(double fs, double t60, double strength) {
+        double hopSec = hop / fs, td = 0.05;
+        revD = Math.max(2, (int) Math.round(td / hopSec));
+        revDecay = Math.exp(-2 * 3 * Math.log(10) / t60 * revD * hopSec);
+        revBeta = 1 + 1.5 * strength;
+        revFloor = Math.pow(10, -(10 + 8 * strength) / 20);
+        past = new double[ch][revD][bins];
+        ps = new double[ch][bins];
         return this;
     }
 
@@ -113,6 +130,7 @@ public final class Spectral extends Node {
     }
 
     private void computeGains(int c) {
+        if (past != null) { reverbGains(c); return; }
         if (noise == null) {
             for (int k = 0; k < bins; k++) gs[k] = eq == null ? 1 : eq[k];
             return;
@@ -139,6 +157,27 @@ public final class Spectral extends Node {
             gs[k] = eq == null ? v : v * eq[k];
         }
         meanGain += sum / bins; frames++;
+    }
+
+    private void reverbGains(int c) {
+        double[] sm = ps[c], old = past[c][revSlot];
+        for (int k = 0; k < bins; k++) {
+            double p = re[k] * re[k] + im[k] * im[k];
+            sm[k] = 0.6 * sm[k] + 0.4 * p;
+            double late = revDecay * old[k];
+            double gk = 1 - revBeta * late / (sm[k] + 1e-20);
+            g[k] = gk < revFloor ? revFloor : gk;
+            old[k] = sm[k];                        // this slot is read again revD frames later
+        }
+        if (c == ch - 1) revSlot = (revSlot + 1) % revD;
+        double[] pg2 = prevG2[c];
+        for (int k = 0; k < bins; k++) {
+            double a = g[Math.max(0, k - 1)], b = g[k], d = g[Math.min(bins - 1, k + 1)];
+            double v = 0.25 * a + 0.5 * b + 0.25 * d;
+            v = 0.5 * Math.sqrt(pg2[k]) + 0.5 * v;   // smooth in time too
+            pg2[k] = v * v;
+            gs[k] = v;
+        }
     }
 
     @Override public void end() throws Exception {

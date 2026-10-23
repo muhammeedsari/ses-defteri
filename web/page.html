@@ -505,6 +505,9 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* 2.0 */
 .tl-snap{color:var(--muted)}
 .tl-snap.on{color:var(--accent);background:var(--accent-soft)}
+/* 2.1 */
+.cover-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+.cover-row img{width:56px;height:56px;border-radius:10px;object-fit:cover;border:1px solid var(--line)}
 </style>
 
 <div class="wrap" id="app">
@@ -655,6 +658,9 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       <button class="tool" id="plClean" type="button" hidden></button>
       <button class="tool" id="plChap" type="button" hidden></button>
       <button class="tool" id="plRing" type="button" hidden></button>
+      <button class="tool" id="plAB" type="button" hidden></button>
+      <button class="tool" id="plSkip" type="button" aria-pressed="false" hidden></button>
+      <button class="tool" id="plSleep" type="button" hidden></button>
     </div>
     <section class="block">
       <h2><span data-t="bookmarks"></span> <span class="n" id="bmCount"></span></h2>
@@ -697,6 +703,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 <script src="i18n8.js"></script>
 <script src="i18n9.js"></script>
 <script src="i18n10.js"></script>
+<script src="i18n11.js"></script>
 <script>
 (() => {
 'use strict';
@@ -707,7 +714,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '2.0';
+const VERSION = '2.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -903,7 +910,9 @@ const S = {
   autoEnh: ls.get('autoEnh', true), target: ls.get('target', 'youtube'), autoText: ls.get('autoText', true),
   textLang: ls.get('textLang', ''), learnVoice: ls.get('learnVoice', true), showBeats: ls.get('showBeats', true), beats: new Map(), texts: new Map(),
   recQuality: ls.get('recQuality', 'std'), micSrc: ls.get('micSrc', 'auto'), callPause: ls.get('callPause', true), autoClean: ls.get('autoClean', false),
-  fmt: ls.get('fmt', CAPS.mp3 ? 'mp3_192' : 'm4a'), nameTpl: ls.get('nameTpl', '{name}'), trashDays: +ls.get('trashDays', 30)
+  fmt: ls.get('fmt', CAPS.mp3 ? 'mp3_192' : 'm4a'), nameTpl: ls.get('nameTpl', '{name}'), trashDays: +ls.get('trashDays', 30),
+  normalize: ls.get('normalize', true), xfade: +ls.get('xfade', 0), gapless: ls.get('gapless', true), playEq: ls.get('playEq', 'flat'), skipSil: ls.get('skipSil', false),
+  artist: ls.get('artist', ''), roomLearn: ls.get('roomLearn', true)
 };
 const catById = id => S.cats.find(c => c.id === id);
 const curRec = () => S.items.get(S.cur);
@@ -917,7 +926,7 @@ const recItems = () => visibleItems().filter(it => kindOf(it) === 'rec');
 const musicItems = () => visibleItems().filter(it => kindOf(it) === 'music');
 const META_KEYS = ['id', 'title', 'userTitle', 'created', 'duration', 'mime', 'size', 'categoryId', 'notes', 'bookmarks', 'fav', 'peaks',
   'source', 'mode', 'sample', 'fileName', 'kind', 'pos', 'src',
-  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose', 'trashed'];
+  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose', 'trashed', 'lufs'];
 function metaOf(it) { const o = {}; for (const k of META_KEYS) if (it[k] !== undefined) o[k] = it[k]; return o; }
 const saveRec = r => db.put('recordings', metaOf(r)).catch(() => toast(t('saveFail')));
 function fromNative(n, meta) {
@@ -1034,7 +1043,8 @@ class NativeAudio extends EventTarget {
 const audio = NATIVE ? new NativeAudio() : new Audio();
 if (!NATIVE) audio.preload = 'auto';
 window.__sdPlayer = ev => { if (NATIVE && ev) audio.apply(ev.state, ev.kind); };
-const qItem = r => ({ id: r.id, src: r.src, title: r.title || '', artist: r.artist || '', album: r.album || '', albumId: r.albumId != null ? r.albumId : -1, dur: Math.round((r.duration || 0) * 1000) });
+const levelGain = r => (S.normalize && r && r.lufs != null && r.lufs > -60) ? Math.max(-15, Math.min(9, -16 - r.lufs)) : 0;
+const qItem = r => ({ id: r.id, src: r.src, title: r.title || '', artist: r.artist || '', album: r.album || '', albumId: r.albumId != null ? r.albumId : -1, dur: Math.round((r.duration || 0) * 1000), gain: levelGain(r) });
 
 /* ---------- colors for canvas ---------- */
 let COL = {};
@@ -1343,11 +1353,21 @@ function openSettings() {
       <label class="switch"><input type="checkbox" id="setCall"${S.callPause ? ' checked' : ''}><span>${esc(t('setCall'))}<small>${esc(t('setCallD'))}</small></span></label></div>
     <div class="set-sec"><h4>${esc(t('setClean'))}</h4>
       <div class="set-sub"><span>${esc(t('setStrength'))}</span><select id="setStr" class="sel-full">${[[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([v, k]) => `<option value="${v}"${CL.strength === v ? ' selected' : ''}>${esc(t(k))}</option>`).join('')}</select></div>
-      <label class="switch"><input type="checkbox" id="setAuto"${S.autoClean ? ' checked' : ''}><span>${esc(t('setAuto'))}<small>${esc(t('setAutoD'))}</small></span></label></div>
+      <label class="switch"><input type="checkbox" id="setAuto"${S.autoClean ? ' checked' : ''}><span>${esc(t('setAuto'))}<small>${esc(t('setAutoD'))}</small></span></label>
+      <label class="switch"><input type="checkbox" id="setRoom"${S.roomLearn ? ' checked' : ''}><span>${esc(t('setRoom'))}<small>${esc(t('setRoomD'))}</small></span></label></div>
     <div class="set-sec"><h4>${esc(t('setExport'))}</h4>
       <div class="set-sub"><span>${esc(t('setFmt'))}</span><select id="setFmt" class="sel-full">${['mp3_192', 'mp3_320', 'm4a', 'wav'].filter(f => !f.startsWith('mp3') || CAPS.mp3).map(f => `<option value="${f}"${S.fmt === f ? ' selected' : ''}>${esc(fmtLabel(f))}</option>`).join('')}</select></div>
       <div class="set-sub"><span>${esc(t('setName'))}</span><select id="setTpl" class="sel-full">${NAME_TPLS.map(v => `<option value="${esc(v)}"${S.nameTpl === v ? ' selected' : ''}>${esc(t('tplEx', { x: ((S.nameTpl = v), fileName(t('tplSample'), 'clean')) }))}</option>`).join('')}<option value="custom"${NAME_TPLS.includes(ls.get('nameTpl', '{name}')) ? '' : ' selected'}>${esc(t('tplCustom'))}</option></select>
         <input id="setTplC" class="sel-full" type="text" value="${esc(ls.get('nameTpl', '{name}'))}"${NAME_TPLS.includes(ls.get('nameTpl', '{name}')) ? ' hidden' : ''} placeholder="{name}_{date}"><small class="hint" id="setTplEx"></small></div></div>
+    <div class="set-sec"><h4>${esc(t('setPlayer'))}</h4>
+      <label class="switch"><input type="checkbox" id="setNorm"${S.normalize ? ' checked' : ''}><span>${esc(t('setNorm'))}<small>${esc(t('setNormD'))}</small></span></label>
+      <div class="set-sub"><span>${esc(t('setXfade'))}</span><select id="setXf" class="sel-full">${[0, 2000, 5000, 8000].map(v => `<option value="${v}"${S.xfade === v ? ' selected' : ''}>${esc(v ? t('xfadeN', { n: v / 1000 }) : t('off'))}</option>`).join('')}</select></div>
+      <label class="switch"><input type="checkbox" id="setGap"${S.gapless ? ' checked' : ''}><span>${esc(t('setGapless'))}<small>${esc(t('setGaplessD'))}</small></span></label>
+      <div class="set-sub"><span>${esc(t('setPlayEq'))}</span><select id="setPEq" class="sel-full">${EQ_PRESETS.map(([k]) => `<option value="${k}"${S.playEq === k ? ' selected' : ''}>${esc(t(k === 'flat' ? 'off' : 'eq_' + k))}</option>`).join('')}</select></div></div>
+    <div class="set-sec"><h4>${esc(t('setMeta'))}</h4>
+      <div class="set-sub"><span>${esc(t('setArtist'))}</span><input id="setArtist" class="sel-full" type="text" value="${esc(S.artist)}" placeholder="${esc(t('setArtistP'))}"></div>
+      <div class="cover-row"><img id="coverImg" alt=""${ls.get('cover', '') ? ` src="data:image/jpeg;base64,${ls.get('cover', '')}"` : ' hidden'}><button class="btn sm" type="button" id="coverPick">${esc(t('coverPick'))}</button><button class="btn sm" type="button" id="coverClear"${ls.get('cover', '') ? '' : ' hidden'}>${esc(t('coverClear'))}</button><input type="file" id="coverIn" accept="image/*" hidden></div>
+      <small class="hint">${esc(t('setMetaD'))}</small></div>
     <div class="set-sec"><h4>${esc(t('setStorage'))}</h4>
       <div class="set-sub"><span>${esc(t('setTrash'))}</span><select id="setTrash" class="sel-full">${[30, 7, 0].map(v => `<option value="${v}"${S.trashDays === v ? ' selected' : ''}>${esc(t('trash_' + v))}</option>`).join('')}</select></div>
       <div><button class="btn sm" type="button" id="openTrash">${esc(t('trash'))} (${trashItems().length})</button></div></div>` : ''}
@@ -1383,6 +1403,15 @@ function openSettings() {
   const bind = (id, key) => { const el = card.querySelector(id); if (el) el.onchange = () => { S[key] = el.type === 'checkbox' ? el.checked : el.value; ls.set(key, S[key]); }; };
   S.nameTpl = ls.get('nameTpl', '{name}');   // the template examples above borrowed it
   bind('#setTextLang', 'textLang'); bind('#setLearn', 'learnVoice');
+  bind('#setNorm', 'normalize'); bind('#setGap', 'gapless'); bind('#setRoom', 'roomLearn'); bind('#setArtist', 'artist'); bind('#setPEq', 'playEq');
+  const xf = card.querySelector('#setXf'); if (xf) xf.onchange = () => { S.xfade = +xf.value; ls.set('xfade', S.xfade); applyPlayerPrefs(); };
+  ['#setGap', '#setPEq', '#setNorm'].forEach(id => { const el = card.querySelector(id); if (el) el.addEventListener('change', applyPlayerPrefs); });
+  const cp = card.querySelector('#coverPick'), ci = card.querySelector('#coverIn'), cc = card.querySelector('#coverClear'), cimg = card.querySelector('#coverImg');
+  if (cp) {
+    cp.onclick = () => ci.click();
+    ci.onchange = () => { const f = ci.files && ci.files[0]; if (f) coverFrom(f).then(b => { ls.set('cover', b); cimg.src = 'data:image/jpeg;base64,' + b; cimg.hidden = false; cc.hidden = false; }, () => toast(t('coverFail'))); };
+    cc.onclick = () => { ls.set('cover', ''); cimg.hidden = true; cc.hidden = true; };
+  }
   bind('#setQ', 'recQuality'); bind('#setMic', 'micSrc'); bind('#setCall', 'callPause'); bind('#setAuto', 'autoClean'); bind('#setFmt', 'fmt');
   const st = card.querySelector('#setStr'); if (st) st.onchange = () => { CL.strength = +st.value; ls.set('clStrength', CL.strength); };
   const tr = card.querySelector('#setTrash'); if (tr) tr.onchange = () => { S.trashDays = +tr.value; ls.set('trashDays', S.trashDays); purgeTrash().then(() => render(), () => {}); };
@@ -1829,6 +1858,7 @@ async function loadAudio(r, autoplay) {
   return true;
 }
 audio.addEventListener('loadedmetadata', () => {
+  const cur = S.items.get(S.cur); if (cur) { levelMatch(cur); sendSkips(cur); abReset(); }
   if (!isFinite(audio.duration)) { fixing = true; try { audio.currentTime = 1e7; } catch (e) { fixing = false; } }
   updateTimes(); drawPlayer();
 });
@@ -2005,6 +2035,7 @@ async function ensurePeaksUI(r) {
   else if (!pk && !(S.peaks.get(r.id) || {}).partial) { st.textContent = t('waveFail'); setTimeout(() => { st.hidden = true; }, 2500); }
   else st.hidden = true;
   drawPlayer(); drawWs();
+  if (isComplete(pk)) sendSkips(r);
   if (kindOf(r) === 'rec' && S.tab !== 'music' && !plOpen()) renderList();
 }
 function renderBookmarks() {
@@ -2047,7 +2078,7 @@ function fillPlayer(r) {
   const q = NATIVE && audio.st.count > 1;
   $('#plPrev').hidden = !q; $('#plNext').hidden = !q; $('#plShuffle').hidden = !q; $('#plRepeat').hidden = !q;
   updateQueueTools();
-  $('#plEdit').hidden = !NATIVE || !r.src; $('#plEdit2').hidden = !NATIVE || !r.src; $('#plClean').hidden = !NATIVE || !r.src; $('#plChap').hidden = !NATIVE || !r.src || (r.duration || 0) < 240; $('#plRing').hidden = !NATIVE || !r.src;
+  $('#plEdit').hidden = !NATIVE || !r.src; $('#plEdit2').hidden = !NATIVE || !r.src; $('#plClean').hidden = !NATIVE || !r.src; $('#plChap').hidden = !NATIVE || !r.src || (r.duration || 0) < 240; $('#plRing').hidden = !NATIVE || !r.src; $('#plAB').hidden = $('#plSkip').hidden = $('#plSleep').hidden = !NATIVE || !r.src; abLabel(); sleepLabel(); $('#plSkip').setAttribute('aria-pressed', !!S.skipSil);
   $('#plWhere').textContent = NATIVE && r.src ? t('where', { p: `${r.folder || ''}${r.name || ''}` }) : '';
   renderBookmarks(); setPlayIcons(); updateTimes();
   renderText(r); loadExtras(r);
@@ -2150,6 +2181,57 @@ $('#plChap').addEventListener('click', async () => {
   toast(t('chapDone', { n: add.length }), 3500);
 });
 $('#plRing').addEventListener('click', () => { const r = curRec(); if (r) openRingtone(r); });
+/* ---------- 2.1 player: level matching, A-B loop, skip silence, sleep timer ---------- */
+async function levelMatch(r) {
+  if (!NATIVE || !S.normalize || !r || !r.src) return;
+  if (r.lufs == null) {
+    try { const res = await runJob('loudness', { src: r.src, bg: true }); r.lufs = res.lufs; saveRec(r); } catch (e) { return; }
+  }
+  try { AND.plGain(r.id, levelGain(r)); } catch (e) {}
+}
+function sendSkips(r) {
+  if (!NATIVE || !r) return;
+  const pk = S.peaks.get(r.id);
+  let arr = [];
+  if (S.skipSil && isComplete(pk)) for (const [a, b] of findSilences(pk, r.duration || 0, -45, 0.8)) arr.push(Math.round(a * 1000), Math.round(b * 1000));
+  try { AND.plSkips(r.id, JSON.stringify(arr)); } catch (e) {}
+}
+const AB = { a: null, on: false };
+function abReset() { if (AB.a != null || AB.on) { AB.a = null; AB.on = false; try { AND.plLoop(-1, -1); } catch (e) {} } abLabel(); }
+function abLabel() { const b = $('#plAB'); if (!b) return; b.innerHTML = ic('repeat') + esc(AB.on ? t('abOn') : AB.a != null ? t('abSetB') : t('abSetA')); b.setAttribute('aria-pressed', AB.on || AB.a != null); }
+$('#plAB').addEventListener('click', () => {
+  const now = audio.currentTime || 0;
+  if (AB.on) { abReset(); toast(t('abOff')); return; }
+  if (AB.a == null) { AB.a = now; abLabel(); toast(t('abA', { t: fmt(now) })); return; }
+  if (now < AB.a + 0.5) { toast(t('abShort')); return; }
+  AB.on = true; try { AND.plLoop(Math.round(AB.a * 1000), Math.round(now * 1000)); } catch (e) {}
+  seek(AB.a); abLabel(); toast(t('abLoop', { a: fmt(AB.a), b: fmt(now) }));
+});
+$('#plSkip').addEventListener('click', () => {
+  S.skipSil = !S.skipSil; ls.set('skipSil', S.skipSil);
+  $('#plSkip').setAttribute('aria-pressed', S.skipSil);
+  const r = curRec(); if (r) { sendSkips(r); if (S.skipSil && !isComplete(S.peaks.get(r.id))) ensurePeaksUI(r); }
+  toast(t(S.skipSil ? 'skipOn' : 'skipOff'));
+});
+let sleepAt = 0, sleepEnd = false;
+function sleepLabel() {
+  const b = $('#plSleep'); if (!b) return;
+  const left = sleepAt ? Math.max(0, Math.ceil((sleepAt - Date.now()) / 60000)) : 0;
+  if (sleepAt && left <= 0) sleepAt = 0;
+  b.innerHTML = ic('moon') + esc(sleepEnd ? t('sleepEndOn') : sleepAt ? t('sleepLeft', { n: left }) : t('sleep'));
+  b.setAttribute('aria-pressed', !!(sleepAt || sleepEnd));
+}
+setInterval(sleepLabel, 20000);
+$('#plSleep').addEventListener('click', async () => {
+  const v = await chooseBox(t('sleep'), t('sleepD'), [['0', 'off'], ['15', 'sleep15'], ['30', 'sleep30'], ['45', 'sleep45'], ['60', 'sleep60'], ['end', 'sleepEnd']].map(([x, k]) => ({ value: x, label: t(k, { n: x }), desc: '' })));
+  if (v == null) return;
+  sleepEnd = v === 'end';
+  const ms = sleepEnd || v === '0' ? 0 : +v * 60000;
+  sleepAt = ms ? Date.now() + ms : 0;
+  try { AND.plSleep(ms, sleepEnd); } catch (e) {}
+  sleepLabel();
+});
+
 function openRingtone(r) {
   const dur = r.duration || 0; if (!dur) return;
   let st = Math.max(0, Math.min(audio.currentTime || 0, dur - 5)), len = Math.min(30, Math.max(5, Math.floor(dur - st)));
@@ -2668,7 +2750,7 @@ function tlTrack() {
     { id: 'td', value: !!tr.duck, html: `<label class="switch"><input type="checkbox" id="td"${tr.duck ? ' checked' : ''}><span>${esc(t('tlDuck'))}<small>${esc(t('tlDuckD'))}</small></span></label>` },
     { id: 'tdd', label: t('tlDuckAmt'), min: -30, max: -3, step: 1, value: tr.duckDb || -12, fmt: dbTxt }], v => { tr.vol = v.tv; tr.mute = v.tm; tr.duck = v.td; tr.duckDb = v.tdd; });
 }
-const TL_FX = ['aidenoise', 'denoise', 'hum', 'clicks', 'plosive', 'deess', 'declip', 'breaths', 'channels', 'eq', 'level', 'loud', 'trim', 'pauses', 'silence'];
+const TL_FX = ['aidenoise', 'denoise', 'dereverb', 'hum', 'clicks', 'plosive', 'deess', 'declip', 'breaths', 'channels', 'eq', 'level', 'comp', 'loud', 'reverb', 'delay', 'trim', 'pauses', 'silence'];
 async function tlFx() {
   const c = tlSel(); if (!c || TL.busy) return;
   const op = await chooseBox(t('tlFx'), t('tlFxD'), TL_FX.filter(x => x !== 'aidenoise' || CAPS.sep).map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
@@ -2680,6 +2762,19 @@ async function tlFx() {
   }
   if (op === 'eq') return tlEffect(c, 'eq', { learned: S.learnVoice ? await learnedProfile() : null });
   if (op === 'silence') return tlSilence(c);
+  if (op === 'dereverb') {
+    const v = await chooseBox(t('op_dereverb'), t('fxd_dereverb'), [[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([x, k]) => ({ value: String(x), label: t(k), desc: '' })));
+    if (v) tlEffect(c, 'dereverb', { strength: +v });
+    return;
+  }
+  if (op === 'comp' || op === 'reverb' || op === 'delay') {
+    const rows = { comp: [['thr', -40, -10, 1, -24, v => `${String(v).replace('-', '−')} dB`], ['ratio', 1.5, 8, 0.5, 3, v => nf1.format(v) + ':1']],
+      reverb: [['room', 0, 1, 0.05, 0.5, v => Math.round(v * 100) + '%'], ['mix', 0, 1, 0.05, 0.3, v => Math.round(v * 100) + '%']],
+      delay: [['ms', 80, 800, 10, 300, v => Math.round(v) + ' ms'], ['fb', 0, 0.8, 0.05, 0.35, v => Math.round(v * 100) + '%'], ['mix', 0, 1, 0.05, 0.35, v => Math.round(v * 100) + '%']] }[op];
+    const v = await askParams(t('op_' + op), t('fxd_' + op), rows);
+    if (v) tlEffect(c, op, v);
+    return;
+  }
   if (op === 'pauses') {
     const v = await chooseBox(t('op_pauses'), t('pauseD'), [['0.5', '0.3', 'pauseShort'], ['0.8', '0.45', 'pauseMid'], ['1.2', '0.7', 'pauseLong']].map(([mx, kp, k]) => ({ value: mx + ':' + kp, label: t(k), desc: t('pauseX', { a: nf1.format(+mx), b: nf1.format(+kp) }) })));
     if (v) { const [mx, kp] = v.split(':'); tlEffect(c, 'pauses', { max: +mx, keep: +kp }); }
@@ -2772,6 +2867,9 @@ function wsReport(op, st) {
     case 'breaths': return t('rpw_breaths', { n: r.count || 0 });
     case 'declip': return t('rpw_declip', { n: r.count || 0 });
     case 'eqpreset': return t('rpw_eq5');
+    case 'dereverb': return t('rpw_derev');
+    case 'comp': return t('rpw_comp', { m: n(r.makeup || 0) });
+    case 'reverb': case 'delay': return t('rpw_fx', { x: t('op_' + op) });
   }
   return '';
 }
@@ -2801,10 +2899,10 @@ async function tlExport() {
   try {
     const mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips: tlMix() });
     if (how === 'share') {
-      const res = await tlRunJob(t('tlExport'), 'wsExport', Object.assign({ path: mix.path, name: file }, fa));
+      const res = await tlRunJob(t('tlExport'), 'wsExport', Object.assign({ path: mix.path, name: file }, fa, metaArgs(name)));
       AND.share(JSON.stringify(res.src), res.name, res.mime);
     } else {
-      const res = await tlRunJob(t('op_save'), 'wsSave', Object.assign({ path: mix.path, name: file }, fa));
+      const res = await tlRunJob(t('op_save'), 'wsSave', Object.assign({ path: mix.path, name: file }, fa, metaArgs(name)));
       const it = fromNative(res.item, null);
       Object.assign(it, { title: name, userTitle: true, created: Date.now(), notes: '', categoryId: null, kind: 'rec', source: 'edit', fav: false, bookmarks: [] });
       S.items.set(it.id, it); await saveRec(it);
@@ -3318,6 +3416,61 @@ function wsSpeedDialog(done) {
 }
 
 
+/* ---------- 2.1: player preferences, file info, room memory, effect parameters ---------- */
+function applyPlayerPrefs() {
+  if (!NATIVE) return;
+  try {
+    AND.plXfade(S.xfade || 0, !!S.gapless);
+    const eq = (EQ_PRESETS.find(x => x[0] === S.playEq) || EQ_PRESETS[0])[1];
+    AND.plEq(eq.some(v => v) ? JSON.stringify(eq) : '');
+    const r = S.items.get(S.cur); if (r) AND.plGain(r.id, levelGain(r));
+  } catch (e) {}
+}
+const metaArgs = title => { const cover = ls.get('cover', ''); return Object.assign({ title: title || '', artist: S.artist || '' }, cover ? { cover } : {}); };
+/** picture → 500 px JPEG (base64) for the MP3 cover */
+function coverFrom(file) {
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, 500 / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+      cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      res(cv.toDataURL('image/jpeg', 0.85).split(',')[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('img')); };
+    img.src = url;
+  });
+}
+/** remembers the room's background noise from recordings that start or end with silence */
+function roomLearn(d) {
+  if (!S.roomLearn || !d || !d.noiseP || !(d.head > 0.5 || d.tail > 0.5)) return;
+  const old = ls.get('roomProf', null);
+  if (old && old.p && old.p.length === d.noiseP.length && Math.abs(old.noise - d.noise) < 10) {
+    ls.set('roomProf', { noise: 0.7 * old.noise + 0.3 * d.noise, p: old.p.map((v, i) => 0.7 * v + 0.3 * d.noiseP[i]), n: (old.n || 1) + 1 });
+  } else ls.set('roomProf', { noise: d.noise, p: d.noiseP, n: 1 });
+}
+/** recordings with no silence to learn from use the remembered room */
+function roomArgs(d) {
+  const pr = ls.get('roomProf', null);
+  if (!S.roomLearn || !pr || !d || !d.noiseP || pr.p.length !== d.noiseP.length || (pr.n || 1) < 2) return {};
+  if (d.head > 0.3 || d.tail > 0.3 || Math.abs(pr.noise - d.noise) > 8) return {};
+  return { profile: pr.p };
+}
+/** a small dialog with sliders; resolves to {key: value} or null */
+function askParams(title, desc, rows) {
+  return new Promise(res => {
+    let done = false; const fin = v => { if (!done) { done = true; res(v); } };
+    const card = openModal(`<h3>${esc(title)}</h3>${desc ? `<p class="mtext">${esc(desc)}</p>` : ''}<div class="modal-body">${rows.map(([k, mn, mx, st, v]) =>
+      `<div class="slider"><span>${esc(t('pp_' + k))}</span><input type="range" data-pp="${k}" min="${mn}" max="${mx}" step="${st}" value="${v}"><span class="tc" id="pp_${k}"></span></div>`).join('')}</div>
+      <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`, () => fin(null));
+    const show = () => rows.forEach(([k, , , , , f]) => { card.querySelector('#pp_' + k).textContent = f(+card.querySelector(`[data-pp="${k}"]`).value); });
+    card.oninput = show; show();
+    card.querySelector('[data-x]').onclick = () => { card.oninput = null; closeModal(); };
+    card.querySelector('[data-ok]').onclick = () => { const v = {}; rows.forEach(([k]) => { v[k] = +card.querySelector(`[data-pp="${k}"]`).value; }); card.oninput = null; fin(v); closeModal(); };
+  });
+}
+
 /* ---------- 1.8: export format, file names, trash ---------- */
 const recOpts = () => JSON.stringify({ q: S.recQuality, src: S.micSrc, call: !!S.callPause });
 /** default export format as job arguments: {format, kbps} */
@@ -3386,6 +3539,7 @@ async function openClean(r, auto) {
     <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-cl="x">${esc(t('cancel'))}</button></div>`, true);
   try { CL.diag = await clJob('diagnose', { src: r.src }); } catch (e) { if (CL.r) { toast(errText(e), 5000); closeModal(); } return; }
   if (CL.r !== r) return;
+  roomLearn(CL.diag);
   clPlan();
   if (auto && CL.fixes.size) clRun();
 }
@@ -3446,7 +3600,7 @@ async function clRun() {
   clCard(`<h3>${esc(t('clClean'))}</h3><p class="mtext">${esc(t('clWorking'))}</p><div class="prog"><i id="clBar"></i></div>
     <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-cl="x">${esc(t('cancel'))}</button></div>`);
   try {
-    CL.res = await clJob('clean', Object.assign({ path: CL.diag.path, fixes, strength: CL.strength, target: purposeTarget(CL.purpose), ai: !!CAPS.sep && CL.strength >= 1 && CL.purpose !== 'music' },
+    CL.res = await clJob('clean', Object.assign({ path: CL.diag.path, fixes, strength: CL.strength, target: purposeTarget(CL.purpose), ai: !!CAPS.sep && CL.strength >= 1 && CL.purpose !== 'music' }, roomArgs(CL.diag),
       fixes.includes('eq') && S.learnVoice ? { learned: await learnedProfile() } : {}));
   } catch (e) { if (CL.r) { toast(errText(e), 5000); clPlan(); } return; }
   if (CL.r !== r) return;
@@ -3512,7 +3666,7 @@ async function clSave() {
   const name = t('clName', { t: r.title });
   clCard(`<h3>${esc(t('clClean'))}</h3><p class="mtext">${esc(t('op_save'))}</p><div class="prog"><i id="clBar"></i></div>`);
   try {
-    const sv = await clJob('wsSave', Object.assign({ path: res.path, name: fileName(r.title, 'clean') }, fmtArgs()));
+    const sv = await clJob('wsSave', Object.assign({ path: res.path, name: fileName(r.title, 'clean') }, fmtArgs(), metaArgs(name)));
     const it = fromNative(sv.item, null);
     Object.assign(it, { title: name, userTitle: true, created: Date.now(), notes: r.notes || '', categoryId: r.categoryId || null, kind: 'rec', source: 'edit',
       fav: false, bookmarks: [], cleaned: true, cleanOf: r.id, purpose: CL.purpose });
@@ -3588,10 +3742,11 @@ async function runBatch(items, purpose, strength, card) {
       const d = await step(0, 'diagnose', { src: r.src });
       if (BT.stop) break;
       const fixes = CL_ORDER.filter(k => defaultFixes(clIssues(d, purpose)).has(k));
-      const res = await step(0, 'clean', { path: d.path, fixes, strength, target: purposeTarget(purpose), ai: !!CAPS.sep && strength >= 1 && purpose !== 'music' });
+      roomLearn(d);
+      const res = await step(0, 'clean', Object.assign({ path: d.path, fixes, strength, target: purposeTarget(purpose), ai: !!CAPS.sep && strength >= 1 && purpose !== 'music' }, roomArgs(d)));
       if (BT.stop) break;
       const name = t('clName', { t: r.title });
-      const sv = await step(0, 'wsSave', Object.assign({ path: res.path, name: fileName(r.title, 'clean') }, fmtArgs()));
+      const sv = await step(0, 'wsSave', Object.assign({ path: res.path, name: fileName(r.title, 'clean') }, fmtArgs(), metaArgs(name)));
       const it = fromNative(sv.item, null);
       Object.assign(it, { title: name, userTitle: true, created: Date.now(), notes: r.notes || '', categoryId: r.categoryId || null, kind: 'rec', source: 'edit',
         fav: false, bookmarks: [], cleaned: true, cleanOf: r.id, purpose });
@@ -4114,7 +4269,7 @@ async function boot() {
   $('#recClose').innerHTML = ic('close'); $('#recMarkIc').innerHTML = ic('flag'); $('#recDoneIc').innerHTML = ic('check', 2.2);
   $('#plBack').innerHTML = ic('back', 2); $('#collBack').innerHTML = ic('back', 2); $('#plB10').innerHTML = ic('b10'); $('#plF10').innerHTML = ic('f10');
   $('#plPrev').innerHTML = ic('prev'); $('#plNext').innerHTML = ic('next'); $('#miniNext').innerHTML = ic('next');
-  $('#plMark').innerHTML = ic('flag') + esc(t('mark')); $('#plEdit').innerHTML = ic('scissors'); $('#plEdit2').innerHTML = ic('scissors') + esc(t('edit')); $('#plClean').innerHTML = ic('spark') + esc(t('clClean')); $('#plChap').innerHTML = ic('flag') + esc(t('chapters')); $('#plRing').innerHTML = ic('bell') + esc(t('ringtone'));
+  $('#plMark').innerHTML = ic('flag') + esc(t('mark')); $('#plEdit').innerHTML = ic('scissors'); $('#plEdit2').innerHTML = ic('scissors') + esc(t('edit')); $('#plClean').innerHTML = ic('spark') + esc(t('clClean')); $('#plChap').innerHTML = ic('flag') + esc(t('chapters')); $('#plRing').innerHTML = ic('bell') + esc(t('ringtone')); $('#plSkip').innerHTML = ic('next') + esc(t('skipSil'));
   $('#plCopy').innerHTML = ic('copy') + esc(t('copyNotes'));
   $('#plShare').innerHTML = ic('share') + esc(t(AND || (!IN_FRAME && navigator.canShare) ? 'share' : 'download'));
   $('#plDelete').innerHTML = ic('trash') + esc(t('delete'));
@@ -4150,6 +4305,7 @@ async function boot() {
     if (audio.src && S.items.has(audio.src)) { S.cur = audio.src; S.miniOn = true; updateMini(); }
     scheduleBackground(3000);
     purgeTrash().then(() => render(), () => {});
+    applyPlayerPrefs();
     if (!S.media && !ls.get('askedMedia', false)) { ls.set('askedMedia', true); requestLibrary(); }
   }
 }

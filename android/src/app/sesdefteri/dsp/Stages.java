@@ -350,6 +350,96 @@ public final class Stages {
         }
     }
 
+    /** Feedback echo; the tail is played out after the input ends. */
+    public static final class Delay extends Node {
+        final int ch, d;
+        final float fb, mix;
+        final float[][] buf;
+        int w;
+        final long tail;
+        public Delay(int ch, double fs, double ms, double feedback, double mixAmt) {
+            this.ch = ch;
+            d = Math.max(1, (int) Math.round(fs * ms / 1000));
+            fb = (float) Math.max(0, Math.min(0.9, feedback));
+            mix = (float) Math.max(0, Math.min(1, mixAmt));
+            buf = new float[ch][d];
+            double rep = fb > 0.01 ? Math.log(0.001) / Math.log(fb) : 1;
+            tail = Math.min((long) (fs * 4), (long) (d * (rep + 1)));
+        }
+        @Override public void push(float[][] b, int n) throws Exception {
+            for (int i = 0; i < n; i++) {
+                for (int c = 0; c < ch; c++) {
+                    float y = buf[c][w], x = b[c][i];
+                    buf[c][w] = x + fb * y;
+                    b[c][i] = x + mix * y;
+                }
+                if (++w == d) w = 0;
+            }
+            next.push(b, n);
+        }
+        @Override public void end() throws Exception {
+            float[][] z = new float[ch][4096];
+            for (long t = 0; t < tail; t += 4096) { for (float[] q : z) java.util.Arrays.fill(q, 0); push(z, (int) Math.min(4096, tail - t)); }
+            next.end();
+        }
+    }
+
+    /** Freeverb-style room: 8 damped combs + 4 all-passes per channel (right channel slightly detuned). */
+    public static final class Reverb extends Node {
+        static final int[] COMB = { 1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617 }, AP = { 556, 441, 341, 225 };
+        final int ch;
+        final float[][][] cb, ab;
+        final int[][] ci, ai;
+        final float[][] cf;
+        final float fb, damp, wet, dry;
+        final long tail;
+        public Reverb(int ch, double fs, double room, double mixAmt) {
+            this.ch = ch;
+            double sc = fs / 44100.0;
+            fb = (float) (0.7 + 0.28 * Math.max(0, Math.min(1, room)));
+            damp = 0.3f;
+            wet = (float) Math.max(0, Math.min(1, mixAmt)) * 0.35f;
+            dry = 1f - (float) Math.max(0, Math.min(1, mixAmt)) * 0.3f;
+            cb = new float[ch][COMB.length][]; ab = new float[ch][AP.length][];
+            ci = new int[ch][COMB.length]; ai = new int[ch][AP.length]; cf = new float[ch][COMB.length];
+            for (int c = 0; c < ch; c++) {
+                int spread = c == 1 ? 23 : 0;
+                for (int k = 0; k < COMB.length; k++) cb[c][k] = new float[(int) ((COMB[k] + spread) * sc)];
+                for (int k = 0; k < AP.length; k++) ab[c][k] = new float[(int) ((AP[k] + spread) * sc)];
+            }
+            tail = (long) (fs * Math.min(5, 1 + 3 * room));
+        }
+        @Override public void push(float[][] b, int n) throws Exception {
+            for (int i = 0; i < n; i++) {
+                for (int c = 0; c < ch; c++) {
+                    float x = b[c][i], in = x * 0.015f, o = 0;
+                    for (int k = 0; k < COMB.length; k++) {
+                        float[] q = cb[c][k]; int j = ci[c][k];
+                        float y = q[j];
+                        cf[c][k] = y * (1 - damp) + cf[c][k] * damp;
+                        q[j] = in + cf[c][k] * fb;
+                        if (++j == q.length) j = 0; ci[c][k] = j;
+                        o += y;
+                    }
+                    for (int k = 0; k < AP.length; k++) {
+                        float[] q = ab[c][k]; int j = ai[c][k];
+                        float y = q[j];
+                        q[j] = o + y * 0.5f;
+                        o = y - o;
+                        if (++j == q.length) j = 0; ai[c][k] = j;
+                    }
+                    b[c][i] = x * dry + o * wet;
+                }
+            }
+            next.push(b, n);
+        }
+        @Override public void end() throws Exception {
+            float[][] z = new float[ch][4096];
+            for (long t = 0; t < tail; t += 4096) { for (float[] q : z) java.util.Arrays.fill(q, 0); push(z, (int) Math.min(4096, tail - t)); }
+            next.end();
+        }
+    }
+
     /** Gentle RMS compressor with soft knee (speech levelling). Linked channels. */
     public static final class Compressor extends Node {
         final int ch;

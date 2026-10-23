@@ -157,3 +157,6 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* 2.0 */
 .tl-snap{color:var(--muted)}
 .tl-snap.on{color:var(--accent);background:var(--accent-soft)}
+/* 2.1 */
+.cover-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+.cover-row img{width:56px;height:56px;border-radius:10px;object-fit:cover;border:1px solid var(--line)}

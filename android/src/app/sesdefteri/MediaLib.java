@@ -418,6 +418,19 @@ final class MediaLib {
         return name != null ? name : "ses";
     }
 
+    /** title / artist in the media library (what other players show) */
+    static void tags(Context c, JSONObject item, String title, String artist) {
+        try {
+            JSONObject src = item.optJSONObject("src");
+            Uri u = src != null ? srcUri(src) : null;
+            if (u == null) return;
+            ContentValues v = new ContentValues();
+            if (!title.isEmpty()) v.put(MediaStore.Audio.Media.TITLE, title);
+            if (!artist.isEmpty()) v.put(MediaStore.Audio.Media.ARTIST, artist);
+            if (v.size() > 0) c.getContentResolver().update(u, v, null, null);
+        } catch (Exception ignored) { }
+    }
+
     static Uri srcUri(JSONObject src) {
         String u = src.optString("uri", "");
         return u.isEmpty() ? null : Uri.parse(u);
