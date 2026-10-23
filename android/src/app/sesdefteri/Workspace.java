@@ -498,6 +498,32 @@ final class Workspace {
         return done(out, m, rep);
     }
 
+    /** hesitation sounds in any audio: [[start, end], …] in seconds */
+    static JSONObject fillers(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        File w = new File(c.getCacheDir(), "fl" + System.nanoTime() + ".wav");
+        try {
+            decodeTo(c, a.getJSONObject("src"), 1, 16000, p, new double[] { 0, 0.7 }, cancel, w);
+            Info inf = info(w);
+            float[] x = new float[(int) inf.frames];
+            byte[] b = new byte[x.length * 2];
+            RandomAccessFile r = new RandomAccessFile(w, "r");
+            try { r.seek(44); r.readFully(b); } finally { r.close(); }
+            for (int i = 0; i < x.length; i++) x[i] = (short) ((b[2 * i] & 0xff) | (b[2 * i + 1] << 8)) / 32768f;
+            JSONArray out = new JSONArray();
+            for (double[] q : Speech.fillers(x, 16000)) out.put(new JSONArray().put(Math.round(q[0] * 100) / 100.0).put(Math.round(q[1] * 100) / 100.0));
+            p.on(1);
+            return new JSONObject().put("ranges", out);
+        } finally {
+            w.delete();
+        }
+    }
+
+    /** a new recording made of the kept ranges of another (text-based editing) */
+    static JSONObject keepRender(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        JSONObject item = AudioTools.render(c, a.getJSONObject("src"), a.getJSONArray("keep"), Studio.safe(a.optString("name", "Ses")) + ".m4a", p, cancel);
+        return new JSONObject().put("item", item);
+    }
+
     /** integrated loudness of any audio (for level matching in the player) */
     static JSONObject loudness(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         JSONObject src = a.getJSONObject("src");

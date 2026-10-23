@@ -755,7 +755,7 @@ public class MainActivity extends Activity implements Player.Listener {
             jobs.put(id, cancel);
             boolean bg = false;
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
-            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind);
+            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind);
             if (heavy) WorkService.begin(MainActivity.this);
             (bg ? bgPool : heavy || "wsClean".equals(kind) || "tlClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
                 @Override
@@ -798,6 +798,16 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.op(MainActivity.this, a, p, cancel);
                         } else if ("tlAdd".equals(kind)) {
                             res = Timeline.add(MainActivity.this, a, p, cancel);
+                        } else if ("fillers".equals(kind)) {
+                            res = Workspace.fillers(MainActivity.this, a, p, cancel);
+                        } else if ("keepRender".equals(kind)) {
+                            res = Workspace.keepRender(MainActivity.this, a, p, cancel);
+                        } else if ("asrDownload".equals(kind)) {
+                            res = AsrModels.download(MainActivity.this, a, p, cancel);
+                        } else if ("asrDelete".equals(kind)) {
+                            res = AsrModels.delete(MainActivity.this);
+                        } else if ("asrStatus".equals(kind)) {
+                            res = AsrModels.status(MainActivity.this);
                         } else if ("loudness".equals(kind)) {
                             res = Workspace.loudness(MainActivity.this, a, p, cancel);
                         } else if ("ringtone".equals(kind)) {
@@ -825,7 +835,9 @@ public class MainActivity extends Activity implements Player.Listener {
                             Workspace.clean(MainActivity.this, a.optJSONArray("keep"));
                             res = new JSONObject();
                         } else if ("transcribe".equals(kind)) {
-                            res = Studio.transcribe(MainActivity.this, a.getJSONObject("src"), a.optString("lang", ""), p, cancel);
+                            JSONObject tsrc = a.getJSONObject("src");
+                            tsrc.put("_model", a.optString("model", ""));
+                            res = Studio.transcribe(MainActivity.this, tsrc, a.optString("lang", ""), p, cancel);
                         } else if ("beats".equals(kind)) {
                             res = Studio.beats(MainActivity.this, a.getJSONObject("src"), p, cancel);
                         } else {

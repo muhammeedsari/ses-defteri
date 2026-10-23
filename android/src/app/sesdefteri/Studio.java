@@ -179,14 +179,17 @@ final class Studio {
         int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
         final Transcriber tr;
         try {
-            tr = new Transcriber(c.getAssets(), "asr", lang == null ? "" : lang, threads);
+            String model = AsrModels.pick(c, src.optString("_model", ""));
+            if ("base".equals(model)) tr = new Transcriber(c.getAssets(), "asr", "base", lang == null ? "" : lang, threads);
+            else tr = new Transcriber(null, AsrModels.dir(c, model).getAbsolutePath(), model, lang == null ? "" : lang, threads);
         } catch (Throwable e) {
             throw new IllegalStateException("asr-unavailable: " + e.getMessage());
         }
         try {
             Stages.ChannelMap mono = new Stages.ChannelMap(f.ch, Stages.ChannelMap.MONO);
             Resampler rs = new Resampler(1, (double) f.rate, (double) Transcriber.RATE);
-            mono.to(rs).to(new Node() {
+            // rumble and handling noise below 80 Hz only confuse the recogniser
+            mono.to(rs).to(new Stages.Filters(1, Transcriber.RATE, 80, null)).to(new Node() {
                 @Override public void push(float[][] b, int n) { tr.accept(b[0], n); }
                 @Override public void end() { }
             });

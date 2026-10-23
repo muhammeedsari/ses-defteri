@@ -192,6 +192,7 @@
 <script src="i18n9.js"></script>
 <script src="i18n10.js"></script>
 <script src="i18n11.js"></script>
+<script src="i18n12.js"></script>
 <script>
 (() => {
 'use strict';
@@ -202,7 +203,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '2.1';
+const VERSION = '2.2';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -396,7 +397,7 @@ const S = {
   media: !!CAPS.media, mediaBlocked: false, pps: ls.get('pps', 50),
   peaks: new Map(), modalLocked: false, precompute: ls.get('precompute', true),
   autoEnh: ls.get('autoEnh', true), target: ls.get('target', 'youtube'), autoText: ls.get('autoText', true),
-  textLang: ls.get('textLang', ''), learnVoice: ls.get('learnVoice', true), showBeats: ls.get('showBeats', true), beats: new Map(), texts: new Map(),
+  textLang: ls.get('textLang', LANG), asrModel: ls.get('asrModel', 'base'), autoText: ls.get('autoText', false), learnVoice: ls.get('learnVoice', true), showBeats: ls.get('showBeats', true), beats: new Map(), texts: new Map(),
   recQuality: ls.get('recQuality', 'std'), micSrc: ls.get('micSrc', 'auto'), callPause: ls.get('callPause', true), autoClean: ls.get('autoClean', false),
   fmt: ls.get('fmt', CAPS.mp3 ? 'mp3_192' : 'm4a'), nameTpl: ls.get('nameTpl', '{name}'), trashDays: +ls.get('trashDays', 30),
   normalize: ls.get('normalize', true), xfade: +ls.get('xfade', 0), gapless: ls.get('gapless', true), playEq: ls.get('playEq', 'flat'), skipSil: ls.get('skipSil', false),
@@ -707,16 +708,27 @@ function cancelStalePeaks(keepId) {
 }
 /* background preparation, one recording at a time, only while the app is in view */
 let bgBusy = false, bgTimer = 0;
+const textTried = new Set();
 function scheduleBackground(delay) {
-  if (!NATIVE || !S.precompute) return;
+  if (!NATIVE || !(S.precompute || S.autoText)) return;
   clearTimeout(bgTimer);
   bgTimer = setTimeout(runBackground, delay == null ? 2500 : delay);
 }
 async function runBackground() {
-  if (bgBusy || !S.precompute || document.hidden) { if (!bgBusy) scheduleBackground(5000); return; }
-  const next = recItems().filter(r => r.src && r.duration > 0 && r.duration < 4 * 3600 && !storedPeakIds.has(r.id) && !peakJobs.has(r.id) && !isComplete(S.peaks.get(r.id)))
+  if (bgBusy || !(S.precompute || S.autoText) || document.hidden) { if (!bgBusy) scheduleBackground(5000); return; }
+  const next = !S.precompute ? null : recItems().filter(r => r.src && r.duration > 0 && r.duration < 4 * 3600 && !storedPeakIds.has(r.id) && !peakJobs.has(r.id) && !isComplete(S.peaks.get(r.id)))
     .sort((a, b) => b.created - a.created)[0];
-  if (!next) return;
+  if (!next) {
+    // speech-to-text in the background, newest first, so every recording becomes searchable by its words
+    const tn = S.autoText && CAPS.asr ? recItems().filter(r => r.src && !r.ttext && !textTried.has(r.id) && !BUSY.has(r.id) && r.duration > 2 && r.duration < 3600)
+      .sort((a, b) => b.created - a.created)[0] : null;
+    if (!tn) return;
+    textTried.add(tn.id); bgBusy = true;
+    try { await transcribeItem(tn, true); } catch (e) {}
+    bgBusy = false;
+    scheduleBackground(2000);
+    return;
+  }
   bgBusy = true;
   try { await ensurePeaks(next, { bg: true }); } catch (e) {}
   bgBusy = false;
@@ -831,6 +843,8 @@ function openSettings() {
     ${NATIVE ? `<div class="set-sec"><h4>${esc(t('setStudio'))}</h4>
       <div class="set-sub"><span>${esc(t('setTarget'))}</span>
         <div class="seg2" role="radiogroup">${['youtube', 'podcast', 'whatsapp'].map(v => `<button type="button" role="radio" data-target-v="${v}" aria-checked="${S.target === v}">${esc(t('tg_' + v))}</button>`).join('')}</div></div>
+      ${CAPS.asr ? `<div class="set-sub"><span>${esc(t('setAsrModel'))}</span><div id="asrModel"></div></div>
+      <label class="switch"><input type="checkbox" id="setAutoText"${S.autoText ? ' checked' : ''}><span>${esc(t('setAutoText'))}<small>${esc(t('setAutoTextD'))}</small></span></label>` : ''}
       ${CAPS.asr ? `<div class="set-sub"><span>${esc(t('setTextLang'))}</span><select id="setTextLang" class="sel-full"><option value="">${esc(t('langAuto'))}</option>${LANGS.map(([c, n]) => `<option value="${c}"${S.textLang === c ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>` : ''}
       <label class="switch"><input type="checkbox" id="setLearn"${S.learnVoice ? ' checked' : ''}><span>${esc(t('setLearn'))}<small id="learnInfo"></small></span></label>
       <div><button class="btn sm" type="button" id="learnReset">${esc(t('setLearnReset'))}</button></div></div>
@@ -890,7 +904,9 @@ function openSettings() {
   if (pre) pre.onchange = () => { S.precompute = pre.checked; ls.set('precompute', S.precompute); if (S.precompute) scheduleBackground(300); };
   const bind = (id, key) => { const el = card.querySelector(id); if (el) el.onchange = () => { S[key] = el.type === 'checkbox' ? el.checked : el.value; ls.set(key, S[key]); }; };
   S.nameTpl = ls.get('nameTpl', '{name}');   // the template examples above borrowed it
-  bind('#setTextLang', 'textLang'); bind('#setLearn', 'learnVoice');
+  bind('#setTextLang', 'textLang'); bind('#setLearn', 'learnVoice'); bind('#setAutoText', 'autoText');
+  asrModelUi(card);
+  const at = card.querySelector('#setAutoText'); if (at) at.addEventListener('change', () => { if (S.autoText) scheduleBackground(1500); });
   bind('#setNorm', 'normalize'); bind('#setGap', 'gapless'); bind('#setRoom', 'roomLearn'); bind('#setArtist', 'artist'); bind('#setPEq', 'playEq');
   const xf = card.querySelector('#setXf'); if (xf) xf.onchange = () => { S.xfade = +xf.value; ls.set('xfade', S.xfade); applyPlayerPrefs(); };
   ['#setGap', '#setPEq', '#setNorm'].forEach(id => { const el = card.querySelector(id); if (el) el.addEventListener('change', applyPlayerPrefs); });
@@ -1968,7 +1984,7 @@ async function addVoiceProfile(tone) {
 async function transcribeItem(it, auto) {
   if (!NATIVE || !CAPS.asr || !it.src || BUSY.has(it.id)) { if (!auto && NATIVE && !CAPS.asr) toast(t('textNoAsr'), 4000); return; }
   let res;
-  try { res = await studioJob('transcribe', it, { lang: S.textLang }); }
+  try { res = await studioJob('transcribe', it, { lang: S.textLang, model: S.asrModel }); }
   catch (e) { if (!auto || !String(e.message).includes('cancel')) toast(errText(e), 4000); return; }
   const rec = { id: it.id, segments: res.segments || [], srt: res.srt || '', lang: res.lang || '' };
   await db.put('texts', rec).catch(() => {});
@@ -1999,7 +2015,9 @@ function renderText(r) {
     h += `<ol class="segs" id="segList">${tx.segments.map((s, i) => `<li data-i="${i}"><button class="bm-time tc" type="button" data-seek="${s[0]}">${fmt(s[0])}</button><span>${esc(s[2])}</span></li>`).join('')}</ol>
       <div class="st-acts"><button class="btn sm" type="button" data-tx="srt">${ic('share')}${esc(t('textSrt'))}</button>
       <button class="btn sm" type="button" data-tx="copy">${ic('copy')}${esc(t('textCopy'))}</button>
-      <button class="btn sm" type="button" data-tx="redo" ${bz ? 'disabled' : ''}>${esc(t('textRedo'))}</button></div>`;
+      <button class="btn sm" type="button" data-tx="redo" ${bz ? 'disabled' : ''}>${esc(t('textRedo'))}</button></div>
+      <div class="st-acts"><button class="btn sm primary" type="button" data-tx="edit" ${bz ? 'disabled' : ''}>${ic('scissors')}${esc(t('teBtn'))}</button>
+      ${(r.duration || 0) >= 180 ? `<button class="btn sm" type="button" data-tx="topics">${ic('flag')}${esc(t('topicBtn'))}</button>` : ''}</div>`;
   } else {
     if (!CAPS.asr) h = `<p class="hint">${esc(t('textNoAsr'))}</p>`;
     else h = `<p class="hint">${esc(tx ? t('textEmpty') : t('textHint'))}</p><div class="st-acts"><button class="btn sm primary" type="button" data-tx="run" ${bz ? 'disabled' : ''}>${ic('textic')}${esc(t('textRun'))}</button></div>`;
@@ -2025,8 +2043,155 @@ $('#textBlock').addEventListener('click', e => {
   const k = b.dataset.tx, tx = S.texts.get(r.id);
   if (k === 'run' || k === 'redo') transcribeItem(r, false);
   else if (k === 'srt' && tx) { try { AND.shareText(safeName(r.title) + '.srt', tx.srt || srtOf(tx.segments), 'application/x-subrip'); } catch (x) {} }
+  else if (k === 'edit') openTextEdit(r);
+  else if (k === 'topics') addTopicChapters(r);
   else if (k === 'copy' && tx) { const text = tx.segments.map(s => s[2]).join('\n'); try { AND.copyText(text); toast(t('textCopied')); } catch (x) {} }
 });
+/* ---------- 2.2: text-based editing, retakes, hesitation sounds, topic chapters ---------- */
+const STOP = new Set(('ve veya ile ama fakat ancak çünkü ki de da mi mı mu mü bir bu şu o ben sen biz siz onlar bunu şunu onu bunun onun için gibi kadar daha çok en her hiç hem ya ne nasıl neden niye niçin şey şeyi şimdi sonra önce yani işte evet hayır var yok olan olarak oldu olur olsun değil diye ise artık bile sadece aslında belki tabii böyle şöyle öyle burada orada zaman bazı tüm bütün kendi diğer başka the and for that this with are was you have not but they his her from what all were when your can there their will would about which them then than into just like more some also very had has its our out who how why where').split(' '));
+const words = s => String(s || '').toLocaleLowerCase('tr-TR').split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 1);
+/** earlier attempts of a sentence that is said again within 45 s: their indexes */
+function findRetakes(segs) {
+  const out = new Set();
+  const sim = (a, b) => {
+    if (!a.length || !b.length) return 0;
+    const n = a.length, m = b.length, d = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+    for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) d[i][j] = a[i - 1] === b[j - 1] ? d[i - 1][j - 1] + 1 : Math.max(d[i - 1][j], d[i][j - 1]);
+    return 2 * d[n][m] / (n + m);
+  };
+  const W = segs.map(s => words(s[2]));
+  for (let i = 0; i < segs.length; i++) {
+    if (W[i].length < 2) continue;
+    for (let j = i + 1; j < segs.length && segs[j][0] - segs[i][1] < 45; j++) {
+      if (W[j].length < 2) continue;
+      const head = W[i].slice(0, 3).join(' ') === W[j].slice(0, 3).join(' ') && W[i].length >= 3;
+      if (head || sim(W[i], W[j]) >= 0.6) { out.add(i); break; }
+    }
+  }
+  return out;
+}
+async function openTextEdit(r) {
+  const tx = S.texts.get(r.id); if (!tx || !tx.segments || !tx.segments.length || BUSY.has(r.id)) return;
+  let fl = [];
+  toast(t('teScan'), 0);
+  try { fl = ((await studioJob('fillers', r, {})).ranges) || []; } catch (e) {}
+  hideToast();
+  const retake = findRetakes(tx.segments);
+  const rows = tx.segments.map((s, i) => ({ s: s[0], e: s[1], text: s[2], kind: retake.has(i) ? 'retake' : 'seg', del: retake.has(i) }))
+    .concat(fl.map(([s, e]) => ({ s, e, text: t('teFiller', { d: nf1.format(e - s) }), kind: 'filler', del: false })))
+    .sort((a, b) => a.s - b.s);
+  let stopT = 0;
+  const card = openModal(`<h3>${esc(t('teTitle'))}</h3><p class="mtext">${esc(t('teD'))}</p>
+    ${retake.size || fl.length ? `<p class="mtext"><b>${esc([retake.size ? t('teRetakes', { n: retake.size }) : '', fl.length ? t('teFillers', { n: fl.length }) : ''].filter(Boolean).join(' · '))}</b></p>` : ''}
+    <div class="modal-body"><div class="te-list">${rows.map((x, i) => `<label class="te-row te-${x.kind}"><input type="checkbox" data-te="${i}"${x.del ? ' checked' : ''}>
+      <span class="tc">${fmt(x.s)}</span><span class="te-txt">${esc(x.text)}${x.kind === 'retake' ? ` <i class="pill">${esc(t('teRetake'))}</i>` : ''}</span>
+      <button class="icon-btn" type="button" data-tep="${i}" aria-label="${esc(t('play'))}">${ic('play')}</button></label>`).join('')}</div></div>
+    <div class="modal-actions">${fl.length ? `<button class="btn sm" type="button" data-te-fill>${esc(t('teAllFillers'))}</button>` : ''}<span class="spacer"></span>
+      <button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('save'))}</button></div>`,
+    () => { clearTimeout(stopT); });
+  card.onchange = e => { const i = e.target.dataset.te; if (i != null) rows[+i].del = e.target.checked; };
+  card.onclick = async e => {
+    const p = e.target.closest('[data-tep]');
+    if (p) { e.preventDefault(); const x = rows[+p.dataset.tep]; clearTimeout(stopT); seek(Math.max(0, x.s - 0.3)); if (audio.paused) togglePlay(); stopT = setTimeout(() => { if (!audio.paused) togglePlay(); }, (x.e - x.s + 0.6) * 1000); return; }
+    if (e.target.closest('[data-te-fill]')) { rows.forEach((x, i) => { if (x.kind === 'filler') { x.del = true; const c = card.querySelector(`[data-te="${i}"]`); if (c) c.checked = true; } }); return; }
+    if (e.target.closest('[data-x]')) { card.onchange = card.onclick = null; closeModal(); return; }
+    if (!e.target.closest('[data-ok]')) return;
+    const del = rows.filter(x => x.del).map(x => [Math.max(0, x.s - 0.03), x.e + 0.03]).sort((a, b) => a[0] - b[0]);
+    if (!del.length) { toast(t('teNothing')); return; }
+    const dur = r.duration || 0, keep = []; let pos = 0;
+    for (const [a, b] of del) { if (a > pos + 0.02) keep.push([Math.round(pos * 1000), Math.round(a * 1000)]); pos = Math.max(pos, b); }
+    if (pos < dur) keep.push([Math.round(pos * 1000), Math.round(dur * 1000) + 1000]);
+    card.onchange = card.onclick = null; clearTimeout(stopT); if (!audio.paused) togglePlay(); closeModal();
+    const name = t('edited', { t: r.title });
+    try {
+      const res = await studioJob('keepRender', r, { keep, name: safeName(name) });
+      const it = fromNative(res.item, null);
+      Object.assign(it, { title: name, userTitle: true, created: Date.now(), notes: r.notes || '', categoryId: r.categoryId || null, kind: 'rec', source: 'edit', fav: false, bookmarks: [] });
+      S.items.set(it.id, it); await saveRec(it); render();
+      toast(t('teSaved', { s: fmt(del.reduce((a, [x, y]) => a + y - x, 0)) }), 3500);
+    } catch (e2) { toast(errText(e2), 5000); }
+  };
+}
+/** TextTiling: a new topic starts where the words before and after a sentence boundary have least in common */
+function topicChapters(segs, dur) {
+  if (!segs.length || dur < 180) return [];
+  const W = segs.map(s => words(s[2]).filter(w => !STOP.has(w) && w.length > 2));
+  const bag = (from, to) => { const m = new Map(); for (let i = 0; i < segs.length; i++) if (segs[i][0] >= from && segs[i][0] < to) for (const w of W[i]) m.set(w, (m.get(w) || 0) + 1); return m; };
+  const cos = (a, b) => { let d = 0, x = 0, y = 0; for (const [k, v] of a) { x += v * v; if (b.has(k)) d += v * b.get(k); } for (const v of b.values()) y += v * v; return x && y ? d / Math.sqrt(x * y) : 0; };
+  const cand = [];
+  for (let i = 1; i < segs.length; i++) { const tb = segs[i][0]; if (tb < 60 || tb > dur - 60) continue; cand.push({ i, t: tb, s: cos(bag(tb - 60, tb), bag(tb, tb + 60)) }); }
+  if (!cand.length) return [];
+  cand.forEach((c, k) => { let l = c.s, r2 = c.s; for (let j = k - 1; j >= 0 && cand[j].s >= l; j--) l = cand[j].s; for (let j = k + 1; j < cand.length && cand[j].s >= r2; j++) r2 = cand[j].s; c.depth = l - c.s + r2 - c.s; });
+  const ds = cand.map(c => c.depth), mean = ds.reduce((a, b) => a + b, 0) / ds.length, sd = Math.sqrt(ds.reduce((a, b) => a + (b - mean) ** 2, 0) / ds.length);
+  const picked = [];
+  for (const c of cand.slice().sort((a, b) => b.depth - a.depth)) if (c.depth > mean + 0.5 * sd && picked.every(p => Math.abs(p.t - c.t) > 90)) picked.push(c);
+  picked.sort((a, b) => a.t - b.t);
+  // name each part after its most telling words
+  const all = bag(0, dur + 1), starts = [0].concat(picked.map(p => p.t)), out = [];
+  for (let k = 0; k < starts.length; k++) {
+    const b = bag(starts[k], k + 1 < starts.length ? starts[k + 1] : dur + 1);
+    const top = [...b].map(([w, n]) => [w, n * n / (all.get(w) || 1)]).sort((x, y) => y[1] - x[1]).slice(0, 2).map(x => x[0]);
+    if (k > 0 || picked.length) out.push({ t: starts[k], label: top.length ? top.join(', ') : t('chapterN', { n: k + 1 }) });
+  }
+  return out;
+}
+async function addTopicChapters(r) {
+  const tx = S.texts.get(r.id); if (!tx) return;
+  const ch = topicChapters(tx.segments, r.duration || 0);
+  if (ch.length < 2) { toast(t('topicNone'), 3500); return; }
+  const have = (r.bookmarks || []).filter(b => !b.topic);
+  r.bookmarks = have.concat(ch.map(c => ({ id: uid(), t: c.t, label: c.label, note: '', topic: true }))).sort((a, b) => a.t - b.t);
+  await saveRec(r); renderBookmarks(); drawPlayer(); renderList();
+  toast(t('topicDone', { n: ch.length }), 3500);
+}
+/** hesitation sounds in a timeline clip: listed, ticked, cut out */
+async function tlFillers(c) {
+  let res;
+  try { res = await tlRunJob(t('op_fillers'), 'fillers', { src: { path: c.path } }); } catch (e) { toast(errText(e), 5000); return; }
+  const fl = (res.ranges || []).filter(([s, e]) => e > c.in && s < c.out);
+  if (!fl.length) { toast(t('fxNone', { x: t('op_fillers') }), 3500); return; }
+  const card = openModal(`<h3>${esc(t('op_fillers'))}</h3><p class="mtext">${esc(t('teFillers', { n: fl.length }))}</p>
+    <div class="modal-body"><div class="te-list">${fl.map(([s, e], i) => `<label class="te-row"><input type="checkbox" data-fi="${i}" checked><span class="tc">${fmt(c.at + s - c.in)}</span><span class="te-txt">${esc(t('teFiller', { d: nf1.format(e - s) }))}</span></label>`).join('')}</div></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('delete'))}</button></div>`);
+  card.querySelector('[data-x]').onclick = closeModal;
+  card.querySelector('[data-ok]').onclick = () => {
+    const del = fl.filter((x, i) => card.querySelector(`[data-fi="${i}"]`).checked);
+    closeModal();
+    if (!del.length) return;
+    const keep = []; let pos = 0;
+    for (const [a, b] of del) { if (a > pos + 0.02) keep.push([pos * 1000, a * 1000]); pos = Math.max(pos, b); }
+    keep.push([pos * 1000, c.dur * 1000 + 1000]);
+    tlEffect(c, 'cut', { keep });
+  };
+}
+/** the larger speech model: download / remove */
+async function asrModelUi(card) {
+  const box = card.querySelector('#asrModel'); if (!box) return;
+  let st = { small: false };
+  try { st = await runJob('asrStatus', {}); } catch (e) {}
+  const draw = (busy, p) => {
+    box.innerHTML = `<div class="seg2" role="radiogroup">${['base', 'small'].map(m => `<button type="button" role="radio" data-asr="${m}" aria-checked="${S.asrModel === m}"${m === 'small' && !st.small ? ' disabled' : ''}>${esc(t('asr_' + m))}</button>`).join('')}</div>
+      <small class="hint">${esc(t(st.small ? 'asrHaveD' : 'asrGetD'))}</small>
+      ${busy ? `<div class="prog"><i style="width:${Math.round(p * 100)}%"></i></div><button class="btn sm" type="button" data-asr-cancel>${esc(t('cancel'))}</button>`
+        : st.small ? `<button class="btn sm danger" type="button" data-asr-del>${esc(t('asrDel'))}</button>` : `<button class="btn sm primary" type="button" data-asr-get>${ic('import')}${esc(t('asrGet'))}</button>`}`;
+  };
+  draw(false, 0);
+  let job = null;
+  box.onclick = async e => {
+    const m = e.target.closest('[data-asr]');
+    if (m && !m.disabled) { S.asrModel = m.dataset.asr; ls.set('asrModel', S.asrModel); draw(false, 0); return; }
+    if (e.target.closest('[data-asr-cancel]') && job) { try { AND.cancelJob(job); } catch (x) {} return; }
+    if (e.target.closest('[data-asr-del]')) { try { st = await runJob('asrDelete', {}); } catch (x) {} S.asrModel = 'base'; ls.set('asrModel', 'base'); draw(false, 0); return; }
+    if (e.target.closest('[data-asr-get]')) {
+      draw(true, 0);
+      const pr = runJob('asrDownload', { bg: true }, f => draw(true, f)); job = pr.jobId;
+      try { st = await pr; S.asrModel = 'small'; ls.set('asrModel', 'small'); toast(t('asrReady'), 3500); }
+      catch (x) { if (!String(x.message).includes('cancel')) toast(t('asrFail'), 5000); }
+      job = null; if (box.isConnected) draw(false, 0);
+    }
+  };
+}
+
 function srtOf(segs) {
   const ts = v => { const ms = Math.round(v * 1000); return `${p2(Math.floor(ms / 3600000))}:${p2(Math.floor(ms / 60000) % 60)}:${p2(Math.floor(ms / 1000) % 60)},${String(ms % 1000).padStart(3, '0')}`; };
   return segs.map((s, i) => `${i + 1}\n${ts(s[0])} --> ${ts(s[1])}\n${s[2]}\n`).join('\n');
@@ -2238,7 +2403,7 @@ function tlTrack() {
     { id: 'td', value: !!tr.duck, html: `<label class="switch"><input type="checkbox" id="td"${tr.duck ? ' checked' : ''}><span>${esc(t('tlDuck'))}<small>${esc(t('tlDuckD'))}</small></span></label>` },
     { id: 'tdd', label: t('tlDuckAmt'), min: -30, max: -3, step: 1, value: tr.duckDb || -12, fmt: dbTxt }], v => { tr.vol = v.tv; tr.mute = v.tm; tr.duck = v.td; tr.duckDb = v.tdd; });
 }
-const TL_FX = ['aidenoise', 'denoise', 'dereverb', 'hum', 'clicks', 'plosive', 'deess', 'declip', 'breaths', 'channels', 'eq', 'level', 'comp', 'loud', 'reverb', 'delay', 'trim', 'pauses', 'silence'];
+const TL_FX = ['fillers', 'aidenoise', 'denoise', 'dereverb', 'hum', 'clicks', 'plosive', 'deess', 'declip', 'breaths', 'channels', 'eq', 'level', 'comp', 'loud', 'reverb', 'delay', 'trim', 'pauses', 'silence'];
 async function tlFx() {
   const c = tlSel(); if (!c || TL.busy) return;
   const op = await chooseBox(t('tlFx'), t('tlFxD'), TL_FX.filter(x => x !== 'aidenoise' || CAPS.sep).map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
@@ -2250,6 +2415,7 @@ async function tlFx() {
   }
   if (op === 'eq') return tlEffect(c, 'eq', { learned: S.learnVoice ? await learnedProfile() : null });
   if (op === 'silence') return tlSilence(c);
+  if (op === 'fillers') return tlFillers(c);
   if (op === 'dereverb') {
     const v = await chooseBox(t('op_dereverb'), t('fxd_dereverb'), [[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([x, k]) => ({ value: String(x), label: t(k), desc: '' })));
     if (v) tlEffect(c, 'dereverb', { strength: +v });

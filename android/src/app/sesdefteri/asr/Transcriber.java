@@ -35,7 +35,10 @@ public final class Transcriber {
      * @param dir directory/asset folder with base-encoder.int8.onnx, base-decoder.int8.onnx, base-tokens.txt, silero_vad.onnx
      * @param language "" = detect, or "tr", "en", ...
      */
-    public Transcriber(Object assets, String dir, String language, int threads) {
+    public Transcriber(Object assets, String dir, String language, int threads) { this(assets, dir, "base", language, threads); }
+
+    /** prefix: model file prefix ("base", "small"…) */
+    public Transcriber(Object assets, String dir, String prefix, String language, int threads) {
         String p = dir.isEmpty() || dir.endsWith("/") ? dir : dir + "/";
         VadModelConfig vc = new VadModelConfig();
         vc.sileroVadModelConfig.model = p + "silero_vad.onnx";
@@ -50,12 +53,12 @@ public final class Transcriber {
         OfflineRecognizerConfig rc = new OfflineRecognizerConfig();
         rc.featConfig.sampleRate = RATE;
         rc.featConfig.featureDim = 80;
-        rc.modelConfig.whisper.encoder = p + "base-encoder.int8.onnx";
-        rc.modelConfig.whisper.decoder = p + "base-decoder.int8.onnx";
+        rc.modelConfig.whisper.encoder = p + prefix + "-encoder.int8.onnx";
+        rc.modelConfig.whisper.decoder = p + prefix + "-decoder.int8.onnx";
         rc.modelConfig.whisper.language = language == null ? "" : language;
         rc.modelConfig.whisper.task = "transcribe";
         rc.modelConfig.whisper.tailPaddings = 1000;
-        rc.modelConfig.tokens = p + "base-tokens.txt";
+        rc.modelConfig.tokens = p + prefix + "-tokens.txt";
         rc.modelConfig.numThreads = Math.max(1, threads);
         rc.modelConfig.modelType = "whisper";
         rc.modelConfig.provider = "cpu";
@@ -98,8 +101,13 @@ public final class Transcriber {
             SpeechSegment s = vad.front();
             vad.pop();
             double st = s.start / (double) RATE, en = st + s.samples.length / (double) RATE;
+            // each sentence at a steady level: quiet or far-away speech is recognised as well as close speech
+            float[] x = s.samples;
+            float pk = 0;
+            for (float v : x) pk = Math.max(pk, Math.abs(v));
+            if (pk > 1e-4f && pk < 0.7f) { float g = Math.min(12f, 0.8f / pk); x = x.clone(); for (int i = 0; i < x.length; i++) x[i] *= g; }
             OfflineStream os = rec.createStream();
-            os.acceptWaveform(s.samples, RATE);
+            os.acceptWaveform(x, RATE);
             rec.decode(os);
             OfflineRecognizerResult r = rec.getResult(os);
             os.release();

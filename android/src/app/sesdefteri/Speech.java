@@ -113,6 +113,61 @@ final class Speech {
         return false;
     }
 
+    /**
+     * Hesitation sounds ("ııı", "eee", "mmm"): a voiced sound held for ≥ 0.35 s with a steady pitch and level.
+     * Ordinary syllables are much shorter and their pitch keeps moving. Works on 16 kHz mono.
+     */
+    static ArrayList<double[]> fillers(float[] x, int rate) {
+        final int win = rate * 3 / 100, hop = rate / 100, minLag = rate / 400, maxLag = rate / 75;
+        int n = Math.max(0, (x.length - win) / hop);
+        float[] f0 = new float[n], lv = new float[n];
+        boolean[] voiced = new boolean[n];
+        float[] sorted = new float[n];
+        for (int k = 0; k < n; k++) {
+            int o = k * hop;
+            double e = 0;
+            for (int i = 0; i < win; i++) e += x[o + i] * x[o + i];
+            lv[k] = (float) (10 * Math.log10(e / win + 1e-12));
+            sorted[k] = lv[k];
+            if (e < 1e-7 * win) continue;
+            double best = 0; int bl = 0;
+            for (int lag = minLag; lag <= maxLag; lag++) {
+                double r = 0, e1 = 0, e2 = 0;
+                for (int i = 0; i + lag < win; i += 2) { double a = x[o + i], b = x[o + i + lag]; r += a * b; e1 += a * a; e2 += b * b; }
+                double c = r / Math.sqrt(e1 * e2 + 1e-12);
+                if (c > best) { best = c; bl = lag; }
+            }
+            if (best > 0.75) { voiced[k] = true; f0[k] = (float) rate / bl; }
+        }
+        Arrays.sort(sorted);
+        double speech = n > 0 ? sorted[(int) (n * 0.95)] : -20;
+        ArrayList<double[]> out = new ArrayList<>();
+        int k = 0, minRun = 38;
+        while (k < n) {
+            if (!voiced[k] || lv[k] < speech - 30) { k++; continue; }
+            int a = k;
+            // grow while pitch stays within ±8 % of the running median and the level within 8 dB
+            double ref = f0[k], refL = lv[k];
+            int miss = 0, e = k;
+            for (int j = k + 1; j < n; j++) {
+                boolean ok = voiced[j] && Math.abs(f0[j] - ref) / ref < 0.08 && Math.abs(lv[j] - refL) < 8;
+                if (ok) { e = j; miss = 0; ref = 0.9 * ref + 0.1 * f0[j]; refL = 0.9 * refL + 0.1 * lv[j]; }
+                else if (++miss > 3) break;
+            }
+            if (e - a + 1 >= minRun) {
+                // steadiness check over the whole run: real words glide, hesitations sit still
+                double m = 0, v = 0; int cnt = 0;
+                for (int j = a; j <= e; j++) if (voiced[j]) { m += f0[j]; cnt++; }
+                m /= Math.max(1, cnt);
+                for (int j = a; j <= e; j++) if (voiced[j]) v += (f0[j] - m) * (f0[j] - m);
+                double cv = Math.sqrt(v / Math.max(1, cnt)) / m;
+                if (cv < 0.035) out.add(new double[] { Math.max(0, a * hop / (double) rate - 0.04), Math.min(x.length / (double) rate, (e * hop + win) / (double) rate + 0.04) });
+            }
+            k = e + 1;
+        }
+        return out;
+    }
+
     static JSONArray json(ArrayList<int[]> l) throws Exception {
         JSONArray a = new JSONArray();
         for (int[] r : l) { JSONArray x = new JSONArray(); x.put(r[0] * FR); x.put(r[1] * FR); a.put(x); }
