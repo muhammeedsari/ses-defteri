@@ -459,6 +459,7 @@ public class MainActivity extends Activity implements Player.Listener {
                 o.put("mic", has(Manifest.permission.RECORD_AUDIO));
                 o.put("asr", Studio.asrAvailable());
                 o.put("sep", Separator.available());
+                o.put("mp3", Mp3.available());
                 o.put("folder", MediaLib.scoped() ? "Music/Ses Defteri" : "Android/data/app.sesdefteri/files/Music/Ses Defteri");
             } catch (Exception ignored) { }
             return o.toString();
@@ -641,9 +642,9 @@ public class MainActivity extends Activity implements Player.Listener {
         }
 
         /* -- recorder -- */
-        @JavascriptInterface public String recStart(String mode, String name) {
+        @JavascriptInterface public String recStart(String mode, String name, String opts) {
             if (!has(Manifest.permission.RECORD_AUDIO)) return "{\"ok\":false,\"error\":\"perm\"}";
-            String res = Recorder.start(MainActivity.this, mode, safeFileName(name));
+            String res = Recorder.start(MainActivity.this, mode, safeFileName(name), opts);
             ui(new Runnable() { @Override public void run() { getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); } });
             return res;
         }

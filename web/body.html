@@ -183,6 +183,7 @@
 <script src="i18n5.js"></script>
 <script src="i18n6.js"></script>
 <script src="i18n7.js"></script>
+<script src="i18n8.js"></script>
 <script>
 (() => {
 'use strict';
@@ -193,7 +194,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '1.7.1';
+const VERSION = '1.8';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -385,7 +386,9 @@ const S = {
   media: !!CAPS.media, mediaBlocked: false, pps: ls.get('pps', 50),
   peaks: new Map(), modalLocked: false, precompute: ls.get('precompute', true),
   autoEnh: ls.get('autoEnh', true), target: ls.get('target', 'youtube'), autoText: ls.get('autoText', true),
-  textLang: ls.get('textLang', ''), learnVoice: ls.get('learnVoice', true), showBeats: ls.get('showBeats', true), beats: new Map(), texts: new Map()
+  textLang: ls.get('textLang', ''), learnVoice: ls.get('learnVoice', true), showBeats: ls.get('showBeats', true), beats: new Map(), texts: new Map(),
+  recQuality: ls.get('recQuality', 'std'), micSrc: ls.get('micSrc', 'auto'), callPause: ls.get('callPause', true), autoClean: ls.get('autoClean', false),
+  fmt: ls.get('fmt', CAPS.mp3 ? 'mp3_192' : 'm4a'), nameTpl: ls.get('nameTpl', '{name}'), trashDays: +ls.get('trashDays', 30)
 };
 const catById = id => S.cats.find(c => c.id === id);
 const curRec = () => S.items.get(S.cur);
@@ -394,12 +397,12 @@ const defaultTitle = (mode, ts) => t(mode === 'music' ? 'titleMusic' : 'titleVoi
 const kindOf = it => it.kind || (it.music ? 'music' : 'rec');
 /* originals kept for "undo" stay out of the lists while their enhanced copy exists */
 function origIds() { const o = new Set(); for (const it of S.items.values()) if (it.origId) o.add(it.origId); return o; }
-const visibleItems = () => { const o = origIds(); return [...S.items.values()].filter(it => !o.has(it.id)); };
+const visibleItems = () => { const o = origIds(); return [...S.items.values()].filter(it => !o.has(it.id) && !it.trashed); };
 const recItems = () => visibleItems().filter(it => kindOf(it) === 'rec');
 const musicItems = () => visibleItems().filter(it => kindOf(it) === 'music');
 const META_KEYS = ['id', 'title', 'userTitle', 'created', 'duration', 'mime', 'size', 'categoryId', 'notes', 'bookmarks', 'fav', 'peaks',
   'source', 'mode', 'sample', 'fileName', 'kind', 'pos', 'src',
-  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose'];
+  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose', 'trashed'];
 function metaOf(it) { const o = {}; for (const k of META_KEYS) if (it[k] !== undefined) o[k] = it[k]; return o; }
 const saveRec = r => db.put('recordings', metaOf(r)).catch(() => toast(t('saveFail')));
 function fromNative(n, meta) {
@@ -818,8 +821,23 @@ function openSettings() {
       ${CAPS.asr ? `<div class="set-sub"><span>${esc(t('setTextLang'))}</span><select id="setTextLang" class="sel-full"><option value="">${esc(t('langAuto'))}</option>${LANGS.map(([c, n]) => `<option value="${c}"${S.textLang === c ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>` : ''}
       <label class="switch"><input type="checkbox" id="setLearn"${S.learnVoice ? ' checked' : ''}><span>${esc(t('setLearn'))}<small id="learnInfo"></small></span></label>
       <div><button class="btn sm" type="button" id="learnReset">${esc(t('setLearnReset'))}</button></div></div>
-    <div class="set-sec"><label class="switch"><input type="checkbox" id="setPre"${S.precompute ? ' checked' : ''}><span>${esc(t('precompute'))}<small>${esc(t('precomputeDesc'))}</small></span></label></div>` : ''}
+    <div class="set-sec"><label class="switch"><input type="checkbox" id="setPre"${S.precompute ? ' checked' : ''}><span>${esc(t('precompute'))}<small>${esc(t('precomputeDesc'))}</small></span></label></div>
+    <div class="set-sec"><h4>${esc(t('setRec'))}</h4>
+      <div class="set-sub"><span>${esc(t('setQuality'))}</span><select id="setQ" class="sel-full">${['std', 'high', 'stereo'].map(v => `<option value="${v}"${S.recQuality === v ? ' selected' : ''}>${esc(t('q_' + v))}</option>`).join('')}</select></div>
+      <div class="set-sub"><span>${esc(t('setMic'))}</span><select id="setMic" class="sel-full">${['auto', 'builtin', 'wired', 'usb'].map(v => `<option value="${v}"${S.micSrc === v ? ' selected' : ''}>${esc(t('mic_' + v))}</option>`).join('')}</select></div>
+      <label class="switch"><input type="checkbox" id="setCall"${S.callPause ? ' checked' : ''}><span>${esc(t('setCall'))}<small>${esc(t('setCallD'))}</small></span></label></div>
+    <div class="set-sec"><h4>${esc(t('setClean'))}</h4>
+      <div class="set-sub"><span>${esc(t('setStrength'))}</span><select id="setStr" class="sel-full">${[[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([v, k]) => `<option value="${v}"${CL.strength === v ? ' selected' : ''}>${esc(t(k))}</option>`).join('')}</select></div>
+      <label class="switch"><input type="checkbox" id="setAuto"${S.autoClean ? ' checked' : ''}><span>${esc(t('setAuto'))}<small>${esc(t('setAutoD'))}</small></span></label></div>
+    <div class="set-sec"><h4>${esc(t('setExport'))}</h4>
+      <div class="set-sub"><span>${esc(t('setFmt'))}</span><select id="setFmt" class="sel-full">${['mp3_192', 'mp3_320', 'm4a', 'wav'].filter(f => !f.startsWith('mp3') || CAPS.mp3).map(f => `<option value="${f}"${S.fmt === f ? ' selected' : ''}>${esc(fmtLabel(f))}</option>`).join('')}</select></div>
+      <div class="set-sub"><span>${esc(t('setName'))}</span><select id="setTpl" class="sel-full">${NAME_TPLS.map(v => `<option value="${esc(v)}"${S.nameTpl === v ? ' selected' : ''}>${esc(t('tplEx', { x: ((S.nameTpl = v), fileName(t('tplSample'), 'clean')) }))}</option>`).join('')}<option value="custom"${NAME_TPLS.includes(ls.get('nameTpl', '{name}')) ? '' : ' selected'}>${esc(t('tplCustom'))}</option></select>
+        <input id="setTplC" class="sel-full" type="text" value="${esc(ls.get('nameTpl', '{name}'))}"${NAME_TPLS.includes(ls.get('nameTpl', '{name}')) ? ' hidden' : ''} placeholder="{name}_{date}"><small class="hint" id="setTplEx"></small></div></div>
+    <div class="set-sec"><h4>${esc(t('setStorage'))}</h4>
+      <div class="set-sub"><span>${esc(t('setTrash'))}</span><select id="setTrash" class="sel-full">${[30, 7, 0].map(v => `<option value="${v}"${S.trashDays === v ? ' selected' : ''}>${esc(t('trash_' + v))}</option>`).join('')}</select></div>
+      <div><button class="btn sm" type="button" id="openTrash">${esc(t('trash'))} (${trashItems().length})</button></div></div>` : ''}
     <p class="about">Ses Defteri ${VERSION}</p>
+    <p class="about">${esc(t('licenses'))}</p>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" id="setDone">${esc(t('ok'))}</button></div>`);
   card.querySelector('#setDone').onclick = closeModal;
   card.addEventListener('click', e => {
@@ -848,7 +866,19 @@ function openSettings() {
   const pre = card.querySelector('#setPre');
   if (pre) pre.onchange = () => { S.precompute = pre.checked; ls.set('precompute', S.precompute); if (S.precompute) scheduleBackground(300); };
   const bind = (id, key) => { const el = card.querySelector(id); if (el) el.onchange = () => { S[key] = el.type === 'checkbox' ? el.checked : el.value; ls.set(key, S[key]); }; };
+  S.nameTpl = ls.get('nameTpl', '{name}');   // the template examples above borrowed it
   bind('#setTextLang', 'textLang'); bind('#setLearn', 'learnVoice');
+  bind('#setQ', 'recQuality'); bind('#setMic', 'micSrc'); bind('#setCall', 'callPause'); bind('#setAuto', 'autoClean'); bind('#setFmt', 'fmt');
+  const st = card.querySelector('#setStr'); if (st) st.onchange = () => { CL.strength = +st.value; ls.set('clStrength', CL.strength); };
+  const tr = card.querySelector('#setTrash'); if (tr) tr.onchange = () => { S.trashDays = +tr.value; ls.set('trashDays', S.trashDays); purgeTrash().then(() => render(), () => {}); };
+  const ot = card.querySelector('#openTrash'); if (ot) ot.onclick = openTrash;
+  const tpl = card.querySelector('#setTpl'), tc = card.querySelector('#setTplC'), tex = card.querySelector('#setTplEx');
+  const showTpl = () => { if (tex) tex.textContent = t('tplEx', { x: fileName(t('tplSample'), 'clean') }); };
+  if (tpl) {
+    tpl.onchange = () => { const c = tpl.value === 'custom'; tc.hidden = !c; S.nameTpl = c ? (tc.value || '{name}') : tpl.value; ls.set('nameTpl', S.nameTpl); showTpl(); };
+    tc.oninput = () => { S.nameTpl = tc.value || '{name}'; ls.set('nameTpl', S.nameTpl); showTpl(); };
+    showTpl();
+  }
   card.querySelectorAll('[data-target-v]').forEach(b => { b.onclick = () => { S.target = b.dataset.targetV; ls.set('target', S.target); card.querySelectorAll('[data-target-v]').forEach(x => x.setAttribute('aria-checked', x === b)); }; });
   const info = card.querySelector('#learnInfo');
   const showLearn = async () => { if (!info) return; const n = (await voiceProfiles()).length; info.textContent = n >= 3 ? t('setLearnD', { n }) : t('setLearnWait', { n, k: 3 }); };
@@ -1731,8 +1761,16 @@ async function forgetItem(id) {
 $('#plDelete').addEventListener('click', async () => {
   const r = curRec(); if (!r) return;
   const other = NATIVE && r.src && !r.own;
-  const ok = await confirmBox({ title: t('delQ'), text: t(other ? 'delOther' : 'delOwn', { title: r.title }) + (r.origId ? ' ' + t('delAlsoOrig') : ''), ok: t('delete'), danger: true });
+  const soft = NATIVE && r.src && r.own && S.trashDays > 0 && kindOf(r) === 'rec';
+  const ok = await confirmBox({ title: t('delQ'), text: soft ? t('delTrash', { title: r.title, n: S.trashDays }) : t(other ? 'delOther' : 'delOwn', { title: r.title }) + (r.origId ? ' ' + t('delAlsoOrig') : ''), ok: t('delete'), danger: true });
   if (!ok) return;
+  if (soft) {
+    if (!audio.paused) audio.pause();
+    r.trashed = Date.now(); await saveRec(r);
+    S.cur = null; S.miniOn = false;
+    closeOverlay('player'); render(); toast(t('toTrash'), 3500);
+    return;
+  }
   if (NATIVE && r.src) {
     audio.removeAttribute('src');
     let res = null;
@@ -2158,19 +2196,20 @@ function tlFit() {
 }
 async function tlExport() {
   if (!TL.p.clips.length || TL.busy) return;
-  const v = await chooseBox(t('tlExport'), t('tlExportD'), [
-    { value: 'save:m4a', label: t('tlSaveM4a'), desc: t('saveCopyD') }, { value: 'save:wav', label: t('tlSaveWav'), desc: t('wsSaveWavD') },
-    { value: 'share:m4a', label: t('tlShareM4a'), desc: t('saveCopyD') }, { value: 'share:wav', label: t('tlShareWav'), desc: t('wsSaveWavD') }]);
+  const fs = [S.fmt].concat(S.fmt === 'wav' ? [] : ['wav']).filter(f => !f.startsWith('mp3') || CAPS.mp3);
+  const opts = [];
+  for (const how of ['save', 'share']) for (const f of fs) opts.push({ value: how + ':' + f, label: t(how === 'save' ? 'tlSaveAs' : 'tlShareAs', { f: fmtLabel(f) }), desc: t(f === 'wav' ? 'wsSaveWavD' : 'saveCopyD') });
+  const v = await chooseBox(t('tlExport'), t('tlExportD'), opts);
   if (!v) return;
   tlStop();
-  const [how, format] = v.split(':'), name = t('edited', { t: TL.p.name || t('tabEdit') });
+  const [how, fsel] = v.split(':'), name = t('edited', { t: TL.p.name || t('tabEdit') }), fa = fmtArgs(fsel), file = fileName(TL.p.name || t('tabEdit'), 'edit');
   try {
     const mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips: tlMix() });
     if (how === 'share') {
-      const res = await tlRunJob(t('tlExport'), 'wsExport', { path: mix.path, format, name: safeName(name) });
+      const res = await tlRunJob(t('tlExport'), 'wsExport', Object.assign({ path: mix.path, name: file }, fa));
       AND.share(JSON.stringify(res.src), res.name, res.mime);
     } else {
-      const res = await tlRunJob(t('op_save'), 'wsSave', { path: mix.path, name: safeName(name), format });
+      const res = await tlRunJob(t('op_save'), 'wsSave', Object.assign({ path: mix.path, name: file }, fa));
       const it = fromNative(res.item, null);
       Object.assign(it, { title: name, userTitle: true, created: Date.now(), notes: '', categoryId: null, kind: 'rec', source: 'edit', fav: false, bookmarks: [] });
       S.items.set(it.id, it); await saveRec(it);
@@ -2498,10 +2537,10 @@ async function tlRec() {
   tlStop();
   const name = t('fileVoice', { d: stamp(Date.now()) }) + '.m4a';
   let res = {};
-  try { res = JSON.parse(AND.recStart('voice', name)); } catch (e) { res = {}; }
+  try { res = JSON.parse(AND.recStart('voice', name, recOpts())); } catch (e) { res = {}; }
   if (!res.ok && res.error === 'perm') {
     if (!(await askPerm('mic'))) { toast(t('micPerm'), 4500); return; }
-    try { res = JSON.parse(AND.recStart('voice', name)); } catch (e) { res = {}; }
+    try { res = JSON.parse(AND.recStart('voice', name, recOpts())); } catch (e) { res = {}; }
   }
   if (!res.ok) { toast(t('recFail'), 4200); return; }
   TL.rec = { at: TL.pos, t0: performance.now(), started: Date.now() };
@@ -2576,6 +2615,56 @@ function wsSpeedDialog(done) {
 }
 
 
+/* ---------- 1.8: export format, file names, trash ---------- */
+const recOpts = () => JSON.stringify({ q: S.recQuality, src: S.micSrc, call: !!S.callPause });
+/** default export format as job arguments: {format, kbps} */
+function fmtArgs(f) {
+  f = f || S.fmt;
+  if (f.startsWith('mp3') && !CAPS.mp3) f = 'm4a';
+  return f.startsWith('mp3') ? { format: 'mp3', kbps: +f.split('_')[1] || 192 } : { format: f === 'wav' ? 'wav' : 'm4a' };
+}
+const fmtLabel = f => ({ mp3_192: 'MP3 192 kbps', mp3_320: 'MP3 320 kbps', m4a: 'M4A (AAC)', wav: 'WAV' })[f] || f;
+const NAME_TPLS = ['{name}', '{rec}_{date}_{tag}', '{date}_{time}_{name}'];
+/** file name from the template: {name} title, {date} 2026-10-23, {time} 14.05, {tag} clean/edited, {rec} "Recording" */
+function fileName(title, tag) {
+  const d = new Date(), date = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`, time = `${p2(d.getHours())}.${p2(d.getMinutes())}`;
+  const out = (S.nameTpl || '{name}').replace(/\{name\}/g, title || '').replace(/\{date\}/g, date).replace(/\{time\}/g, time)
+    .replace(/\{tag\}/g, t('tag_' + tag)).replace(/\{rec\}/g, t('tplRecWord'));
+  return safeName(out.trim() || title || date);
+}
+/** really deletes a recording (file + everything stored with it) */
+async function hardDelete(r) {
+  if (NATIVE && r.src) {
+    let res = null;
+    try { res = await nativeCall(() => AND.deleteMedia(JSON.stringify(r.src))); } catch (e) { res = e.result || null; }
+    if (!res || !res.deleted) return false;
+  }
+  await forgetItem(r.id);
+  return true;
+}
+const trashItems = () => [...S.items.values()].filter(it => it.trashed).sort((a, b) => b.trashed - a.trashed);
+async function purgeTrash() {
+  const lim = Date.now() - S.trashDays * 86400000;
+  for (const r of trashItems()) if (r.trashed <= lim) await hardDelete(r);
+}
+function openTrash() {
+  const draw = () => {
+    const list = trashItems(), left = r => Math.max(0, Math.ceil((r.trashed + S.trashDays * 86400000 - Date.now()) / 86400000));
+    const card = openModal(`<h3>${esc(t('trash'))}</h3><p class="mtext">${esc(list.length ? t('trashD', { n: S.trashDays }) : t('trashEmpty'))}</p>
+      <div class="modal-body"><div class="cl-changes">${list.map(r => `<div class="trash-row"><div><b>${esc(r.title)}</b><span>${esc(t('trashLeft', { n: left(r) }))} · ${fmt(r.duration || 0)}</span></div>
+        <button class="btn sm" type="button" data-tr-restore="${esc(r.id)}">${esc(t('restore'))}</button><button class="btn sm danger" type="button" data-tr-del="${esc(r.id)}">${esc(t('delete'))}</button></div>`).join('')}</div></div>
+      <div class="modal-actions">${list.length ? `<button class="btn danger" type="button" data-tr-all>${esc(t('trashAll'))}</button>` : ''}<span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
+    card.onclick = async e => {
+      const rs = e.target.closest('[data-tr-restore]'), dl = e.target.closest('[data-tr-del]');
+      if (e.target.closest('[data-x]')) { card.onclick = null; closeModal(); return; }
+      if (rs) { const r = S.items.get(rs.dataset.trRestore); if (r) { delete r.trashed; await saveRec(r); render(); toast(t('restored')); } draw(); return; }
+      if (dl) { const r = S.items.get(dl.dataset.trDel); if (r && !(await hardDelete(r))) toast(t('delFail')); draw(); return; }
+      if (e.target.closest('[data-tr-all]')) { for (const r of trashItems()) await hardDelete(r); draw(); }
+    };
+  };
+  draw();
+}
+
 /* ---------- "Clean": diagnosis + fix everything in one tap, before/after, what changed ---------- */
 const CL = { r: null, diag: null, res: null, job: null, fixes: null, strength: ls.get('clStrength', 1), purpose: 'youtube', cmp: 'after', play: false, pos: 0, raf: 0 };
 const CL_ORDER = ['channels', 'trim', 'hum', 'clicks', 'plosive', 'denoise', 'deess', 'eq', 'level', 'loud'];
@@ -2586,7 +2675,7 @@ function clStopPlay() {
   CL.play = false; cancelAnimationFrame(CL.raf);
 }
 function clClose() { $('#modalCard').onchange = null; clStopPlay(); if (CL.job) { try { AND.cancelJob(CL.job); } catch (e) {} } CL.r = null; CL.job = null; }
-async function openClean(r) {
+async function openClean(r, auto) {
   if (!NATIVE || !r || !r.src) return;
   tlStop(); if (!audio.paused) audio.pause();
   Object.assign(CL, { r, diag: null, res: null, fixes: null, cmp: 'after', pos: 0, play: false, purpose: r.purpose || (r.mode === 'music' ? 'music' : ls.get('purpose', 'youtube')) });
@@ -2595,6 +2684,7 @@ async function openClean(r) {
   try { CL.diag = await clJob('diagnose', { src: r.src }); } catch (e) { if (CL.r) { toast(errText(e), 5000); closeModal(); } return; }
   if (CL.r !== r) return;
   clPlan();
+  if (auto && CL.fixes.size) clRun();
 }
 function clCard(html, fresh) {
   const card = fresh ? openModal(html, clClose) : $('#modalCard');
@@ -2704,7 +2794,7 @@ async function clSave() {
   const name = t('clName', { t: r.title });
   clCard(`<h3>${esc(t('clClean'))}</h3><p class="mtext">${esc(t('op_save'))}</p><div class="prog"><i id="clBar"></i></div>`);
   try {
-    const sv = await clJob('wsSave', { path: res.path, name: safeName(name), format: 'm4a' });
+    const sv = await clJob('wsSave', Object.assign({ path: res.path, name: fileName(r.title, 'clean') }, fmtArgs()));
     const it = fromNative(sv.item, null);
     Object.assign(it, { title: name, userTitle: true, created: Date.now(), notes: r.notes || '', categoryId: r.categoryId || null, kind: 'rec', source: 'edit',
       fav: false, bookmarks: [], cleaned: true, cleanOf: r.id, purpose: CL.purpose });
@@ -2764,11 +2854,11 @@ async function startRecNative() {
   if (!audio.paused) audio.pause();
   const name = t(R.mode === 'music' ? 'fileMusic' : 'fileVoice', { d: stamp(Date.now()) }) + '.m4a';
   let res = {};
-  try { res = JSON.parse(AND.recStart(R.mode, name)); } catch (e) { res = { ok: false }; }
+  try { res = JSON.parse(AND.recStart(R.mode, name, recOpts())); } catch (e) { res = { ok: false }; }
   if (!res.ok && res.error === 'perm') {
     const ok = await askPerm('mic');
     if (!ok) { R.state = 'idle'; updateRecUI(); toast(t('micPerm'), 4500); return; }
-    try { res = JSON.parse(AND.recStart(R.mode, name)); } catch (e) { res = { ok: false }; }
+    try { res = JSON.parse(AND.recStart(R.mode, name, recOpts())); } catch (e) { res = { ok: false }; }
   }
   if (!res.ok) { R.state = 'idle'; updateRecUI(); toast(t('recFail'), 4200); return; }
   R.native = true; R.levels = []; R.marks = []; R.acc = 0; R.curMax = 0; R.cancel = false;
@@ -2849,6 +2939,7 @@ async function finishNative() {
   if (S.tab === 'music') { S.tab = 'rec'; ls.set('tab', 'rec'); }
   render();
   closeOverlay('rec'); updateRecUI();
+  if (S.autoClean) { openClean(it, true); return; }
   const v = await chooseBox(t('recSaved'), t('clAfterD', { d: fmt(it.duration || 0) }), [{ value: 'clean', label: t('clClean'), desc: t('clCleanD') }, { value: 'exit', label: t('clExit'), desc: t('clExitD') }]);
   if (v === 'clean') openClean(it);
 }
@@ -3272,6 +3363,7 @@ async function boot() {
     audio.refresh();
     if (audio.src && S.items.has(audio.src)) { S.cur = audio.src; S.miniOn = true; updateMini(); }
     scheduleBackground(3000);
+    purgeTrash().then(() => render(), () => {});
     if (!S.media && !ls.get('askedMedia', false)) { ls.set('askedMedia', true); requestLibrary(); }
   }
 }

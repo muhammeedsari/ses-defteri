@@ -670,9 +670,12 @@ final class Workspace {
         d.mkdirs();
         File[] old = d.listFiles();
         if (old != null) for (File x : old) x.delete();
-        boolean wavFmt = "wav".equals(a.optString("format", "m4a"));
-        File out = new File(d, Studio.safe(a.optString("name", "Ses")) + (wavFmt ? ".wav" : ".m4a"));
-        if (wavFmt) {
+        String fmt = fmt(a);
+        boolean wavFmt = "wav".equals(fmt);
+        File out = new File(d, Studio.safe(a.optString("name", "Ses")) + "." + fmt);
+        if ("mp3".equals(fmt)) {
+            mp3(in, inf, out, a.optInt("kbps", 192), p, cancel);
+        } else if (wavFmt) {
             java.io.FileInputStream is = new java.io.FileInputStream(in);
             java.io.FileOutputStream os = new java.io.FileOutputStream(out);
             try { byte[] b = new byte[1 << 16]; int n; while ((n = is.read(b)) > 0) os.write(b, 0, n); } finally { is.close(); os.close(); }
@@ -684,8 +687,45 @@ final class Workspace {
         src.put("path", out.getAbsolutePath());
         res.put("src", src);
         res.put("name", out.getName());
-        res.put("mime", wavFmt ? "audio/wav" : "audio/mp4");
+        res.put("mime", wavFmt ? "audio/wav" : "mp3".equals(fmt) ? "audio/mpeg" : "audio/mp4");
         return res;
+    }
+
+    /** wav / m4a / mp3 (mp3 falls back to m4a where the encoder isn't shipped) */
+    static String fmt(JSONObject a) {
+        String f = a.optString("format", "m4a");
+        if ("mp3".equals(f) && !Mp3.available()) return "m4a";
+        return "wav".equals(f) || "mp3".equals(f) ? f : "m4a";
+    }
+
+    static void mp3(File in, Info inf, File out, int kbps, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        long h = Mp3.init(inf.rate, inf.ch, kbps);
+        if (h == 0) throw new IllegalStateException("mp3");
+        java.io.OutputStream os = new java.io.BufferedOutputStream(new java.io.FileOutputStream(out), 1 << 16);
+        RandomAccessFile r = new RandomAccessFile(in, "r");
+        try {
+            r.seek(44);
+            final int BL = 4096;
+            byte[] b = new byte[BL * inf.ch * 2];
+            short[] s = new short[BL * inf.ch];
+            for (long done = 0; done < inf.frames; ) {
+                if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
+                int n = (int) Math.min(BL, inf.frames - done), k = n * inf.ch;
+                r.readFully(b, 0, k * 2);
+                for (int i = 0; i < k; i++) s[i] = (short) ((b[2 * i] & 0xff) | (b[2 * i + 1] << 8));
+                byte[] o = Mp3.encode(h, s, n, inf.ch);
+                if (o != null) os.write(o);
+                done += n;
+                if (p != null && (done / BL) % 64 == 0) p.on((double) done / inf.frames);
+            }
+            os.write(Mp3.flush(h));
+        } catch (Exception e) {
+            os.close(); out.delete(); throw e;
+        } finally {
+            Mp3.close(h);
+            r.close();
+            try { os.close(); } catch (Exception ignored) { }
+        }
     }
 
     /* ---------- save the current step as a real file ---------- */
@@ -694,9 +734,20 @@ final class Workspace {
         File in = new File(a.getString("path"));
         Info inf = info(in);
         String name = Studio.safe(a.optString("name", "Ses"));
-        boolean wavFmt = "wav".equals(a.optString("format", "m4a"));
+        String fmt = fmt(a);
+        boolean wavFmt = "wav".equals(fmt);
         JSONObject item;
-        if (wavFmt) {
+        if ("mp3".equals(fmt)) {
+            File out = new File(dir(c), "e" + System.nanoTime() + ".mp3");
+            try {
+                mp3(in, inf, out, a.optInt("kbps", 192), p, cancel);
+                MediaLib.Target tg = MediaLib.create(c, name + ".mp3", "audio/mpeg");
+                item = MediaLib.copyInTarget(c, tg, out);
+                if (item == null) { MediaLib.discard(c, tg); throw new IllegalStateException("publish"); }
+            } finally {
+                out.delete();
+            }
+        } else if (wavFmt) {
             MediaLib.Target tg = MediaLib.create(c, name + ".wav", "audio/x-wav");
             item = MediaLib.copyInTarget(c, tg, in);
             if (item == null) { MediaLib.discard(c, tg); throw new IllegalStateException("publish"); }

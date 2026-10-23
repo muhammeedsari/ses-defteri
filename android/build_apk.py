@@ -53,7 +53,7 @@ def web_page(local_fonts=True, keep_sw=True):
     if local_fonts:
         page = re.sub(r'<link rel="preconnect"[^>]*>\n', "", page)
         page = re.sub(r'<link rel="stylesheet" href="https://fonts.googleapis.com[^"]*">', '<link rel="stylesheet" href="fonts/fonts.css">', page)
-    for js in ["i18n.js", "i18n2.js", "i18n3.js", "i18n4.js", "i18n5.js", "i18n6.js", "i18n7.js"]:
+    for js in ["i18n.js", "i18n2.js", "i18n3.js", "i18n4.js", "i18n5.js", "i18n6.js", "i18n7.js", "i18n8.js"]:
         page = page.replace(f"<script src=\"{js}\"></script>", "<script>\n" + (WEB / js).read_text(encoding="utf-8") + "\n</script>")
     head = f"""<!doctype html>
 <html lang="tr">
@@ -145,7 +145,8 @@ def main():
     names = []
     for abi in ([] if LITE else ["arm64-v8a", "armeabi-v7a"]):
         (libs / "lib" / abi).mkdir(parents=True, exist_ok=True)
-        for so in ["libsherpa-onnx-jni.so", "libonnxruntime.so", "libsherpa-onnx-c-api.so", "libsdsep.so"]:
+        for so in ["libsherpa-onnx-jni.so", "libonnxruntime.so", "libsherpa-onnx-c-api.so", "libsdsep.so", "libsdmp3.so"]:
+            if not (VENDOR / "jniLibs" / abi / so).exists(): continue   # the MP3 encoder is only built for 64-bit ARM
             shutil.copy(VENDOR / "jniLibs" / abi / so, libs / "lib" / abi / so)
             names.append(f"lib/{abi}/{so}")
     if names: run(["aapt", "add", str(unsigned)] + names, cwd=str(libs))

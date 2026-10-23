@@ -18,7 +18,17 @@ final class Recorder {
 
     private Recorder() { }
 
-    static synchronized String start(Context c, String mode, String displayName) {
+    private static boolean callPause = true;
+
+    /** opts: {q: std|high|stereo, src: auto|builtin|wired|usb, call: pause during calls} */
+    static synchronized String start(Context c, String mode, String displayName, String optsJson) {
+        JSONObject o;
+        try { o = new JSONObject(optsJson == null ? "{}" : optsJson); } catch (Exception e) { o = new JSONObject(); }
+        callPause = o.optBoolean("call", true);
+        return start(c, mode, displayName, o.optString("q", "std"), o.optString("src", "auto"));
+    }
+
+    private static String start(Context c, String mode, String displayName, String q, String src) {
         JSONObject res = new JSONObject();
         try {
             if (!"idle".equals(state)) { res.put("ok", false); res.put("error", "busy"); return res.toString(); }
@@ -34,9 +44,20 @@ final class Recorder {
             mr.setAudioSource(source);
             mr.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
             mr.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
-            mr.setAudioSamplingRate(music ? 48000 : 44100);
-            mr.setAudioEncodingBitRate(music ? 256000 : 128000);
-            mr.setAudioChannels(music ? 2 : 1);
+            boolean stereo = music || "stereo".equals(q), hi = stereo || "high".equals(q);
+            mr.setAudioSamplingRate(hi ? 48000 : 44100);
+            mr.setAudioEncodingBitRate(stereo ? 256000 : hi ? 160000 : 128000);
+            mr.setAudioChannels(stereo ? 2 : 1);
+            if (Build.VERSION.SDK_INT >= 28 && !"auto".equals(src)) {
+                AudioManager am = (AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
+                if (am != null) for (android.media.AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
+                    int t = d.getType();
+                    boolean m = "builtin".equals(src) ? t == android.media.AudioDeviceInfo.TYPE_BUILTIN_MIC
+                        : "wired".equals(src) ? t == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET
+                        : "usb".equals(src) && (t == android.media.AudioDeviceInfo.TYPE_USB_DEVICE || t == android.media.AudioDeviceInfo.TYPE_USB_HEADSET);
+                    if (m) { mr.setPreferredDevice(d); break; }
+                }
+            }
             if (target.uri != null) {
                 pfd = c.getContentResolver().openFileDescriptor(target.uri, "rw");
                 if (pfd == null) throw new IllegalStateException("fd");
@@ -53,7 +74,7 @@ final class Recorder {
         } catch (Exception e) {
             cleanup(c, true);
             // some phones refuse the unprocessed/camcorder source: retry with the plain microphone
-            if ("music".equals(mode)) return start(c, "music-mic", displayName);
+            if ("music".equals(mode)) return start(c, "music-mic", displayName, q, src);
             try { res.put("ok", false); res.put("error", String.valueOf(e.getMessage())); } catch (Exception ignored) { }
         }
         return res.toString();
@@ -142,7 +163,7 @@ final class Recorder {
         if (poll != null) calls.removeCallbacks(poll);
         poll = null;
         auto = false;
-        if (!on) return;
+        if (!on || !callPause) return;
         final AudioManager am = (AudioManager) c.getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
         if (am == null) return;
         poll = new Runnable() {
