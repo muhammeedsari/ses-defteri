@@ -25,8 +25,11 @@ final class Recorder {
         JSONObject o;
         try { o = new JSONObject(optsJson == null ? "{}" : optsJson); } catch (Exception e) { o = new JSONObject(); }
         callPause = o.optBoolean("call", true);
+        agc = o.optBoolean("agc", true);
         return start(c, mode, displayName, o.optString("q", "std"), o.optString("src", "auto"));
     }
+
+    private static boolean agc = true;
 
     private static String start(Context c, String mode, String displayName, String q, String src) {
         JSONObject res = new JSONObject();
@@ -35,7 +38,8 @@ final class Recorder {
             boolean music = mode.startsWith("music");
             target = MediaLib.create(c, displayName, "audio/mp4");
             mr = Build.VERSION.SDK_INT >= 31 ? new MediaRecorder(c) : new MediaRecorder();
-            int source = MediaRecorder.AudioSource.MIC;
+            // automatic gain off: VOICE_RECOGNITION is the source Android requires to be free of AGC
+            int source = agc ? MediaRecorder.AudioSource.MIC : MediaRecorder.AudioSource.VOICE_RECOGNITION;
             if ("music".equals(mode)) {
                 AudioManager am = (AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
                 String unp = am != null ? am.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED) : null;

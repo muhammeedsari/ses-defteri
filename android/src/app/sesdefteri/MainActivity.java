@@ -727,6 +727,13 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public void plQueue(final String json, final int index, final double startMs, final boolean autoplay) {
             ui(new Runnable() { @Override public void run() { Player.I.setQueue(json, index, (long) startMs, autoplay); } });
         }
+        @JavascriptInterface public void plEnqueue(final String json, final boolean next) { ui(new Runnable() { @Override public void run() { Player.I.enqueue(json, next); } }); }
+        @JavascriptInterface public void openUrl(final String url) {
+            if (url == null || !url.startsWith("https://")) return;
+            ui(new Runnable() { @Override public void run() {
+                try { startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))); } catch (Exception ignored) { }
+            } });
+        }
         @JavascriptInterface public void plPlay() { ui(new Runnable() { @Override public void run() { Player.I.play(); } }); }
         @JavascriptInterface public void plPause() { ui(new Runnable() { @Override public void run() { Player.I.pause(); } }); }
         @JavascriptInterface public void plSeek(final double ms) { ui(new Runnable() { @Override public void run() { Player.I.seek((long) ms); } }); }

@@ -107,9 +107,12 @@ public final class Stages {
         public int repaired;
         float[][] out = new float[1][0];
 
-        public ClickRepair(int ch, double fs, double sensitivity) {
+        public ClickRepair(int ch, double fs, double sensitivity) { this(ch, fs, sensitivity, 0.002); }
+
+        /** maxSec: longest click that is rebuilt (mouth noises are a bit longer than record clicks) */
+        public ClickRepair(int ch, double fs, double sensitivity, double maxSec) {
             this.ch = ch;
-            maxLen = (int) Math.round(fs * 0.002);
+            maxLen = (int) Math.round(fs * maxSec);
             W = (int) Math.round(fs * 0.010);
             DLY = 2 * W + 64;
             kD = 15 * 10 / sensitivity;

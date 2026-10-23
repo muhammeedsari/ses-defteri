@@ -171,3 +171,9 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .te-retake .pill{font-style:normal}
 #asrModel{display:grid;gap:8px}
 #asrModel .btn{justify-self:start}
+/* 2.3 */
+.song-more{flex:none;display:grid;place-items:center;width:34px;height:34px;margin:-6px -8px -6px -4px;border-radius:50%;color:var(--muted)}
+.song-more:active{background:var(--surface-2)}
+.song-more .ic{width:20px;height:20px}
+.about-btns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px}
+.priv .mtext{margin:0 0 10px}

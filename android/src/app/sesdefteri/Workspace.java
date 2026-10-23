@@ -281,6 +281,31 @@ final class Workspace {
                     slice = new double[] { 0.6, 1 };
                     break;
                 }
+                case "mouth": {
+                    // lip and tongue clicks: smaller and a little longer than vinyl clicks, so a more sensitive detector
+                    final Stages.ClickRepair cr = new Stages.ClickRepair(ch, fs, 16 + 14 * str, 0.004);
+                    m = new Meter(ch, fs);
+                    cr.to(m);
+                    head = cr;
+                    clicks.set(cr);
+                    slice = new double[] { 0, 1 };
+                    break;
+                }
+                case "stereo": {
+                    if (ch >= 2) { rep.put("none", true); return same(a, rep); }
+                    m = new Meter(2, fs);
+                    head = new Node() {
+                        float[][] o = new float[2][0];
+                        @Override public void push(float[][] b, int n) throws Exception {
+                            if (o[0].length < n) o = new float[2][n];
+                            System.arraycopy(b[0], 0, o[0], 0, n); System.arraycopy(b[0], 0, o[1], 0, n);
+                            next.push(o, n);
+                        }
+                    };
+                    head.to(m);
+                    slice = new double[] { 0, 1 };
+                    break;
+                }
                 case "dereverb": {
                     Spectral sp = new Spectral(ch, fs).dereverb(fs, a.optDouble("t60", 0.6), Math.max(0.5, Math.min(1.5, str)));
                     m = new Meter(ch, fs);
@@ -692,9 +717,10 @@ final class Workspace {
         o.put("noiseP", Studio.json(an.noisePower));
         // long pauses and breaths (frame scan of the same file)
         Speech.Scan sc = Speech.scan(w, inf, null, cancel);
-        java.util.ArrayList<int[]> ps = Speech.pauses(sc, 1.0);
+        double pmax = a.optDouble("pmax", 1.0);
+        java.util.ArrayList<int[]> ps = Speech.pauses(sc, pmax);
         double extra = 0;
-        for (int[] r : ps) extra += (r[1] - r[0]) * Speech.FR - 0.45;
+        for (int[] r : ps) extra += (r[1] - r[0]) * Speech.FR - a.optDouble("pkeep", 0.45);
         o.put("pauses", ps.size());
         o.put("pauseSec", Math.round(extra * 10) / 10.0);
         o.put("breaths", Speech.breaths(sc).size());
@@ -716,6 +742,7 @@ final class Workspace {
                 o.put("op", "denoise".equals(fx) && a.optBoolean("ai") ? "aidenoise" : fx);
                 o.put("strength", a.optDouble("strength", 1));
                 if ("loud".equals(fx)) o.put("target", a.optString("target", "youtube"));
+                if ("pauses".equals(fx)) { o.put("max", a.optDouble("pmax", 0.8)); o.put("keep", a.optDouble("pkeep", 0.45)); }
                 if ("eq".equals(fx) && a.has("learned")) o.put("learned", a.get("learned"));
                 if ("denoise".equals(fx) && a.has("profile")) o.put("profile", a.get("profile"));
                 JSONObject r = op(c, o, part(p, (double) i / n, (double) (i + 1) / n), cancel);
@@ -938,10 +965,47 @@ final class Workspace {
         }
     }
 
+    /** export channel choice: "mono" / "stereo" make a converted copy (null = keep as is) */
+    static File chans(Context c, File in, Info inf, String want) throws Exception {
+        int to = "mono".equals(want) ? 1 : "stereo".equals(want) ? 2 : inf.ch;
+        if (to == inf.ch) return null;
+        File out = new File(dir(c), "x" + System.nanoTime() + ".wav");
+        Studio.WavNode w = new Studio.WavNode(out, inf.rate);
+        RandomAccessFile r = new RandomAccessFile(in, "r");
+        try {
+            r.seek(44);
+            final int BL = 8192;
+            byte[] b = new byte[BL * inf.ch * 2];
+            float[][] o = new float[to][BL];
+            for (long done = 0; done < inf.frames; ) {
+                int n = (int) Math.min(BL, inf.frames - done);
+                r.readFully(b, 0, n * inf.ch * 2);
+                for (int i = 0, q = 0; i < n; i++) {
+                    float v = 0;
+                    for (int k = 0; k < inf.ch; k++, q += 2) v += (short) ((b[q] & 0xff) | (b[q + 1] << 8)) / 32768f;
+                    v /= inf.ch;
+                    for (int k = 0; k < to; k++) o[k][i] = v;
+                }
+                w.push(o, n);
+                done += n;
+            }
+            w.end();
+            return out;
+        } catch (Exception e) {
+            out.delete(); throw e;
+        } finally {
+            r.close();
+        }
+    }
+
     /* ---------- export: the current step as a file in the cache, for the share sheet ---------- */
 
     static JSONObject export(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
-        File in = new File(a.getString("path"));
+        File src = new File(a.getString("path")), conv = chans(c, src, info(src), a.optString("chans", ""));
+        try { return export0(c, a, conv != null ? conv : src, p, cancel); } finally { if (conv != null) conv.delete(); }
+    }
+
+    private static JSONObject export0(Context c, JSONObject a, File in, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         Info inf = info(in);
         File d = new File(c.getCacheDir(), "export");
         d.mkdirs();
@@ -1045,7 +1109,11 @@ final class Workspace {
     /* ---------- save the current step as a real file ---------- */
 
     static JSONObject save(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
-        File in = new File(a.getString("path"));
+        File src = new File(a.getString("path")), conv = chans(c, src, info(src), a.optString("chans", ""));
+        try { return save0(c, a, conv != null ? conv : src, p, cancel); } finally { if (conv != null) conv.delete(); }
+    }
+
+    private static JSONObject save0(Context c, JSONObject a, File in, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         Info inf = info(in);
         String name = Studio.safe(a.optString("name", "Ses"));
         String fmt = fmt(a);

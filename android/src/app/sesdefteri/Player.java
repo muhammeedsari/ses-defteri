@@ -305,6 +305,18 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         load(startMs, autoplay);
     }
 
+    /** "add to queue": after the current song (next) or at the end; starts playing when nothing is loaded */
+    synchronized void enqueue(String json, boolean next) {
+        JSONObject it;
+        try { it = new JSONObject(json); } catch (Exception e) { return; }
+        if (current() == null) { setQueue("[" + it + "]", 0, 0, true); return; }
+        queue.put(it);
+        int i = queue.length() - 1;
+        if (next) { order.add(pos + 1, i); dropNext(); if (playing && xfadeMs == 0 && gapless) prepareNext(); }
+        else order.add(i);
+        emit();
+    }
+
     private void buildOrder(int first) {
         order = new ArrayList<>();
         for (int i = 0; i < queue.length(); i++) order.add(i);
