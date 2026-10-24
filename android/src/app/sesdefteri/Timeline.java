@@ -70,9 +70,12 @@ final class Timeline {
     }
 
     /** same bands as the eqpreset op: shelf 100 Hz, peaks 300 Hz / 1 kHz / 3 kHz, shelf 8 kHz */
-    static java.util.ArrayList<app.sesdefteri.dsp.Biquad> eq(JSONArray g) {
-        if (g == null || g.length() < 5) return null;
+    static java.util.ArrayList<app.sesdefteri.dsp.Biquad> eq(JSONArray g, double bass, double treble) {
         java.util.ArrayList<app.sesdefteri.dsp.Biquad> l = new java.util.ArrayList<>();
+        // "bass boost" / "treble boost" buttons: wide shelves under the 5-band EQ
+        if (bass != 0) l.add(new app.sesdefteri.dsp.Biquad(2).setLowShelf(RATE, 150, 0.6, bass));
+        if (treble != 0) l.add(new app.sesdefteri.dsp.Biquad(2).setHighShelf(RATE, 5000, 0.6, treble));
+        if (g == null || g.length() < 5) return l.isEmpty() ? null : l;
         double[] mid = { 300, 1000, 3000 };
         double v = g.optDouble(0, 0);
         if (v != 0) l.add(new app.sesdefteri.dsp.Biquad(2).setLowShelf(RATE, 100, 0.707, v));
@@ -108,7 +111,7 @@ final class Timeline {
                     k.fo = (int) Math.round(o.optDouble("fo", 0) * RATE);
                     double dd = o.optDouble("duck", 0);
                     if (dd < 0) k.duck = (float) Math.pow(10, dd / 20);
-                    k.eq = eq(o.optJSONArray("eq"));
+                    k.eq = eq(o.optJSONArray("eq"), o.optDouble("bass", 0), o.optDouble("treble", 0));
                     if (k.len <= 0 || k.g <= 0) continue;
                     k.f = new RandomAccessFile(file, "r");
                     l.add(k);
@@ -214,8 +217,9 @@ final class Timeline {
                     eng.render(pos, n, mix);
                     for (int i = 0, j = 0; i < n; i++) {
                         for (int c = 0; c < 2; c++, j++) {
-                            float v = mix[c][i];
-                            if (v > 1) v = 1; else if (v < -1) v = -1;
+                            float v = mix[c][i], av = Math.abs(v);
+                            // soft knee above -1 dB so EQ / bass boosts don't crackle while previewing (export uses the real limiter)
+                            if (av > 0.89f) v = Math.signum(v) * (0.89f + 0.11f * (float) Math.tanh((av - 0.89f) / 0.11f));
                             pcm[j] = (short) (v * 32767);
                         }
                     }

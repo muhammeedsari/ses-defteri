@@ -19,6 +19,10 @@ public final class Spectral extends Node {
     double[] noise;              // noise power per bin (same scaling as |X|^2 of this STFT); null = off
     double floor = 1, overSub = 1;
     public double alpha = 0.96;
+    // 2.4: noise that changes over time (traffic, a fan switching speed) is followed with minimum statistics
+    boolean track;
+    double[][] smP, curMin; double[][][] subMin;
+    int subLen, subPos, subIdx; static final int SUBS = 8;
     final double[][] prevG2, prevGamma;
     // equaliser (linear gain per bin); null = flat
     double[] eq;
@@ -63,6 +67,15 @@ public final class Spectral extends Node {
         for (int k = 0; k < bins; k++) noise[k] = hannPower[k] * eS / eH;
         floor = Math.pow(10, -reductionDb / 20);
         overSub = overSubtract;
+        return this;
+    }
+
+    /** follow changing noise: per-bin minimum of the smoothed power over the last ~2.5 s (never below the profile) */
+    public Spectral tracking(int fs) {
+        track = true;
+        smP = new double[ch][bins]; curMin = new double[ch][bins]; subMin = new double[ch][SUBS][bins];
+        for (int c = 0; c < ch; c++) { java.util.Arrays.fill(curMin[c], Double.MAX_VALUE); for (double[] a : subMin[c]) java.util.Arrays.fill(a, Double.MAX_VALUE); }
+        subLen = Math.max(4, (int) Math.round(2.5 * fs / hop / SUBS));
         return this;
     }
 
@@ -136,9 +149,19 @@ public final class Spectral extends Node {
             return;
         }
         double[] pg2 = prevG2[c], pga = prevGamma[c];
+        double[] sp = track ? smP[c] : null, cm = track ? curMin[c] : null;
+        if (track && c == ch - 1 && ++subPos >= subLen) subPos = 0;
         for (int k = 0; k < bins; k++) {
             double p = re[k] * re[k] + im[k] * im[k];
             double nk = noise[k] * overSub + 1e-20;
+            if (sp != null) {
+                sp[k] = 0.85 * sp[k] + 0.15 * p;
+                if (sp[k] < cm[k]) cm[k] = sp[k];
+                double mn = cm[k];
+                for (double[] sm : subMin[c]) if (sm[k] < mn) mn = sm[k];
+                double tn = mn * 1.5 * overSub;
+                if (mn < Double.MAX_VALUE / 2 && tn > nk) nk = tn;
+            }
             double gamma = p / nk;
             double xi = alpha * pg2[k] * pga[k] + (1 - alpha) * Math.max(gamma - 1, 0);
             double gk = xi / (1 + xi);
@@ -155,6 +178,10 @@ public final class Spectral extends Node {
             pg2[k] = v * v;
             sum += v;
             gs[k] = eq == null ? v : v * eq[k];
+        }
+        if (track && subPos == 0 && c == ch - 1) {
+            for (int q = 0; q < ch; q++) { double[] t = subMin[q][subIdx]; System.arraycopy(curMin[q], 0, t, 0, bins); java.util.Arrays.fill(curMin[q], Double.MAX_VALUE); }
+            subIdx = (subIdx + 1) % SUBS;
         }
         meanGain += sum / bins; frames++;
     }

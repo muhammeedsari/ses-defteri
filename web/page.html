@@ -541,6 +541,12 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
 #editTab{min-width:0;max-width:100%}
 .rec-purpose{flex-wrap:wrap;overflow:visible;gap:6px}
 .rec-purpose .chip{padding:0 11px}
+/* 2.4: what was done to the selected clip */
+.tl-fx{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:13px}
+.tl-fx b{display:block;font-size:12.5px;color:var(--muted);font-weight:600;margin-bottom:4px}
+.tl-fx ol{margin:0;padding-inline-start:20px;display:grid;gap:4px}
+.tl-fx li span{font-weight:500}
+.tl-fx li small{display:block;color:var(--muted);font-size:12px}
 </style>
 
 <div class="wrap" id="app">
@@ -739,6 +745,7 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
 <script src="i18n11.js"></script>
 <script src="i18n12.js"></script>
 <script src="i18n13.js"></script>
+<script src="i18n14.js"></script>
 <script>
 (() => {
 'use strict';
@@ -749,7 +756,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '2.3.2';
+const VERSION = '2.4';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -2820,7 +2827,7 @@ function tlClean() {
 function tlMix() {
   const tr = TL.p.tracks;
   return TL.p.clips.filter(c => tr[c.tr] && !tr[c.tr].mute).map(c => ({ path: c.path, at: c.at, in: c.in, len: tlLen(c),
-    g: Math.pow(10, ((c.gain || 0) + (tr[c.tr].vol || 0)) / 20), fi: c.fi || 0, fo: c.fo || 0, duck: tr[c.tr].duck ? (tr[c.tr].duckDb || -12) : 0, eq: c.eq || null }));
+    g: Math.pow(10, ((c.gain || 0) + (tr[c.tr].vol || 0)) / 20), fi: c.fi || 0, fo: c.fo || 0, duck: tr[c.tr].duck ? (tr[c.tr].duckDb || -12) : 0, eq: c.eq || null, bass: c.bass || 0, treble: c.treble || 0 }));
 }
 /** first track where [a, b) is free, a new one if there is room, else the first */
 function tlFreeTrack(a, b, skipId, prefer) {
@@ -2975,7 +2982,7 @@ function tlTrack() {
     { id: 'td', value: !!tr.duck, html: `<label class="switch"><input type="checkbox" id="td"${tr.duck ? ' checked' : ''}><span>${esc(t('tlDuck'))}<small>${esc(t('tlDuckD'))}</small></span></label>` },
     { id: 'tdd', label: t('tlDuckAmt'), min: -30, max: -3, step: 1, value: tr.duckDb || -12, fmt: dbTxt }], v => { tr.vol = v.tv; tr.mute = v.tm; tr.duck = v.td; tr.duckDb = v.tdd; });
 }
-const TL_FX = ['fillers', 'aidenoise', 'denoise', 'dereverb', 'hum', 'clicks', 'mouth', 'plosive', 'deess', 'declip', 'breaths', 'channels', 'stereo', 'eq', 'level', 'comp', 'loud', 'reverb', 'delay', 'trim', 'pauses', 'silence'];
+const TL_FX = ['fillers', 'aidenoise', 'denoise', 'gate', 'dereverb', 'hum', 'clicks', 'mouth', 'plosive', 'deess', 'declip', 'breaths', 'channels', 'stereo', 'eq', 'level', 'comp', 'loud', 'reverb', 'delay', 'trim', 'pauses', 'silence'];
 async function tlFx() {
   const c = tlSel(); if (!c || TL.busy) return;
   const op = await chooseBox(t('tlFx'), t('tlFxD'), TL_FX.filter(x => (x !== 'aidenoise' || CAPS.sep) && (x !== 'stereo' || c.ch < 2)).map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
@@ -2988,6 +2995,20 @@ async function tlFx() {
   if (op === 'eq') return tlEffect(c, 'eq', { learned: S.learnVoice ? await learnedProfile() : null });
   if (op === 'silence') return tlSilence(c);
   if (op === 'fillers') return tlFillers(c);
+  if (op === 'denoise') {
+    const v = await chooseBox(t('op_denoise'), t('fxd_denoise'), [{ value: 'auto', label: t('dnAuto'), desc: t('dnAutoD') }, { value: 'here', label: t('dnHere'), desc: t('dnHereD') }]);
+    if (!v) return;
+    if (v === 'auto') return tlEffect(c, 'denoise', {});
+    const k = TL.pos - c.at;
+    if (k < 0 || k > tlLen(c) - 0.3) { toast(t('dnHereOut'), 4500); return; }
+    const t0 = c.in + k;
+    return tlEffect(c, 'denoise', { learn: [t0, Math.min(c.dur, t0 + 1)] });
+  }
+  if (op === 'aidenoise' || op === 'gate') {
+    const v = await chooseBox(t('op_' + op), t('fxd_' + op), [[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([x, k]) => ({ value: String(x), label: t(k), desc: op === 'aidenoise' ? t('dnStr_' + x) : '' })));
+    if (v) tlEffect(c, op, { strength: +v });
+    return;
+  }
   if (op === 'dereverb') {
     const v = await chooseBox(t('op_dereverb'), t('fxd_dereverb'), [[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([x, k]) => ({ value: String(x), label: t(k), desc: '' })));
     if (v) tlEffect(c, 'dereverb', { strength: +v });
@@ -3026,6 +3047,7 @@ async function tlEffect(c, op, extra) {
   }
   Object.assign(c, { path: res.path, dur: nd, ch: res.ch });
   c.out = Math.min(c.out, nd); c.in = Math.min(c.in, c.out - 0.05);
+  c.fx = (c.fx || []).concat([{ op, r: wsReport(op, res) || '' }]);
   if (op === 'eq' && S.learnVoice && res.report && res.report.tone) addVoiceProfile(res.report.tone);
   tlCommit(before);
   toast(wsReport(op, res) || t('wsDone'), 3500);
@@ -3082,6 +3104,7 @@ function wsReport(op, st) {
     case 'hum': return t('rpw_hum', { hz: r.hz });
     case 'trim': return t('rpw_trim', { a: n(r.start || 0), b: n(r.end || 0) });
     case 'clicks': case 'mouth': return t('rpClicks', { n: r.count || 0 });
+    case 'gate': return t('rpGate', { d: r.range || 0 });
     case 'stereo': return t('rpStereo');
     case 'plosive': return t('rpw_plosive', { s: n(r.seconds || 0) });
     case 'deess': return t('rpw_deess', { s: n(r.seconds || 0) });
@@ -3157,6 +3180,7 @@ function renderEdit() {
     <canvas class="tl-cv" id="tl" aria-label="${esc(t('tabEdit'))}"></canvas>
     <div id="tlBusy" hidden><p class="st-desc"><b id="tlBusyT"></b></p><div class="prog"><i id="tlBusyBar"></i></div></div>
     <div class="tl-bar" id="tlBar"></div>
+    <div class="tl-fx" id="tlFxList" hidden></div>
     ${empty ? `<div class="tl-empty"><b>${esc(t('tlEmpty'))}</b><p>${esc(t('tlEmptyD'))}</p></div>` : `<p class="hint tl-hint">${esc(t('tlHint'))}</p>`}`;
   renderTlBar(); tlBusyUi();
   for (const c of TL.p.clips) { const it = tlItem(c); if (!isComplete(S.peaks.get(it.id))) ensurePeaks(it, {}).then(drawTl, () => {}); }
@@ -3168,8 +3192,9 @@ function renderTlBar() {
   const b = (k, icn, lab, extra) => `<button class="tool" type="button" data-tl="${k}"${dis}${extra || ''}>${ic(icn)}${esc(lab)}</button>`;
   bar.innerHTML = c
     ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
-      b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('sep', 'mixer', t('tlSep')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
+      b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('bass', 'wave', t('tlBass')) + b('treble', 'spark', t('tlTreble')) + b('sep', 'mixer', t('tlSep')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
     : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
+  tlFxList();
   if (TL.rec) bar.innerHTML = `<button class="btn danger-fill" type="button" data-tl="rec">${ic('pause')} ${esc(t('tlRecStop'))} <span class="tc" id="tlRecT"></span></button><span class="hint">${esc(t('tlRecHint'))}</span>`;
 }
 function tlBusyUi() {
@@ -3419,6 +3444,7 @@ $('#editTab').addEventListener('click', e => {
   else if (k === 'sep') tlSep();
   else if (k === 'merge') tlMerge();
   else if (k === 'eq5') tlEq();
+  else if (k === 'bass' || k === 'treble') tlTone(k);
   else if (k === 'snap') { TL.snap = !TL.snap; ls.set('tlSnap', TL.snap); b.classList.toggle('on', TL.snap); b.setAttribute('aria-pressed', TL.snap); toast(t(TL.snap ? 'snapOn' : 'snapOff')); }
   else if (k === 'marker') tlAddMarker();
   else if (k === 'punch') tlPunch();
@@ -3552,6 +3578,42 @@ function tlEq() {
     }
   };
 }
+/** bass / treble boost: one slider, heard live, kept as a clip setting */
+function tlTone(kind) {
+  const c = tlSel(); if (!c || TL.busy) return;
+  const before = tlSnap(); let ok = false;
+  const lab = t(kind === 'bass' ? 'tlBass' : 'tlTreble');
+  const card = openModal(`<h3>${esc(lab)}</h3><p class="mtext">${esc(t(kind === 'bass' ? 'bassD' : 'trebleD'))}</p>
+    <div class="modal-body"><div class="slider"><span>${esc(t('tlAmount'))}</span><input type="range" min="0" max="12" step="1" value="${c[kind] || 0}" id="toneV"><span class="tc" id="toneT"></span></div></div>
+    <div class="modal-actions"><button class="btn" type="button" data-eqplay>${ic(TL.play ? 'pause' : 'play')}${esc(t('eqListen'))}</button><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`,
+    () => { if (!ok) { TL.p = JSON.parse(before); tlChanged(); } });
+  const inp = card.querySelector('#toneV');
+  const upd = () => {
+    const x = tlSel() || c, v = +inp.value;
+    x[kind] = v; card.querySelector('#toneT').textContent = v ? '+' + v + ' dB' : t('off');
+    ls.set('proj', TL.p);
+    if (TL.play) try { AND.tlUpdate(JSON.stringify(tlMix())); } catch (e) {}
+  };
+  upd(); inp.oninput = upd;
+  card.querySelector('[data-eqplay]').onclick = e => {
+    if (!TL.play && (TL.pos < c.at || TL.pos >= c.at + tlLen(c) - 0.2)) TL.pos = c.at;
+    tlPlay(); e.currentTarget.innerHTML = ic(TL.play ? 'pause' : 'play') + esc(t('eqListen'));
+  };
+  card.querySelector('[data-x]').onclick = () => closeModal();
+  card.querySelector('[data-ok]').onclick = () => { ok = true; closeModal(); tlCommit(before); };
+}
+/** what has been done to the selected clip, in order (effects, then the live settings) */
+function tlFxList() {
+  const box = $('#tlFxList'); if (!box) return;
+  const c = tlSel();
+  const rows = c ? (c.fx || []).map(f => [t('op_' + f.op), f.r]) : [];
+  if (c && c.eq) rows.push([t('tlEq'), c.eq.map((v, i) => EQ_BANDS[i] + ' ' + (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v)).join(' · ')]);
+  if (c && c.bass) rows.push([t('tlBass'), '+' + c.bass + ' dB']);
+  if (c && c.treble) rows.push([t('tlTreble'), '+' + c.treble + ' dB']);
+  if (c && c.gain) rows.push([t('tlVol'), dbTxt(c.gain)]);
+  box.hidden = !rows.length;
+  box.innerHTML = rows.length ? `<b>${esc(t('fxDone'))}</b><ol>${rows.map(([a, b]) => `<li><span>${esc(a)}</span>${b ? `<small>${esc(b)}</small>` : ''}</li>`).join('')}</ol>` : '';
+}
 /** joins the selected clip with the next one on its track into a single clip (the gap between them stays as silence) */
 async function tlMerge() {
   const c = tlSel(); if (!c || TL.busy) return;
@@ -3559,7 +3621,7 @@ async function tlMerge() {
   const d = TL.p.clips.filter(x => x !== c && x.tr === c.tr && x.at >= end - 0.05).sort((a, b) => a.at - b.at)[0];
   if (!d) { toast(t('tlNoMerge'), 3500); return; }
   tlStop();
-  const part = x => ({ path: x.path, at: x.at - c.at, in: x.in, len: tlLen(x), g: Math.pow(10, (x.gain || 0) / 20), fi: x.fi || 0, fo: x.fo || 0, eq: x.eq || null });
+  const part = x => ({ path: x.path, at: x.at - c.at, in: x.in, len: tlLen(x), g: Math.pow(10, (x.gain || 0) / 20), fi: x.fi || 0, fo: x.fo || 0, eq: x.eq || null, bass: x.bass || 0, treble: x.treble || 0 });
   let res;
   try { res = await tlRunJob(t('tlMerge'), 'tlRender', { clips: [part(c), part(d)], dir: 'proj', limit: false }); } catch (e) { toast(errText(e), 5000); return; }
   const before = tlSnap(), dur = res.dur / 1000;
@@ -3771,7 +3833,7 @@ function openTrash() {
 
 /* ---------- "Clean": diagnosis + fix everything in one tap, before/after, what changed ---------- */
 const CL = { r: null, diag: null, res: null, job: null, fixes: null, strength: ls.get('clStrength', 1), purpose: 'youtube', cmp: 'after', play: false, pos: 0, raf: 0 };
-const CL_ORDER = ['channels', 'declip', 'trim', 'hum', 'clicks', 'plosive', 'denoise', 'breaths', 'deess', 'eq', 'level', 'pauses', 'loud'];
+const CL_ORDER = ['channels', 'declip', 'trim', 'hum', 'clicks', 'plosive', 'denoise', 'gate', 'breaths', 'deess', 'eq', 'level', 'pauses', 'loud'];
 const TARGET_LUFS = { youtube: -14, podcast: -16, whatsapp: -16 };
 function clStopPlay() {
   if (!CL.play) return;
@@ -3812,7 +3874,7 @@ function clIssues(d, purpose) {
   if (d.hum > 6) out.push(['hum', t('dgHum', { hz: d.humHz })]);
   if (d.clicks >= 3) out.push(['clicks', t('dgClicks', { n: d.clicks })]);
   if (!music && d.plosive >= 0.2) out.push(['plosive', t('dgPlos', { s: n(d.plosive) })]);
-  if (!music && d.snr < 35) out.push(['denoise', t('dgNoise', { n: String(d.noise).replace('-', '−') })]);
+  if (!music && d.snr < 35) out.push(['denoise', t('dgNoise', { n: String(d.noise).replace('-', '−') })], ['gate', t('dgGate'), false]);
   if (!music && d.sib >= 1) out.push(['deess', t('dgSib', { s: n(d.sib) })]);
   if (!music && d.eq >= 2) out.push(['eq', t('dgEq', { m: n(d.eq) })]);
   if (!music && d.speech && d.lra > 8) out.push(['level', t('dgLevel', { l: n(d.lra) })]);
@@ -4524,7 +4586,7 @@ const pauseArgs = () => ({ pmax: S.pauseMax, pkeep: PAUSE_KEEP[S.pauseMax] || 0.
 const tlClip = () => ls.get('tlClip', null);
 function tlCopy(cut) {
   const c = tlSel(); if (!c) return;
-  ls.set('tlClip', { path: c.path, ch: c.ch, dur: c.dur, in: c.in, out: c.out, gain: c.gain || 0, fi: c.fi || 0, fo: c.fo || 0, eq: c.eq || null, name: c.name || '' });
+  ls.set('tlClip', { path: c.path, ch: c.ch, dur: c.dur, in: c.in, out: c.out, gain: c.gain || 0, fi: c.fi || 0, fo: c.fo || 0, eq: c.eq || null, bass: c.bass || 0, treble: c.treble || 0, fx: c.fx || [], name: c.name || '' });
   if (cut) tlDelete(); else renderTlBar();
   toast(t(cut ? 'tlCutDone' : 'tlCopied'));
 }

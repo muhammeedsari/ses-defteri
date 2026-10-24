@@ -63,3 +63,40 @@ JNIEXPORT jobjectArray JNICALL Java_app_sesdefteri_Separator_process(JNIEnv *env
   SherpaOnnxDestroySourceSeparationOutput(out);
   return res;
 }
+
+/* ---- 2.4: speech denoiser (DPDFNet, streaming) ---- */
+JNIEXPORT jlong JNICALL Java_app_sesdefteri_Denoiser_create(JNIEnv *env, jclass cl, jstring model, jint threads) {
+  const char *m = (*env)->GetStringUTFChars(env, model, 0);
+  SherpaOnnxOnlineSpeechDenoiserConfig cfg;
+  memset(&cfg, 0, sizeof cfg);
+  cfg.model.gtcrn.model = "";
+  cfg.model.dpdfnet.model = m;
+  cfg.model.num_threads = threads;
+  cfg.model.provider = "cpu";
+  const SherpaOnnxOnlineSpeechDenoiser *p = SherpaOnnxCreateOnlineSpeechDenoiser(&cfg);
+  (*env)->ReleaseStringUTFChars(env, model, m);
+  return (jlong)(intptr_t)p;
+}
+
+JNIEXPORT void JNICALL Java_app_sesdefteri_Denoiser_destroy(JNIEnv *env, jclass cl, jlong h) {
+  if (h) SherpaOnnxDestroyOnlineSpeechDenoiser((const SherpaOnnxOnlineSpeechDenoiser *)(intptr_t)h);
+}
+
+static jfloatArray den_out(JNIEnv *env, const SherpaOnnxDenoisedAudio *o) {
+  if (!o) return (*env)->NewFloatArray(env, 0);
+  jfloatArray x = (*env)->NewFloatArray(env, o->n);
+  if (x && o->n > 0) (*env)->SetFloatArrayRegion(env, x, 0, o->n, o->samples);
+  SherpaOnnxDestroyDenoisedAudio(o);
+  return x;
+}
+
+/* feeds n samples (48 kHz mono); returns whatever is ready; n < 0 flushes the rest */
+JNIEXPORT jfloatArray JNICALL Java_app_sesdefteri_Denoiser_run(JNIEnv *env, jclass cl, jlong h, jfloatArray in, jint n, jint rate) {
+  const SherpaOnnxOnlineSpeechDenoiser *d = (const SherpaOnnxOnlineSpeechDenoiser *)(intptr_t)h;
+  if (!d) return 0;
+  if (n < 0) return den_out(env, SherpaOnnxOnlineSpeechDenoiserFlush(d));
+  float *p = (*env)->GetFloatArrayElements(env, in, 0);
+  const SherpaOnnxDenoisedAudio *o = SherpaOnnxOnlineSpeechDenoiserRun(d, p, n, rate);
+  (*env)->ReleaseFloatArrayElements(env, in, p, JNI_ABORT);
+  return den_out(env, o);
+}

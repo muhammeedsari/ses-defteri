@@ -99,6 +99,21 @@ final class Workspace {
         return an.finish();
     }
 
+    /** noise spectrum of a stretch the user marked as "only noise" (mean power over all its frames) */
+    static double[] learnNoise(File in, Info inf, double t0, double t1, AtomicBoolean cancel) throws Exception {
+        if (t1 - t0 < 0.2) return null;
+        Analyzer an = new Analyzer(inf.ch, inf.rate);
+        Keep k = new Keep(new JSONArray().put(new JSONArray().put(t0 * 1000).put(t1 * 1000)), inf.rate);
+        k.to(an);
+        wav(in, inf, null, new double[] { 0, 1 }, cancel).run(k);
+        Analyzer.Analysis r = an.finish();
+        double[] p = r.noisePower, l = r.ltasPower;
+        if (p == null) return null;
+        double[] o = new double[p.length];
+        for (int i = 0; i < o.length; i++) o[i] = Math.max(p[i] * 1.4, l != null && l.length == o.length && l[i] > 0 ? l[i] : 0);
+        return o;
+    }
+
     static JSONObject done(File out, Meter m, JSONObject report) throws Exception {
         Info i = info(out);
         JSONObject o = new JSONObject();
@@ -149,7 +164,8 @@ final class Workspace {
         final double str = Math.max(0.3, Math.min(1.6, a.optDouble("strength", 1)));   // Light 0.6 / Balanced 1 / Strong 1.4
         try {
             if ("insert".equals(op)) return insert(c, in, inf, out, a, p, cancel);
-            if ("aidenoise".equals(op)) return aiDenoise(c, in, inf, p, cancel);
+            if ("aidenoise".equals(op)) return aiDenoise(c, in, inf, out, str, p, cancel);
+            if ("gate".equals(op)) return gate(in, inf, out, str, p, cancel);
             if ("pauses".equals(op)) return pauses(in, inf, out, a, p, cancel);
             if ("breaths".equals(op)) return breaths(in, inf, out, str, p, cancel);
             if ("declip".equals(op)) return declip(in, inf, out, p, cancel);
@@ -169,7 +185,13 @@ final class Workspace {
                     double nr = Math.max(4, Math.min(24, (Math.max(6, Math.min(18, (42 - an.snr) * 0.55 + 6))) * str));
                     double[] prof = a.has("profile") ? Studio.doubles(a.optJSONArray("profile")) : null;
                     if (prof != null && prof.length == an.noisePower.length) rep.put("room", true); else prof = an.noisePower;
+                    JSONArray lr = a.optJSONArray("learn");   // [from, to] seconds of noise only, picked by the user
+                    if (lr != null && lr.length() == 2) {
+                        double[] lp = learnNoise(in, inf, lr.getDouble(0), lr.getDouble(1), cancel);
+                        if (lp != null && lp.length == an.noisePower.length) { prof = lp; rep.put("learned", true); nr = Math.min(30, nr + 4); }
+                    }
                     Spectral s = new Spectral(ch, fs).noise(prof, nr, 1.0);
+                    if (a.optBoolean("track", true)) s.tracking(fs);
                     Analyzer after = new Analyzer(ch, fs);
                     m = new Meter(ch, fs);
                     s.to(new Tee(after)).to(m);
@@ -609,30 +631,93 @@ final class Workspace {
     }
 
     /** noise removal with the voice-separation model: keeps the voice, drops everything else */
-    static JSONObject aiDenoise(Context c, File in, Info inf, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
-        if (!Separator.available()) throw new IllegalStateException("sep-unavailable");
-        Analyzer.Analysis b = analyze(in, inf, part(p, 0, 0.33), cancel);
-        File vm = Separator.model(c, "vocals.fp16.onnx"), am = Separator.model(c, "accompaniment.fp16.onnx");
-        File[] o = Separator.run(in, inf, vm, am, part(p, 0.1, 0.9), cancel);
-        o[1].delete();
+    /** DPDFNet speech denoiser (48 kHz mono model; other rates are converted there and back) */
+    static JSONObject aiDenoise(Context c, File in, Info inf, File out, double str, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        Analyzer.Analysis b = analyze(in, inf, part(p, 0, 0.25), cancel);
+        long h = Denoiser.open(c);
         try {
-            Info oi = info(o[0]);
-            Analyzer after = new Analyzer(oi.ch, oi.rate);
-            Meter m = new Meter(oi.ch, oi.rate);
-            Node t = new Tee(after);
-            t.to(m).to(new Sink());
-            wav(o[0], oi, part(p, 0.9, 1), new double[] { 0, 1 }, cancel).run(t);
+            // Light keeps ~25 % of the original (-12 dB), Balanced -23 dB, Strong -34 dB
+            double lim = 12 + 22 * Math.max(0, Math.min(1, (str - 0.6) / 0.8));
+            int ch = inf.ch, fs = inf.rate;
+            Analyzer after = new Analyzer(ch, fs);
+            Meter m = new Meter(ch, fs);
+            Node head = new Denoiser.Stage(h, ch, Math.pow(10, -lim / 20)), tail = head;
+            if (fs != Denoiser.RATE) {
+                Resampler up = new Resampler(ch, (double) fs, (double) Denoiser.RATE), down = new Resampler(ch, (double) Denoiser.RATE, (double) fs);
+                up.to(head); head.to(down); head = up; tail = down;
+            }
+            tail.to(new Tee(after)).to(m).to(new Studio.WavNode(out, fs));
+            wav(in, inf, part(p, 0.25, 1), new double[] { 0, 1 }, cancel).run(head);
             double na = after.finish().noiseDb;
             JSONObject rep = new JSONObject();
             rep.put("before", Math.round(b.noiseDb));
             rep.put("after", Math.round(na));
             rep.put("reduction", Math.max(0, Math.round(b.noiseDb - na)));
             rep.put("ai", true);
-            return done(o[0], m, rep);
+            return done(out, m, rep);
         } catch (Exception e) {
-            o[0].delete();
+            out.delete();
             throw e;
+        } finally {
+            Denoiser.destroy(h);
         }
+    }
+
+    static final class Gate extends Node {
+        final int ch, LA, HOLD; final float closed, thr, eA, gA, gR;
+        final float[][] dl; int dp, hold; long seen; float env, gain = 1; float[][] o = new float[1][0];
+        Gate(int ch, int la, int holdN, float closed, float thr, float eA, float gA, float gR) {
+            this.ch = ch; LA = la; HOLD = holdN; this.closed = closed; this.thr = thr; this.eA = eA; this.gA = gA; this.gR = gR;
+            dl = new float[ch][la];
+        }
+        @Override public void push(float[][] b, int n) throws Exception {
+            if (o[0].length < n) o = new float[ch][n];
+            int k = 0;
+            for (int i = 0; i < n; i++) {
+                float pw = 0;
+                for (int c = 0; c < ch; c++) pw += b[c][i] * b[c][i];
+                env += (pw / ch - env) * eA;
+                if (env > thr) hold = HOLD; else if (hold > 0) hold--;
+                float tg = hold > 0 ? 1 : closed;
+                gain += (tg - gain) * (tg > gain ? gA : gR);
+                // the gain follows the newest audio, the output is LA samples older: the gate opens just before a word
+                for (int c = 0; c < ch; c++) { float d = dl[c][dp]; dl[c][dp] = b[c][i]; o[c][k] = d * gain; }
+                dp = (dp + 1) % LA;
+                if (++seen > LA) k++;
+            }
+            if (k > 0) {
+                next.push(o, k);
+            }
+        }
+        @Override public void end() throws Exception {
+            int left = (int) Math.min(LA, seen);
+            if (left > 0) {
+                if (o[0].length < left) o = new float[ch][left];
+                int start = seen < LA ? 0 : dp;
+                for (int i = 0; i < left; i++) for (int c = 0; c < ch; c++) o[c][i] = dl[c][(start + i) % LA] * gain;
+                next.push(o, left);
+            }
+            next.end();
+        }
+    }
+
+    /** noise gate: between words the remaining hiss is pulled down (5 ms look-ahead, 120 ms hold) */
+    static JSONObject gate(File in, Info inf, File out, double str, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        Speech.Scan sc = Speech.scan(in, inf, part(p, 0, 0.3), cancel);
+        JSONObject rep = new JSONObject();
+        double gap = sc.speech - sc.noise;
+        if (gap < 6 || sc.noise < -80) { rep.put("none", true); return same(null, rep); }
+        final double thrDb = sc.noise + Math.max(4, Math.min(12, gap * 0.3));
+        final double range = Math.min(gap - 2, 8 + 10 * str);
+        rep.put("range", Math.round(range));
+        final int ch = inf.ch, fs = inf.rate, LA = Math.round(fs * 0.005f), HOLD = Math.round(fs * 0.12f);
+        final float closed = (float) Math.pow(10, -range / 20), thr = (float) Math.pow(10, thrDb / 10);
+        final float eA = (float) (1 - Math.exp(-1.0 / (0.01 * fs))), gA = (float) (1 - Math.exp(-1.0 / (0.003 * fs))), gR = (float) (1 - Math.exp(-1.0 / (0.15 * fs)));
+        Node g = new Gate(ch, LA, HOLD, closed, thr, eA, gA, gR);
+        Meter m = new Meter(ch, fs);
+        g.to(m).to(new Studio.WavNode(out, fs));
+        wav(in, inf, part(p, 0.3, 1), new double[] { 0, 1 }, cancel).run(g);
+        return done(out, m, rep);
     }
 
     /** per-band correction towards the target tone (smoothed over neighbours, capped) */
