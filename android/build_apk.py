@@ -2,15 +2,16 @@
 import os, re, shutil, subprocess, pathlib
 from PIL import Image, ImageDraw
 
-HERE = pathlib.Path(__file__).parent
-WEB = pathlib.Path("/home/claude/ses-defteri")
-SCR = pathlib.Path("/tmp/claude-0/-home-claude/f627c3b4-50c9-535f-ab8e-ff706c4816ce/scratchpad")
-FONTSRC = SCR / "fonts"
-ANDROID_JAR = pathlib.Path("/home/claude/sdk/android-34.jar")
-VENDOR = pathlib.Path("/home/claude/vendor")
+HERE = pathlib.Path(__file__).resolve().parent
+ROOT = HERE.parent
+WEB = pathlib.Path(os.environ.get("SD_WEB", ROOT / "web"))
+# everything that is not in git (native libraries, models, fonts, android.jar): see android/fetch_vendor.sh
+VENDOR = pathlib.Path(os.environ.get("SD_VENDOR", ROOT / "vendor"))
+FONTSRC = VENDOR / "fonts"
+ANDROID_JAR = pathlib.Path(os.environ.get("SD_ANDROID_JAR", VENDOR / "android-34.jar"))
 LITE = os.environ.get("LITE") == "1"   # without speech-to-text (small download)
 OUT = HERE / "out"
-KS = HERE / "ses-defteri-imza.p12"
+KS = pathlib.Path(os.environ.get("SD_KS", HERE / "ses-defteri-imza.p12"))   # the signing key is NEVER committed
 KS_PASS = os.environ.get("SD_KS_PASS", "")  # signing password is not stored in the repository
 
 def run(cmd, **kw):
@@ -44,7 +45,15 @@ def build_fonts(dest: pathlib.Path):
                 css.append(rule)
     (dest / "fonts.css").write_text("\n".join(css) + "\n")
 
+def assemble_page():
+    """web/page.html = head.html (first part, ends inside <style>) + extra.css + </style> + body.html"""
+    head = (WEB / "head.html").read_text(encoding="utf-8")
+    css = (WEB / "extra.css").read_text(encoding="utf-8")
+    body = (WEB / "body.html").read_text(encoding="utf-8")
+    (WEB / "page.html").write_text(head + css + "</style>\n\n" + body, encoding="utf-8")
+
 def web_page(local_fonts=True, keep_sw=True):
+    assemble_page()
     page = (WEB / "page.html").read_text(encoding="utf-8")
     title = re.search(r"<title>.*?</title>\n", page).group(0)
     page = page.replace(title, "", 1)
@@ -99,7 +108,7 @@ def main():
     www = HERE / "assets" / "www"
     shutil.rmtree(www, ignore_errors=True); www.mkdir(parents=True)
     (www / "index.html").write_text(web_page(), encoding="utf-8")
-    shutil.copy(SCR / "lib/package/fix-webm-duration.js", www / "fix-webm-duration.js")
+    shutil.copy(VENDOR / "fix-webm-duration.js", www / "fix-webm-duration.js")
     build_fonts(www / "fonts")
     # speech-to-text models (Whisper base int8 + Silero VAD)
     asr = HERE / "assets" / "asr"
@@ -157,6 +166,9 @@ def main():
     aligned = OUT / "app-aligned.apk"
     run(["zipalign", "-f", "-p", "4", str(unsigned), str(aligned)])
     # signing key (kept so future updates install over this version)
+    if not KS.exists() and os.environ.get("SD_NEW_KEY") != "1":
+        raise SystemExit("signing key missing: put ses-defteri-imza.p12 next to build_apk.py (or SD_KS=...) and set SD_KS_PASS. "
+                         "A new key (SD_NEW_KEY=1) makes updates impossible to install over existing versions.")
     if not KS.exists():
         run(["keytool", "-genkeypair", "-keystore", str(KS), "-storetype", "PKCS12", "-storepass", KS_PASS,
              "-keypass", KS_PASS, "-alias", "sesdefteri", "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",

@@ -16,7 +16,8 @@ Telefonda "Bilinmeyen kaynaklardan yükleme" izni istenirse tarayıcıya izin ve
 - 9 dil, açık/koyu tema, renk seçimi
 
 ## Kaynak
-- `android/` — Java kaynakları ve derleme betiği (Gradle'sız: aapt, javac, d8/dx, apksigner)
+- `android/` — Java kaynakları, derleme betiği (Gradle'sız) ve `fetch_vendor.sh`
+- `CLAUDE.md`, `docs/DURUM.md`, `docs/MIMARI.md` — geliştirme rehberi ve durum
 - `android/src/app/sesdefteri/dsp/` — saf Java ses işleme (Android'siz test edilebilir)
 - `web/` — arayüz (WebView içinde çalışır)
 - `tests/` — ölçüme dayalı testler
