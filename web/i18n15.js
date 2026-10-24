@@ -1,0 +1,42 @@
+/* Ses Defteri 2.5 — optional speech-to-text models, two AI noise removals (merged into SD_I18N). */
+(function () {
+const A = {
+tr: { asr_base: "Standart", asr_small: "Gelişmiş", asrD_base: "Hızlı, çoğu kayıt için yeterli", asrD_small: "Türkçede hataları yaklaşık üçte bir azaltır, 2–3 kat yavaş",
+  asrNoneD: "Sesten metne isteğe bağlı: modeli indirmezsen uygulamada yer kaplamaz. Bir kez indirilir (Wi-Fi önerilir), sonra internetsiz çalışır.", asrHaveD: "İndirilen modeli dilediğin zaman silip yer açabilirsin.",
+  asrNeed: "Önce Ayarlar'dan bir sesten metne modeli indir.", asrNeedT: "Sesten metne modeli indirilsin mi?", asrNeedD: "Bu özellik isteğe bağlı. Model bir kez indirilir, sonra internetsiz çalışır. Wi-Fi önerilir.", asrGetting: "Model indiriliyor…",
+  op_aidenoise: "Gelişmiş YZ gürültü temizliği", op_sepdenoise: "Ses ayırma ile gürültü sil", fxd_sepdenoise: "Ses ayırma modeli konuşmayı alır, müziği ve ortam sesini atar" },
+en: { asr_base: "Standard", asr_small: "Advanced", asrD_base: "Fast, good enough for most recordings", asrD_small: "About a third fewer mistakes, 2–3 times slower",
+  asrNoneD: "Speech-to-text is optional: without a model it takes no space. It is downloaded once (Wi-Fi recommended) and then works offline.", asrHaveD: "You can delete a downloaded model at any time to free space.",
+  asrNeed: "First download a speech-to-text model in Settings.", asrNeedT: "Download a speech-to-text model?", asrNeedD: "This feature is optional. The model is downloaded once and then works offline. Wi-Fi recommended.", asrGetting: "Downloading the model…",
+  op_aidenoise: "Advanced AI noise removal", op_sepdenoise: "Remove noise by voice separation", fxd_sepdenoise: "The separation model keeps the voice and drops music and room sound" },
+de: { asr_base: "Standard", asr_small: "Erweitert", asrD_base: "Schnell, reicht für die meisten Aufnahmen", asrD_small: "Etwa ein Drittel weniger Fehler, 2–3-mal langsamer",
+  asrNoneD: "Sprache zu Text ist optional: ohne Modell belegt es keinen Platz. Es wird einmal geladen (WLAN empfohlen) und läuft dann offline.", asrHaveD: "Ein geladenes Modell kannst du jederzeit löschen, um Platz zu schaffen.",
+  asrNeed: "Lade zuerst in den Einstellungen ein Sprache-zu-Text-Modell.", asrNeedT: "Sprache-zu-Text-Modell laden?", asrNeedD: "Diese Funktion ist optional. Das Modell wird einmal geladen und läuft dann offline. WLAN empfohlen.", asrGetting: "Modell wird geladen…",
+  op_aidenoise: "Erweiterte KI-Rauschentfernung", op_sepdenoise: "Rauschen per Stimmtrennung entfernen", fxd_sepdenoise: "Das Trennmodell behält die Stimme und entfernt Musik und Raumklang" },
+fr: { asr_base: "Standard", asr_small: "Avancé", asrD_base: "Rapide, suffisant pour la plupart des enregistrements", asrD_small: "Environ un tiers d’erreurs en moins, 2 à 3 fois plus lent",
+  asrNoneD: "La transcription est facultative : sans modèle, elle ne prend aucune place. Il se télécharge une fois (Wi-Fi conseillé), puis fonctionne hors ligne.", asrHaveD: "Tu peux supprimer un modèle téléchargé à tout moment pour libérer de la place.",
+  asrNeed: "Télécharge d’abord un modèle de transcription dans les Réglages.", asrNeedT: "Télécharger un modèle de transcription ?", asrNeedD: "Cette fonction est facultative. Le modèle se télécharge une fois puis fonctionne hors ligne. Wi-Fi conseillé.", asrGetting: "Téléchargement du modèle…",
+  op_aidenoise: "Suppression du bruit IA avancée", op_sepdenoise: "Supprimer le bruit par séparation", fxd_sepdenoise: "Le modèle de séparation garde la voix et retire musique et ambiance" },
+es: { asr_base: "Estándar", asr_small: "Avanzado", asrD_base: "Rápido, suficiente para la mayoría de grabaciones", asrD_small: "Cerca de un tercio menos errores, 2–3 veces más lento",
+  asrNoneD: "La voz a texto es opcional: sin modelo no ocupa espacio. Se descarga una vez (Wi-Fi recomendado) y luego funciona sin internet.", asrHaveD: "Puedes borrar un modelo descargado cuando quieras para liberar espacio.",
+  asrNeed: "Primero descarga un modelo de voz a texto en Ajustes.", asrNeedT: "¿Descargar un modelo de voz a texto?", asrNeedD: "Esta función es opcional. El modelo se descarga una vez y luego funciona sin internet. Wi-Fi recomendado.", asrGetting: "Descargando el modelo…",
+  op_aidenoise: "Limpieza de ruido IA avanzada", op_sepdenoise: "Quitar ruido separando la voz", fxd_sepdenoise: "El modelo de separación conserva la voz y quita música y ambiente" },
+pt: { asr_base: "Padrão", asr_small: "Avançado", asrD_base: "Rápido, suficiente para a maioria das gravações", asrD_small: "Cerca de um terço menos erros, 2–3 vezes mais lento",
+  asrNoneD: "Voz para texto é opcional: sem modelo não ocupa espaço. É baixado uma vez (Wi-Fi recomendado) e depois funciona offline.", asrHaveD: "Você pode apagar um modelo baixado quando quiser para liberar espaço.",
+  asrNeed: "Primeiro baixe um modelo de voz para texto nas Configurações.", asrNeedT: "Baixar um modelo de voz para texto?", asrNeedD: "Este recurso é opcional. O modelo é baixado uma vez e depois funciona offline. Wi-Fi recomendado.", asrGetting: "Baixando o modelo…",
+  op_aidenoise: "Limpeza de ruído IA avançada", op_sepdenoise: "Remover ruído separando a voz", fxd_sepdenoise: "O modelo de separação mantém a voz e tira música e ambiente" },
+ru: { asr_base: "Стандартная", asr_small: "Улучшенная", asrD_base: "Быстрая, хватает для большинства записей", asrD_small: "Примерно на треть меньше ошибок, в 2–3 раза медленнее",
+  asrNoneD: "Распознавание речи необязательно: без модели оно не занимает места. Модель скачивается один раз (лучше по Wi-Fi) и дальше работает без интернета.", asrHaveD: "Скачанную модель можно удалить в любой момент, чтобы освободить место.",
+  asrNeed: "Сначала скачай модель распознавания в настройках.", asrNeedT: "Скачать модель распознавания речи?", asrNeedD: "Эта функция необязательна. Модель скачивается один раз и работает без интернета. Лучше по Wi-Fi.", asrGetting: "Скачиваю модель…",
+  op_aidenoise: "Улучшенная ИИ-очистка от шума", op_sepdenoise: "Убрать шум разделением голоса", fxd_sepdenoise: "Модель разделения оставляет голос и убирает музыку и фон" },
+ar: { asr_base: "قياسي", asr_small: "متقدم", asrD_base: "سريع ويكفي لمعظم التسجيلات", asrD_small: "أخطاء أقل بنحو الثلث، وأبطأ مرتين إلى ثلاث",
+  asrNoneD: "تحويل الكلام إلى نص اختياري: بدون نموذج لا يشغل مساحة. يُنزَّل مرة واحدة (يُفضَّل Wi-Fi) ثم يعمل دون إنترنت.", asrHaveD: "يمكنك حذف النموذج المنزَّل في أي وقت لتوفير المساحة.",
+  asrNeed: "نزّل أولًا نموذج تحويل الكلام إلى نص من الإعدادات.", asrNeedT: "تنزيل نموذج تحويل الكلام إلى نص؟", asrNeedD: "هذه الميزة اختيارية. يُنزَّل النموذج مرة واحدة ثم يعمل دون إنترنت. يُفضَّل Wi-Fi.", asrGetting: "جارٍ تنزيل النموذج…",
+  op_aidenoise: "إزالة ضجيج متقدمة بالذكاء الاصطناعي", op_sepdenoise: "إزالة الضجيج بفصل الصوت", fxd_sepdenoise: "يحتفظ نموذج الفصل بالصوت ويزيل الموسيقى وأصوات المكان" },
+zh: { asr_base: "标准", asr_small: "高级", asrD_base: "速度快，适合大多数录音", asrD_small: "错误减少约三分之一，慢 2–3 倍",
+  asrNoneD: "语音转文字是可选的：不下载模型就不占空间。只需下载一次（建议 Wi-Fi），之后离线使用。", asrHaveD: "可随时删除已下载的模型以释放空间。",
+  asrNeed: "请先在设置中下载语音转文字模型。", asrNeedT: "下载语音转文字模型？", asrNeedD: "此功能是可选的。模型只需下载一次，之后离线使用。建议使用 Wi-Fi。", asrGetting: "正在下载模型…",
+  op_aidenoise: "高级 AI 去噪", op_sepdenoise: "用人声分离去噪", fxd_sepdenoise: "分离模型保留人声，去掉音乐和环境声" }
+};
+for (const l in A) window.SD_I18N[l] = Object.assign(window.SD_I18N[l] || {}, A[l]);
+})();

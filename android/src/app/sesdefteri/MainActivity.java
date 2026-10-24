@@ -812,7 +812,7 @@ public class MainActivity extends Activity implements Player.Listener {
                         } else if ("asrDownload".equals(kind)) {
                             res = AsrModels.download(MainActivity.this, a, p, cancel);
                         } else if ("asrDelete".equals(kind)) {
-                            res = AsrModels.delete(MainActivity.this);
+                            res = AsrModels.delete(MainActivity.this, a);
                         } else if ("asrStatus".equals(kind)) {
                             res = AsrModels.status(MainActivity.this);
                         } else if ("loudness".equals(kind)) {

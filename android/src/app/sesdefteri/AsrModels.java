@@ -13,15 +13,18 @@ import java.net.URL;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Optional, more accurate speech-to-text model (Whisper small, int8, ≈375 MB) downloaded once from Hugging Face;
- * afterwards everything runs offline. The built-in "base" model stays in the APK.
+ * Speech-to-text is optional: Whisper base (≈95 MB) or small (≈375 MB, more accurate), int8, downloaded once
+ * from Hugging Face on request; afterwards everything runs offline. Nothing of it is in the APK but the tiny voice detector.
  */
 final class AsrModels {
     private AsrModels() { }
 
-    static final String[] SMALL = { "small-encoder.int8.onnx", "small-decoder.int8.onnx", "small-tokens.txt" };
-    static final String[] HOSTS = { "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/",
-                                    "https://hf-mirror.com/csukuangfj/sherpa-onnx-whisper-small/resolve/main/" };
+    static String[] files(String m) { return new String[] { m + "-encoder.int8.onnx", m + "-decoder.int8.onnx", m + "-tokens.txt" }; }
+    static String[] hosts(String m) {
+        return new String[] { "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-" + m + "/resolve/main/",
+                              "https://hf-mirror.com/csukuangfj/sherpa-onnx-whisper-" + m + "/resolve/main/" };
+    }
+    static String name(String m) { return "small".equals(m) ? "small" : "base"; }
 
     static File dir(Context c, String name) {
         File d = new File(c.getFilesDir(), "asr-" + name);
@@ -30,26 +33,33 @@ final class AsrModels {
     }
 
     static boolean ready(Context c, String name) {
-        if (!"small".equals(name)) return false;
         File d = new File(c.getFilesDir(), "asr-" + name);
-        for (String f : SMALL) if (!new File(d, f).isFile()) return false;
+        for (String f : files(name)) if (!new File(d, f).isFile()) return false;
         return new File(d, "silero_vad.onnx").isFile();
     }
 
-    /** the model to use: the requested one if downloaded, else the built-in base */
-    static String pick(Context c, String want) { return ready(c, want) ? want : "base"; }
+    /** the model to use: the requested one if downloaded, else the other one, else null (nothing downloaded) */
+    static String pick(Context c, String want) {
+        want = name(want);
+        if (ready(c, want)) return want;
+        String other = "small".equals(want) ? "base" : "small";
+        return ready(c, other) ? other : null;
+    }
 
     static JSONObject status(Context c) throws Exception {
         JSONObject o = new JSONObject();
+        o.put("base", ready(c, "base"));
         o.put("small", ready(c, "small"));
         return o;
     }
 
     static JSONObject download(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
-        File d = dir(c, "small");
+        String m = name(a.optString("model", "base"));
+        String[] SMALL = files(m);
+        File d = dir(c, m);
         long[] sizes = new long[SMALL.length];
         String host = null;
-        for (String h : HOSTS) {
+        for (String h : hosts(m)) {
             try { for (int i = 0; i < SMALL.length; i++) sizes[i] = size(h + SMALL[i]); host = h; break; } catch (Exception ignored) { }
         }
         if (host == null) throw new IllegalStateException("download-unreachable");
@@ -117,8 +127,8 @@ final class AsrModels {
         }
     }
 
-    static JSONObject delete(Context c) throws Exception {
-        File[] fs = dir(c, "small").listFiles();
+    static JSONObject delete(Context c, JSONObject a) throws Exception {
+        File[] fs = dir(c, name(a.optString("model", "small"))).listFiles();
         if (fs != null) for (File f : fs) f.delete();
         return status(c);
     }

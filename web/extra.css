@@ -199,3 +199,10 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
 .tl-fx ol{margin:0;padding-inline-start:20px;display:grid;gap:4px}
 .tl-fx li span{font-weight:500}
 .tl-fx li small{display:block;color:var(--muted);font-size:12px}
+/* 2.5: optional speech-to-text models */
+.asr-row{display:grid;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+.asr-row:last-of-type{border-bottom:0}
+.asr-pick{display:flex;gap:10px;align-items:flex-start}
+.asr-pick span{display:grid;gap:2px}
+.asr-pick small{color:var(--muted);font-size:12px}
+.asr-row .btn{justify-self:start}

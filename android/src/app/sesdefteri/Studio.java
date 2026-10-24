@@ -180,8 +180,10 @@ final class Studio {
         final Transcriber tr;
         try {
             String model = AsrModels.pick(c, src.optString("_model", ""));
-            if ("base".equals(model)) tr = new Transcriber(c.getAssets(), "asr", "base", lang == null ? "" : lang, threads);
-            else tr = new Transcriber(null, AsrModels.dir(c, model).getAbsolutePath(), model, lang == null ? "" : lang, threads);
+            if (model == null) throw new IllegalStateException("asr-missing");
+            tr = new Transcriber(null, AsrModels.dir(c, model).getAbsolutePath(), model, lang == null ? "" : lang, threads);
+        } catch (IllegalStateException e) {
+            throw e;
         } catch (Throwable e) {
             throw new IllegalStateException("asr-unavailable: " + e.getMessage());
         }

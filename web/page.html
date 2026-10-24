@@ -547,6 +547,13 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
 .tl-fx ol{margin:0;padding-inline-start:20px;display:grid;gap:4px}
 .tl-fx li span{font-weight:500}
 .tl-fx li small{display:block;color:var(--muted);font-size:12px}
+/* 2.5: optional speech-to-text models */
+.asr-row{display:grid;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+.asr-row:last-of-type{border-bottom:0}
+.asr-pick{display:flex;gap:10px;align-items:flex-start}
+.asr-pick span{display:grid;gap:2px}
+.asr-pick small{color:var(--muted);font-size:12px}
+.asr-row .btn{justify-self:start}
 </style>
 
 <div class="wrap" id="app">
@@ -746,6 +753,7 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
 <script src="i18n12.js"></script>
 <script src="i18n13.js"></script>
 <script src="i18n14.js"></script>
+<script src="i18n15.js"></script>
 <script>
 (() => {
 'use strict';
@@ -756,7 +764,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '2.4';
+const VERSION = '2.5';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -953,7 +961,7 @@ const S = {
   textLang: ls.get('textLang', LANG), asrModel: ls.get('asrModel', 'base'), autoText: ls.get('autoText', false), learnVoice: ls.get('learnVoice', true), showBeats: ls.get('showBeats', true), beats: new Map(), texts: new Map(),
   recQuality: ls.get('recQuality', 'std'), micSrc: ls.get('micSrc', 'auto'), callPause: ls.get('callPause', true), autoClean: ls.get('autoClean', false),
   fmt: ls.get('fmt', CAPS.mp3 ? 'mp3_192' : 'm4a'), nameTpl: ls.get('nameTpl', '{name}'), trashDays: +ls.get('trashDays', 30),
-  normalize: ls.get('normalize', true), xfade: +ls.get('xfade', 0), gapless: ls.get('gapless', true), playEq: ls.get('playEq', 'flat'), skipSil: ls.get('skipSil', false),
+  asrSt: { base: false, small: false }, normalize: ls.get('normalize', true), xfade: +ls.get('xfade', 0), gapless: ls.get('gapless', true), playEq: ls.get('playEq', 'flat'), skipSil: ls.get('skipSil', false),
   artist: ls.get('artist', ''), roomLearn: ls.get('roomLearn', true),
   chans: ls.get('chans', 'auto'), minSong: +ls.get('minSong', 0), agc: ls.get('agc', true), silCut: ls.get('silCut', false),
   startTab: ls.get('startTab', 'last'), pauseMax: +ls.get('pauseMax', 0.8), playlists: ls.get('playlists', [])
@@ -1275,7 +1283,7 @@ async function runBackground() {
     .sort((a, b) => b.created - a.created)[0];
   if (!next) {
     // speech-to-text in the background, newest first, so every recording becomes searchable by its words
-    const tn = S.autoText && CAPS.asr ? recItems().filter(r => r.src && !r.ttext && !textTried.has(r.id) && !BUSY.has(r.id) && r.duration > 2 && r.duration < 3600)
+    const tn = S.autoText && CAPS.asr && hasAsr() ? recItems().filter(r => r.src && !r.ttext && !textTried.has(r.id) && !BUSY.has(r.id) && r.duration > 2 && r.duration < 3600)
       .sort((a, b) => b.created - a.created)[0] : null;
     if (!tn) return;
     textTried.add(tn.id); bgBusy = true;
@@ -2536,6 +2544,7 @@ async function studioJob(kind, it, args) {
 function errText(e) {
   const m = String((e && e.message) || '');
   if (m.includes('cancel')) return t('saveCancelled');
+  if (m.includes('asr-missing')) return t('asrNeed');
   if (m.includes('asr-unavailable')) return t('textNoAsr');
   if (m.includes('memory')) return t('textMem');
   return t('errGeneric') + (m && m !== 'job' ? ' (' + m.slice(0, 120) + ')' : '');
@@ -2561,6 +2570,7 @@ async function addVoiceProfile(tone) {
 
 async function transcribeItem(it, auto) {
   if (!NATIVE || !CAPS.asr || !it.src || BUSY.has(it.id)) { if (!auto && NATIVE && !CAPS.asr) toast(t('textNoAsr'), 4000); return; }
+  if (!hasAsr()) { if (auto || !(await asrOffer())) return; }
   let res;
   try { res = await studioJob('transcribe', it, { lang: S.textLang, model: S.asrModel }); }
   catch (e) { if (!auto || !String(e.message).includes('cancel')) toast(errText(e), 4000); return; }
@@ -2743,29 +2753,53 @@ async function tlFillers(c) {
   };
 }
 /** the larger speech model: download / remove */
+/* speech-to-text is optional: the models are downloaded only when wanted */
+const hasAsr = () => !!(S.asrSt.base || S.asrSt.small);
+async function asrRefresh() { try { S.asrSt = await runJob('asrStatus', {}); } catch (e) {} return S.asrSt; }
+const ASR_MODELS = [['base', 95], ['small', 375]];
+/** downloads one model with a progress bar; resolves true when it is ready */
+function asrDownload(m, onProg) {
+  const pr = runJob('asrDownload', { model: m, bg: true }, onProg);
+  return { jobId: pr.jobId, done: pr.then(st => { S.asrSt = st; if (!S.asrSt[S.asrModel]) S.asrModel = m; ls.set('asrModel', S.asrModel); toast(t('asrReady'), 3500); return true; },
+    x => { if (!String(x.message).includes('cancel')) toast(t('asrFail'), 5000); return false; }) };
+}
+/** asked when "to text" is used before any model is on the phone */
+async function asrOffer() {
+  const v = await chooseBox(t('asrNeedT'), t('asrNeedD'), ASR_MODELS.map(([m, mb]) => ({ value: m, label: t('asr_' + m) + ' · ' + mb + ' MB', desc: t('asrD_' + m) })));
+  if (!v) return false;
+  const card = openModal(`<h3>${esc(t('asrGetting'))}</h3><p class="mtext">${esc(t('asr_' + v))}</p><div class="prog"><i id="asrBar" style="width:0%"></i></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button></div>`);
+  const d = asrDownload(v, f => { const b = card.querySelector('#asrBar'); if (b) b.style.width = Math.round(f * 100) + '%'; });
+  card.querySelector('[data-x]').onclick = () => { try { AND.cancelJob(d.jobId); } catch (e) {} };
+  const ok = await d.done;
+  if (stack.includes('modal')) closeModal();
+  return ok;
+}
 async function asrModelUi(card) {
   const box = card.querySelector('#asrModel'); if (!box) return;
-  let st = { small: false };
-  try { st = await runJob('asrStatus', {}); } catch (e) {}
-  const draw = (busy, p) => {
-    box.innerHTML = `<div class="seg2" role="radiogroup">${['base', 'small'].map(m => `<button type="button" role="radio" data-asr="${m}" aria-checked="${S.asrModel === m}"${m === 'small' && !st.small ? ' disabled' : ''}>${esc(t('asr_' + m))}</button>`).join('')}</div>
-      <small class="hint">${esc(t(st.small ? 'asrHaveD' : 'asrGetD'))}</small>
-      ${busy ? `<div class="prog"><i style="width:${Math.round(p * 100)}%"></i></div><button class="btn sm" type="button" data-asr-cancel>${esc(t('cancel'))}</button>`
-        : st.small ? `<button class="btn sm danger" type="button" data-asr-del>${esc(t('asrDel'))}</button>` : `<button class="btn sm primary" type="button" data-asr-get>${ic('import')}${esc(t('asrGet'))}</button>`}`;
+  await asrRefresh();
+  let busy = null, prog = 0, job = null;
+  const draw = () => {
+    if (!box.isConnected) return;
+    box.innerHTML = ASR_MODELS.map(([m, mb]) => {
+      const have = !!S.asrSt[m];
+      return `<div class="asr-row"><label class="asr-pick"><input type="radio" name="asrM" data-asr="${m}"${S.asrModel === m && have ? ' checked' : ''}${have ? '' : ' disabled'}><span><b>${esc(t('asr_' + m))}</b><small>${mb} MB · ${esc(t('asrD_' + m))}</small></span></label>
+        ${busy === m ? `<div class="prog"><i style="width:${Math.round(prog * 100)}%"></i></div><button class="btn sm" type="button" data-asr-cancel>${esc(t('cancel'))}</button>`
+          : have ? `<button class="btn sm danger" type="button" data-asr-del="${m}">${esc(t('asrDel'))}</button>` : `<button class="btn sm primary" type="button" data-asr-get="${m}"${busy ? ' disabled' : ''}>${ic('import')}${esc(t('asrGet'))}</button>`}</div>`;
+    }).join('') + `<small class="hint">${esc(t(hasAsr() ? 'asrHaveD' : 'asrNoneD'))}</small>`;
   };
-  draw(false, 0);
-  let job = null;
+  draw();
   box.onclick = async e => {
     const m = e.target.closest('[data-asr]');
-    if (m && !m.disabled) { S.asrModel = m.dataset.asr; ls.set('asrModel', S.asrModel); draw(false, 0); return; }
+    if (m && !m.disabled) { S.asrModel = m.dataset.asr; ls.set('asrModel', S.asrModel); return; }
     if (e.target.closest('[data-asr-cancel]') && job) { try { AND.cancelJob(job); } catch (x) {} return; }
-    if (e.target.closest('[data-asr-del]')) { try { st = await runJob('asrDelete', {}); } catch (x) {} S.asrModel = 'base'; ls.set('asrModel', 'base'); draw(false, 0); return; }
-    if (e.target.closest('[data-asr-get]')) {
-      draw(true, 0);
-      const pr = runJob('asrDownload', { bg: true }, f => draw(true, f)); job = pr.jobId;
-      try { st = await pr; S.asrModel = 'small'; ls.set('asrModel', 'small'); toast(t('asrReady'), 3500); }
-      catch (x) { if (!String(x.message).includes('cancel')) toast(t('asrFail'), 5000); }
-      job = null; if (box.isConnected) draw(false, 0);
+    const del = e.target.closest('[data-asr-del]');
+    if (del) { try { S.asrSt = await runJob('asrDelete', { model: del.dataset.asrDel }); } catch (x) {} if (!S.asrSt[S.asrModel]) { S.asrModel = S.asrSt.base ? 'base' : 'small'; ls.set('asrModel', S.asrModel); } draw(); return; }
+    const get = e.target.closest('[data-asr-get]');
+    if (get && !busy) {
+      busy = get.dataset.asrGet; prog = 0; draw();
+      const d = asrDownload(busy, f => { prog = f; draw(); }); job = d.jobId;
+      await d.done; busy = null; job = null; draw();
     }
   };
 }
@@ -2982,10 +3016,10 @@ function tlTrack() {
     { id: 'td', value: !!tr.duck, html: `<label class="switch"><input type="checkbox" id="td"${tr.duck ? ' checked' : ''}><span>${esc(t('tlDuck'))}<small>${esc(t('tlDuckD'))}</small></span></label>` },
     { id: 'tdd', label: t('tlDuckAmt'), min: -30, max: -3, step: 1, value: tr.duckDb || -12, fmt: dbTxt }], v => { tr.vol = v.tv; tr.mute = v.tm; tr.duck = v.td; tr.duckDb = v.tdd; });
 }
-const TL_FX = ['fillers', 'aidenoise', 'denoise', 'gate', 'dereverb', 'hum', 'clicks', 'mouth', 'plosive', 'deess', 'declip', 'breaths', 'channels', 'stereo', 'eq', 'level', 'comp', 'loud', 'reverb', 'delay', 'trim', 'pauses', 'silence'];
+const TL_FX = ['fillers', 'aidenoise', 'sepdenoise', 'denoise', 'gate', 'dereverb', 'hum', 'clicks', 'mouth', 'plosive', 'deess', 'declip', 'breaths', 'channels', 'stereo', 'eq', 'level', 'comp', 'loud', 'reverb', 'delay', 'trim', 'pauses', 'silence'];
 async function tlFx() {
   const c = tlSel(); if (!c || TL.busy) return;
-  const op = await chooseBox(t('tlFx'), t('tlFxD'), TL_FX.filter(x => (x !== 'aidenoise' || CAPS.sep) && (x !== 'stereo' || c.ch < 2)).map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
+  const op = await chooseBox(t('tlFx'), t('tlFxD'), TL_FX.filter(x => ((x !== 'aidenoise' && x !== 'sepdenoise') || CAPS.sep) && (x !== 'stereo' || c.ch < 2)).map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
   if (!op) return;
   if (op === 'loud') {
     const v = await chooseBox(t('op_loud'), t('wsLoudD'), ['youtube', 'podcast', 'whatsapp'].map(x => ({ value: x, label: t('tg_' + x), desc: t('ex' + x[0].toUpperCase() + x.slice(1)) })));
@@ -3100,7 +3134,7 @@ function wsReport(op, st) {
   const r = st.report || {}, n = nf1.format;
   switch (op) {
     case 'cut': return t('rpw_cut', { d: fmt(st.dur / 1000) });
-    case 'denoise': case 'aidenoise': return t('rpw_denoise', { b: r.before, a: r.after, r: r.reduction });
+    case 'denoise': case 'aidenoise': case 'sepdenoise': return t('rpw_denoise', { b: r.before, a: r.after, r: r.reduction });
     case 'hum': return t('rpw_hum', { hz: r.hz });
     case 'trim': return t('rpw_trim', { a: n(r.start || 0), b: n(r.end || 0) });
     case 'clicks': case 'mouth': return t('rpClicks', { n: r.count || 0 });
@@ -4805,6 +4839,7 @@ async function boot() {
     scheduleBackground(3000);
     purgeTrash().then(() => render(), () => {});
     applyPlayerPrefs();
+    if (CAPS.asr) asrRefresh();
     if (!S.media && !ls.get('askedMedia', false)) { ls.set('askedMedia', true); requestLibrary(); }
   }
 }

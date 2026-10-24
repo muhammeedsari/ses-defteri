@@ -166,6 +166,7 @@ final class Workspace {
             if ("insert".equals(op)) return insert(c, in, inf, out, a, p, cancel);
             if ("aidenoise".equals(op)) return aiDenoise(c, in, inf, out, str, p, cancel);
             if ("gate".equals(op)) return gate(in, inf, out, str, p, cancel);
+            if ("sepdenoise".equals(op)) return sepDenoise(c, in, inf, p, cancel);
             if ("pauses".equals(op)) return pauses(in, inf, out, a, p, cancel);
             if ("breaths".equals(op)) return breaths(in, inf, out, str, p, cancel);
             if ("declip".equals(op)) return declip(in, inf, out, p, cancel);
@@ -698,6 +699,33 @@ final class Workspace {
                 next.push(o, left);
             }
             next.end();
+        }
+    }
+
+    /** noise removal with the voice separation model (Spleeter): keeps only the voice stem */
+    static JSONObject sepDenoise(Context c, File in, Info inf, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        if (!Separator.available()) throw new IllegalStateException("sep-unavailable");
+        Analyzer.Analysis b = analyze(in, inf, part(p, 0, 0.1), cancel);
+        File vm = Separator.model(c, "vocals.fp16.onnx"), am = Separator.model(c, "accompaniment.fp16.onnx");
+        File[] o = Separator.run(in, inf, vm, am, part(p, 0.1, 0.9), cancel);
+        o[1].delete();
+        try {
+            Info oi = info(o[0]);
+            Analyzer after = new Analyzer(oi.ch, oi.rate);
+            Meter m = new Meter(oi.ch, oi.rate);
+            Node t = new Tee(after);
+            t.to(m).to(new Sink());
+            wav(o[0], oi, part(p, 0.9, 1), new double[] { 0, 1 }, cancel).run(t);
+            double na = after.finish().noiseDb;
+            JSONObject rep = new JSONObject();
+            rep.put("before", Math.round(b.noiseDb));
+            rep.put("after", Math.round(na));
+            rep.put("reduction", Math.max(0, Math.round(b.noiseDb - na)));
+            rep.put("ai", true);
+            return done(o[0], m, rep);
+        } catch (Exception e) {
+            o[0].delete();
+            throw e;
         }
     }
 
