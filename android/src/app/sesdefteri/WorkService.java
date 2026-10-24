@@ -16,20 +16,32 @@ public class WorkService extends Service {
     private static final String CHANNEL = "work";
     private static final int ID = 9;
     private static int running;
+    // the service is started only for work that lasts (> 1 s), and stopped from outside only once it is in the
+    // foreground: stopping a foreground service before startForeground() makes Android kill the app
+    private static boolean requested, fg;
+    private static final android.os.Handler H = new android.os.Handler(android.os.Looper.getMainLooper());
 
-    static synchronized void begin(Context c) {
+    static synchronized void begin(final Context c) {
         running++;
-        if (running == 1) {
-            try {
-                Intent i = new Intent(c, WorkService.class);
-                if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(i); else c.startService(i);
-            } catch (Exception ignored) { }
+        if (running == 1 && !requested) {
+            final Context app = c.getApplicationContext();
+            H.postDelayed(new Runnable() { @Override public void run() { start(app); } }, 1000);
         }
+    }
+
+    private static synchronized void start(Context c) {
+        if (running == 0 || requested) return;
+        requested = true;
+        try {
+            Intent i = new Intent(c, WorkService.class);
+            if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(i); else c.startService(i);
+        } catch (Exception e) { requested = false; }
     }
 
     static synchronized void end(Context c) {
         running = Math.max(0, running - 1);
-        if (running == 0) {
+        if (running == 0 && fg) {
+            fg = false;
             try { c.stopService(new Intent(c, WorkService.class)); } catch (Exception ignored) { }
         }
     }
@@ -60,13 +72,15 @@ public class WorkService extends Service {
             else startForeground(ID, b.build());
         } catch (Exception e) {
             stopSelf();
+            return START_NOT_STICKY;
         }
-        synchronized (WorkService.class) { if (running == 0) stopSelf(); }
+        synchronized (WorkService.class) { fg = true; if (running == 0) { fg = false; stopSelf(); } }
         return START_NOT_STICKY;
     }
 
     @Override
     public void onDestroy() {
+        synchronized (WorkService.class) { fg = false; requested = false; }
         try {
             if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE); else stopForeground(true);
         } catch (Exception ignored) { }

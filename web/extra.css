@@ -182,3 +182,14 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lang-card h2{margin:0;font-size:26px}
 .lang-card p{margin:0;color:var(--muted)}
 .lang-card .langs{justify-content:center}
+/* 2.3.2: nothing may be wider than the phone; no rubber-band page */
+html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
+.modal-card{overflow-x:hidden;overscroll-behavior:contain}
+.set-sub{grid-template-columns:minmax(0,1fr)}
+.sel-full,select,input{min-width:0;max-width:100%}
+.tl-top{min-width:0}
+.tl-top .tc{min-width:0;flex:0 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px}
+.tl-top .btn.sm{padding:0 12px}
+#editTab{min-width:0;max-width:100%}
+.rec-purpose{flex-wrap:wrap;overflow:visible;gap:6px}
+.rec-purpose .chip{padding:0 11px}

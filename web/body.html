@@ -204,7 +204,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '2.3.1';
+const VERSION = '2.3.2';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -2275,7 +2275,7 @@ function tlClean() {
 function tlMix() {
   const tr = TL.p.tracks;
   return TL.p.clips.filter(c => tr[c.tr] && !tr[c.tr].mute).map(c => ({ path: c.path, at: c.at, in: c.in, len: tlLen(c),
-    g: Math.pow(10, ((c.gain || 0) + (tr[c.tr].vol || 0)) / 20), fi: c.fi || 0, fo: c.fo || 0, duck: tr[c.tr].duck ? (tr[c.tr].duckDb || -12) : 0 }));
+    g: Math.pow(10, ((c.gain || 0) + (tr[c.tr].vol || 0)) / 20), fi: c.fi || 0, fo: c.fo || 0, duck: tr[c.tr].duck ? (tr[c.tr].duckDb || -12) : 0, eq: c.eq || null }));
 }
 /** first track where [a, b) is free, a new one if there is room, else the first */
 function tlFreeTrack(a, b, skipId, prefer) {
@@ -2972,23 +2972,38 @@ async function tlPunchFinish(it, p) {
 
 const EQ_BANDS = ['100', '300', '1k', '3k', '8k'];
 const EQ_PRESETS = [['flat', [0, 0, 0, 0, 0]], ['bright', [-1, 0, 0, 2, 5]], ['deep', [4, 2, 0, -1, -1]], ['bass', [7, 2, 0, 0, 0]], ['clear', [0, -2, 0, 4, 2]], ['warm', [2, 1, 0, -1, -3]]];
+/** live EQ on the clip: heard at once while playing, kept as a clip setting (applied in playback and export) */
 function tlEq() {
   const c = tlSel(); if (!c || TL.busy) return;
-  let g = (ls.get('eqLast', null) || [0, 0, 0, 0, 0]).slice();
-  const card = openModal(`<h3>${esc(t('tlEq'))}</h3><p class="mtext">${esc(t('eqD'))}</p>
+  const before = tlSnap();
+  let g = (c.eq || ls.get('eqLast', null) || [0, 0, 0, 0, 0]).slice(), ok = false;
+  const card = openModal(`<h3>${esc(t('tlEq'))}</h3><p class="mtext">${esc(t('eqLiveD'))}</p>
     <div class="modal-body"><div class="chips eq-pre">${EQ_PRESETS.map(([k]) => `<button class="chip" type="button" data-eqp="${k}">${esc(t('eq_' + k))}</button>`).join('')}</div>
       ${EQ_BANDS.map((b, i) => `<div class="slider"><span>${b}Hz</span><input type="range" min="-12" max="12" step="1" value="${g[i]}" data-eqb="${i}"><span class="tc" id="eqv${i}"></span></div>`).join('')}</div>
-    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`);
-  const show = () => g.forEach((v, i) => { card.querySelector('#eqv' + i).textContent = (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v); card.querySelector(`[data-eqb="${i}"]`).value = v; });
-  show();
-  card.oninput = e => { const i = e.target.dataset.eqb; if (i != null) { g[+i] = +e.target.value; show(); } };
+    <div class="modal-actions"><button class="btn" type="button" data-eqplay>${ic(TL.play ? 'pause' : 'play')}${esc(t('eqListen'))}</button><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`,
+    () => { if (!ok) { TL.p = JSON.parse(before); tlChanged(); } });
+  const apply = () => {
+    const x = tlSel() || c;
+    x.eq = g.every(v => v === 0) ? null : g.slice();
+    ls.set('proj', TL.p);
+    if (TL.play) try { AND.tlUpdate(JSON.stringify(tlMix())); } catch (e) {}
+  };
+  const show = () => g.forEach((v, i) => { card.querySelector('#eqv' + i).textContent = (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v) + ' dB'; card.querySelector(`[data-eqb="${i}"]`).value = v; });
+  show(); apply();
+  card.oninput = e => { const i = e.target.dataset.eqb; if (i != null) { g[+i] = +e.target.value; show(); apply(); } };
   card.onclick = e => {
-    const p = e.target.closest('[data-eqp]'); if (p) { g = EQ_PRESETS.find(x => x[0] === p.dataset.eqp)[1].slice(); show(); return; }
+    const p = e.target.closest('[data-eqp]'); if (p) { g = EQ_PRESETS.find(x => x[0] === p.dataset.eqp)[1].slice(); show(); apply(); return; }
+    const pl = e.target.closest('[data-eqplay]');
+    if (pl) {
+      if (!TL.play && (TL.pos < c.at || TL.pos >= c.at + tlLen(c) - 0.2)) TL.pos = c.at;
+      tlPlay(); pl.innerHTML = ic(TL.play ? 'pause' : 'play') + esc(t('eqListen')); return;
+    }
     if (e.target.closest('[data-x]')) { card.oninput = card.onclick = null; closeModal(); return; }
     if (e.target.closest('[data-ok]')) {
-      card.oninput = card.onclick = null; closeModal();
-      if (g.every(v => v === 0)) return;
-      ls.set('eqLast', g); tlEffect(c, 'eqpreset', { gains: g });
+      ok = true; card.oninput = card.onclick = null; closeModal();
+      if (c.eq) ls.set('eqLast', c.eq);
+      tlCommit(before);
+      toast(t(c.eq ? 'eqOn' : 'eqOff'));
     }
   };
 }
@@ -2999,7 +3014,7 @@ async function tlMerge() {
   const d = TL.p.clips.filter(x => x !== c && x.tr === c.tr && x.at >= end - 0.05).sort((a, b) => a.at - b.at)[0];
   if (!d) { toast(t('tlNoMerge'), 3500); return; }
   tlStop();
-  const part = x => ({ path: x.path, at: x.at - c.at, in: x.in, len: tlLen(x), g: Math.pow(10, (x.gain || 0) / 20), fi: x.fi || 0, fo: x.fo || 0 });
+  const part = x => ({ path: x.path, at: x.at - c.at, in: x.in, len: tlLen(x), g: Math.pow(10, (x.gain || 0) / 20), fi: x.fi || 0, fo: x.fo || 0, eq: x.eq || null });
   let res;
   try { res = await tlRunJob(t('tlMerge'), 'tlRender', { clips: [part(c), part(d)], dir: 'proj', limit: false }); } catch (e) { toast(errText(e), 5000); return; }
   const before = tlSnap(), dur = res.dur / 1000;
@@ -3964,7 +3979,7 @@ const pauseArgs = () => ({ pmax: S.pauseMax, pkeep: PAUSE_KEEP[S.pauseMax] || 0.
 const tlClip = () => ls.get('tlClip', null);
 function tlCopy(cut) {
   const c = tlSel(); if (!c) return;
-  ls.set('tlClip', { path: c.path, ch: c.ch, dur: c.dur, in: c.in, out: c.out, gain: c.gain || 0, fi: c.fi || 0, fo: c.fo || 0, name: c.name || '' });
+  ls.set('tlClip', { path: c.path, ch: c.ch, dur: c.dur, in: c.in, out: c.out, gain: c.gain || 0, fi: c.fi || 0, fo: c.fo || 0, eq: c.eq || null, name: c.name || '' });
   if (cut) tlDelete(); else renderTlBar();
   toast(t(cut ? 'tlCutDone' : 'tlCopied'));
 }

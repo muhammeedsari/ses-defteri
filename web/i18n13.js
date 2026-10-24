@@ -121,3 +121,18 @@ zh: { more: "更多", tlCopy: "复制", tlCut: "剪切", tlPaste: "粘贴", tlCo
 };
 for (const l in A) window.SD_I18N[l] = Object.assign(window.SD_I18N[l] || {}, A[l]);
 })();
+/* 2.3.2 — live EQ */
+(function () {
+const A = {
+tr: { eqLiveD: "Çalarken kaydırıcıları oynat, farkı anında duy. EQ parçanın ayarı olarak kalır; dışa aktarırken uygulanır.", eqListen: "Dinle", eqOn: "EQ uygulandı", eqOff: "EQ kapatıldı" },
+en: { eqLiveD: "Move the sliders while it plays and hear the change at once. The EQ stays a clip setting and is applied on export.", eqListen: "Listen", eqOn: "EQ applied", eqOff: "EQ turned off" },
+de: { eqLiveD: "Bewege die Regler während der Wiedergabe und höre den Unterschied sofort. Der EQ bleibt eine Clip-Einstellung und wird beim Export angewendet.", eqListen: "Anhören", eqOn: "EQ angewendet", eqOff: "EQ aus" },
+fr: { eqLiveD: "Bouge les curseurs pendant la lecture et entends la différence tout de suite. L’EQ reste un réglage du clip, appliqué à l’export.", eqListen: "Écouter", eqOn: "EQ appliqué", eqOff: "EQ désactivé" },
+es: { eqLiveD: "Mueve los controles mientras suena y oye el cambio al instante. El EQ queda como ajuste del clip y se aplica al exportar.", eqListen: "Escuchar", eqOn: "EQ aplicado", eqOff: "EQ desactivado" },
+pt: { eqLiveD: "Mexa os controles enquanto toca e ouça a mudança na hora. O EQ fica como ajuste do clipe e é aplicado ao exportar.", eqListen: "Ouvir", eqOn: "EQ aplicado", eqOff: "EQ desligado" },
+ru: { eqLiveD: "Двигай ползунки во время воспроизведения и сразу слышь разницу. EQ остаётся настройкой клипа и применяется при экспорте.", eqListen: "Слушать", eqOn: "EQ применён", eqOff: "EQ выключен" },
+ar: { eqLiveD: "حرّك المنزلقات أثناء التشغيل واسمع الفرق فورًا. يبقى المعادل إعدادًا للمقطع ويُطبَّق عند التصدير.", eqListen: "استماع", eqOn: "تم تطبيق المعادل", eqOff: "تم إيقاف المعادل" },
+zh: { eqLiveD: "播放时拖动滑块，立即听到变化。EQ 作为片段设置保留，导出时应用。", eqListen: "试听", eqOn: "已应用 EQ", eqOff: "已关闭 EQ" }
+};
+for (const l in A) window.SD_I18N[l] = Object.assign(window.SD_I18N[l] || {}, A[l]);
+})();

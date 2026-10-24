@@ -65,6 +65,21 @@ final class Timeline {
         float g, duck = 1;   // duck: gain while the other tracks are speaking (1 = never ducked)
         int fi, fo;
         byte[] buf = new byte[0];
+        java.util.ArrayList<app.sesdefteri.dsp.Biquad> eq;   // live 5-band EQ (null = flat)
+        float[][] tmp = new float[2][0];
+    }
+
+    /** same bands as the eqpreset op: shelf 100 Hz, peaks 300 Hz / 1 kHz / 3 kHz, shelf 8 kHz */
+    static java.util.ArrayList<app.sesdefteri.dsp.Biquad> eq(JSONArray g) {
+        if (g == null || g.length() < 5) return null;
+        java.util.ArrayList<app.sesdefteri.dsp.Biquad> l = new java.util.ArrayList<>();
+        double[] mid = { 300, 1000, 3000 };
+        double v = g.optDouble(0, 0);
+        if (v != 0) l.add(new app.sesdefteri.dsp.Biquad(2).setLowShelf(RATE, 100, 0.707, v));
+        for (int i = 0; i < 3; i++) { v = g.optDouble(i + 1, 0); if (v != 0) l.add(app.sesdefteri.dsp.Biquad.peaking(2, RATE, mid[i], 0.9, v)); }
+        v = g.optDouble(4, 0);
+        if (v != 0) l.add(new app.sesdefteri.dsp.Biquad(2).setHighShelf(RATE, 8000, 0.707, v));
+        return l.isEmpty() ? null : l;
     }
 
     /** clips: [{path, at, in, len (seconds), g (linear), fi, fo (seconds)}] */
@@ -93,6 +108,7 @@ final class Timeline {
                     k.fo = (int) Math.round(o.optDouble("fo", 0) * RATE);
                     double dd = o.optDouble("duck", 0);
                     if (dd < 0) k.duck = (float) Math.pow(10, dd / 20);
+                    k.eq = eq(o.optJSONArray("eq"));
                     if (k.len <= 0 || k.g <= 0) continue;
                     k.f = new RandomAccessFile(file, "r");
                     l.add(k);
@@ -141,6 +157,13 @@ final class Timeline {
                 k.f.readFully(k.buf, 0, bytes);
                 byte[] b = k.buf;
                 int q = 0;
+                float[] L = out[0], Rr = out[1];
+                int base = off;
+                if (k.eq != null) {
+                    if (k.tmp[0].length < cnt) k.tmp = new float[2][cnt];
+                    L = k.tmp[0]; Rr = k.tmp[1]; base = 0;
+                    java.util.Arrays.fill(L, 0, cnt, 0f); java.util.Arrays.fill(Rr, 0, cnt, 0f);
+                }
                 for (int i = 0; i < cnt; i++) {
                     long r = a - k.at + i;
                     float g = k.g;
@@ -151,8 +174,12 @@ final class Timeline {
                     q += 2;
                     float rr = l;
                     if (k.ch > 1) { rr = (short) ((b[q] & 0xff) | (b[q + 1] << 8)) / 32768f; q += 2; }
-                    out[0][off + i] += l * g;
-                    out[1][off + i] += rr * g;
+                    L[base + i] += l * g;
+                    Rr[base + i] += rr * g;
+                }
+                if (k.eq != null) {
+                    for (app.sesdefteri.dsp.Biquad f : k.eq) { f.process(0, L, 0, cnt); f.process(1, Rr, 0, cnt); }
+                    for (int i = 0; i < cnt; i++) { out[0][off + i] += L[i]; out[1][off + i] += Rr[i]; }
                 }
             }
         }

@@ -59,7 +59,7 @@ def web_page(local_fonts=True, keep_sw=True):
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 {title.strip()}
 <style>:root{{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}}body{{margin:0;font:14px system-ui,sans-serif;-webkit-user-select:none;user-select:none}}input,textarea{{-webkit-user-select:text;user-select:text}}img{{max-width:100%}}[hidden]{{display:none!important}}</style>
 </head>

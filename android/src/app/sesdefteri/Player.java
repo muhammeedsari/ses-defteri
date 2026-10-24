@@ -82,7 +82,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         Object[] o = new Object[2];
         try {
             if (eqDb != null) {
-                android.media.audiofx.Equalizer e = new android.media.audiofx.Equalizer(0, p.getAudioSessionId());
+                android.media.audiofx.Equalizer e = new android.media.audiofx.Equalizer(1000, p.getAudioSessionId());   // high priority: the phone's sound packs must not take it over
                 double[] fc = { 100, 300, 1000, 3000, 8000 };
                 short n = e.getNumberOfBands();
                 short[] range = e.getBandLevelRange();
