@@ -10,7 +10,7 @@ Ses Defteri, **internetsiz çalışan bir Android uygulaması**: ses kaydı, mü
 - **Ses işleme:** saf Java DSP (`dsp/`), masaüstü JVM'de de test edilebilir.
 - **Yapay zekâ:** sherpa-onnx v1.13.8 (ONNX Runtime) — Whisper (sesten metne, isteğe bağlı indirilir), Spleeter (sesi ayır), DPDFNet-2 48 kHz (gelişmiş gürültü temizliği). Kendi JNI köprüleri: `libsdsep.so` (ayırma + gürültü temizleme), `libsdmp3.so` (LAME MP3).
 - **Derleme:** Gradle YOK. `android/build_apk.py`: aapt → javac (-source 8, android-34.jar) → dalvik-exchange → aapt add (dex + .so) → zipalign → apksigner.
-- **Sürüm:** şu an **3.1** (versionCode 27). minSdk 24, targetSdk 34. Paket adı `app.sesdefteri`.
+- **Sürüm:** şu an **3.2** (versionCode 28). minSdk 24, targetSdk 34. Paket adı `app.sesdefteri`.
 
 ## Kullanıcıyla çalışma kuralları (önemli)
 - Kullanıcıyla **Türkçe** konuş. Teknik olmayan, kısa ve net anlat.
@@ -36,7 +36,7 @@ SD_KS=/yol/ses-defteri-imza.p12 SD_KS_PASS=… python3 android/build_apk.py   # 
 
 ## Kod düzeni (özet)
 - `web/body.html` (~4300 satır): tüm arayüz + JS. Modüller yorum başlıklarıyla ayrılmış (`/* ---------- … ---------- */`). Yeni özellikleri ilgili modülün yanına ya da sürüm bloğu olarak ekle.
-- `web/i18n*.js`: her dosya 9 dili `window.SD_I18N`'e birleştirir. Yeni anahtarları yeni bir `i18nN.js` dosyasına koy (şu an son: `i18n21.js`), 9 dilin hepsini yaz. `t('anahtar', {n})` ile kullanılır.
+- `web/i18n*.js`: her dosya 9 dili `window.SD_I18N`'e birleştirir. Yeni anahtarları yeni bir `i18nN.js` dosyasına koy (şu an son: `i18n22.js`), 9 dilin hepsini yaz. `t('anahtar', {n})` ile kullanılır.
 - `android/src/app/sesdefteri/MainActivity.java`: WebView + `SesDefteriAndroid` JS köprüsü (`AND` in JS) + iş kuyruğu (`job(kind, argsJson)` → `runJob(kind, args, onProg)` JS'de).
 - `Workspace.java`: tüm düzenleme işlemleri (`op(...)` içinde `case "denoise"` vb.), teşhis (`diagnose`), Temizle (`clean`), kaydet/dışa aktar.
 - `Timeline.java`: çok katmanlı proje motoru (canlı karışım `AudioTrack`, render). Klipler 48 kHz 16-bit WAV, `files/proj`.

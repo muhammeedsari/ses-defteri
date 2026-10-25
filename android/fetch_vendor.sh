@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 V="${SD_VENDOR:-$ROOT/vendor}"
 GH=https://github.com/k2-fsa/sherpa-onnx/releases/download
-mkdir -p "$V"/{jniLibs/arm64-v8a,jniLibs/armeabi-v7a,sepm,dn,asr,fonts,tmp}
+mkdir -p "$V"/{jniLibs/arm64-v8a,jniLibs/armeabi-v7a,sepm,dn,dia,asr,fonts,tmp}
 cd "$V/tmp"
 
 # 1) sherpa-onnx v1.13.8 Android libraries (ONNX Runtime + JNI + C API)
@@ -25,6 +25,13 @@ cp "$(find . -name 'vocals.fp16.onnx' | head -1)" "$(find . -name 'accompaniment
 
 # 3) AI speech denoiser (DPDFNet-2, 48 kHz)
 [ -f "$V/dn/dpdfnet2_48khz_hr.onnx" ] || curl -fL -o "$V/dn/dpdfnet2_48khz_hr.onnx" "$GH/speech-enhancement-models/dpdfnet2_48khz_hr.onnx"
+
+# 3b) speaker segmentation (pyannote 3.0, int8) for speaker separation
+if [ ! -f "$V/dia/pyannote.int8.onnx" ]; then
+  curl -fL -o seg.tar.bz2 "$GH/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2"
+  tar xjf seg.tar.bz2
+  cp "$(find . -name 'model.int8.onnx' -path '*pyannote*' | head -1)" "$V/dia/pyannote.int8.onnx"
+fi
 
 # 4) voice activity detector for speech-to-text (Whisper itself is downloaded inside the app)
 [ -f "$V/asr/silero_vad.onnx" ] || curl -fL -o "$V/asr/silero_vad.onnx" "$GH/asr-models/silero_vad.onnx"

@@ -768,6 +768,7 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
 <script src="i18n19.js"></script>
 <script src="i18n20.js"></script>
 <script src="i18n21.js"></script>
+<script src="i18n22.js"></script>
 <script>
 (() => {
 'use strict';
@@ -778,7 +779,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.1';
+const VERSION = '3.2';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -850,6 +851,7 @@ const P = {
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
   wave: '<path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/>',
   ear: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3.5" y="14" width="4.5" height="6.5" rx="1.6"/><rect x="16" y="14" width="4.5" height="6.5" rx="1.6"/>',
+  people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c3 .2 5.5 2.4 5.5 5.8"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>',
   note: '<circle cx="7" cy="17.5" r="2.8"/><circle cx="17" cy="15.5" r="2.8"/><path d="M9.8 17.5V6l10-2v11.5"/>',
   folder: '<path d="M3.5 6.5A1.5 1.5 0 0 1 5 5h4.5l2 2.2H19a1.5 1.5 0 0 1 1.5 1.5v9.3A1.5 1.5 0 0 1 19 19.5H5A1.5 1.5 0 0 1 3.5 18z"/>',
@@ -2571,6 +2573,9 @@ function errText(e) {
   if (m.includes('memory')) return t('textMem');
   if (m.includes('novideo')) return t('vidNone');
   if (m.includes('videofmt')) return t('vidFmt');
+  if (m.includes('dia-long')) return t('spkLong');
+  if (m.includes('dia-short')) return t('spkShort');
+  if (m.includes('download-')) return t('spkNet');
   return t('errGeneric') + (m && m !== 'job' ? ' (' + m.slice(0, 120) + ')' : '');
 }
 const baseName = it => (it.name || it.title || 'Ses').replace(/\.[^.]+$/, '');
@@ -3319,7 +3324,7 @@ function renderTlBar() {
   TL.env = false;
   bar.innerHTML = c
     ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('env', 'envl', t('tlEnv')) + b('clarify', 'spark', t('op_clarify')) + b('spec', 'spec', t('tlSpec')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
-      b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('bass', 'wave', t('tlBass')) + b('treble', 'spark', t('tlTreble')) + b('sep', 'mixer', t('tlSep')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
+      b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('bass', 'wave', t('tlBass')) + b('treble', 'spark', t('tlTreble')) + b('sep', 'mixer', t('tlSep')) + b('spk', 'people', t('tlSpk')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
     : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('metro', 'beat', t('tlClick')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
   tlFxList();
   if (TL.rec) bar.innerHTML = `<button class="btn danger-fill" type="button" data-tl="rec">${ic('pause')} ${esc(t('tlRecStop'))} <span class="tc" id="tlRecT"></span></button><span class="hint">${esc(t('tlRecHint'))}</span>`;
@@ -3653,6 +3658,7 @@ $('#editTab').addEventListener('click', e => {
   else if (k === 'spec') tlSpec();
   else if (k === 'track') tlTrack();
   else if (k === 'sep') tlSep();
+  else if (k === 'spk') tlSpk();
   else if (k === 'merge') tlMerge();
   else if (k === 'eq5') tlEq();
   else if (k === 'bass' || k === 'treble') tlTone(k);
@@ -3688,6 +3694,45 @@ async function tlSep() {
   c.beats = null;
   tlCommit(before);
   toast(t('sepDone'), 3000);
+}
+/* ----- 3.2: speaker separation: every voice on its own track, levels evened out ----- */
+async function tlSpk() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  const free = TL_MAX - TL.p.tracks.length + 1;
+  const n = await chooseBox(t('tlSpk'), t('spkD'), [{ value: '0', label: t('spkAuto'), desc: t('spkAutoD') }]
+    .concat([2, 3, 4].filter(k => k <= Math.max(2, free)).map(k => ({ value: String(k), label: t('spkN', { n: k }), desc: t('spkND') }))));
+  if (!n) return;
+  tlStop();
+  if (!CAPS.spk) {
+    if (!(await confirmBox({ title: t('spkGetQ'), text: t('spkGetD'), ok: t('spkGetOk') }))) return;
+    try { await tlRunJob(t('spkGetting'), 'spkGet', {}); CAPS.spk = true; } catch (e) { toast(errText(e), 5000); return; }
+  }
+  let res;
+  try { res = await tlRunJob(t('spkBusy'), 'tlSpk', { path: c.path, in: c.in, out: c.out, n: +n }); } catch (e) { toast(errText(e), 5000); return; }
+  if (!res.n || !res.segs.length) { toast(t('spkNone'), 4000); return; }
+  if (res.n < 2) { toast(t('spkOne'), 4000); return; }
+  // join pieces of one speaker that are close together, a little air around each piece
+  const PAD = 0.06, GAP = 0.35, per = Array.from({ length: res.n }, () => []);
+  for (const [a, b, k] of res.segs) { const L = per[k], l = L[L.length - 1]; if (l && a - l[1] < GAP) l[1] = Math.max(l[1], b); else L.push([a, b]); }
+  const before = tlSnap(), base = c.name || '', span = [c.at, c.at + tlLen(c)];
+  const loud = res.db.filter(d => d > -80), ref = loud.length ? loud.reduce((x, y) => x + y, 0) / loud.length : 0;
+  TL.p.clips = TL.p.clips.filter(x => x.id !== c.id);
+  let used = 0;
+  per.forEach((L, k) => {
+    if (!L.length) return;
+    const tr = k === 0 ? c.tr : tlFreeTrack(span[0], span[1], null, c.tr + k);
+    tlEnsureTrack(tr);
+    const gain = res.db[k] > -80 ? clamp(Math.round((ref - res.db[k]) * 2) / 2, -10, 10) : 0;
+    for (const [a, b] of L) {
+      const i = Math.max(c.in, a - PAD), o = Math.min(c.out, b + PAD);
+      if (o - i < 0.05) continue;
+      TL.p.clips.push(Object.assign({}, c, { id: uid(), tr, in: i, out: o, at: c.at + i - c.in, fi: 0.03, fo: 0.03, gain: (c.gain || 0) + gain, name: t('spkName', { n: k + 1 }) + (base ? ' · ' + base : ''), beats: null }));
+    }
+    used++;
+  });
+  TL.sel = null;
+  tlCommit(before);
+  toast(t('spkDone', { n: used }), 5000);
 }
 function tlAddMarker() {
   const before = tlSnap();
