@@ -557,6 +557,10 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
 .asr-pick span{display:grid;gap:2px}
 .asr-pick small{color:var(--muted);font-size:12px}
 .asr-row .btn{justify-self:start}
+/* 3.1: live spectrum + monitoring on the record sheet */
+.rec-spec{width:100%;height:46px;display:block;margin-top:6px;opacity:.9}
+.rec-mon[aria-pressed="true"]{background:var(--stage-ink);color:var(--stage)}
+#recLufs{color:var(--stage-ink)}
 </style>
 
 <div class="wrap" id="app">
@@ -643,7 +647,7 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
         <button type="button" role="radio" data-mode="music" aria-checked="false" data-t="modeMusic"></button>
       </div>
       <span class="spacer"></span>
-      <span style="width:44px"></span>
+      <button class="icon-btn rec-mon" id="recMon" type="button" aria-pressed="false" hidden></button>
     </div>
     <p class="mode-hint" id="modeHint"></p>
     <div class="chips rec-purpose" id="purposeRow" role="radiogroup"></div>
@@ -651,8 +655,9 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
     <div class="stage">
       <div class="rec-state"><span class="led"></span><span id="recStateText"></span></div>
       <div class="timecode" id="recTime">0:00<small>,0</small></div>
-      <div class="meter"><span id="recPeak">−∞ dB</span><span class="mk" id="recMarkCount" hidden></span></div>
+      <div class="meter"><span id="recPeak">−∞ dB</span><span class="mk" id="recMarkCount" hidden></span><span id="recLufs" hidden></span></div>
       <canvas class="live" id="liveWave"></canvas>
+      <canvas class="rec-spec" id="recSpec" hidden></canvas>
       <p class="rec-warn" id="recWarn" hidden></p>
     </div>
     <div class="rec-controls">
@@ -762,6 +767,7 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
 <script src="i18n18.js"></script>
 <script src="i18n19.js"></script>
 <script src="i18n20.js"></script>
+<script src="i18n21.js"></script>
 <script>
 (() => {
 'use strict';
@@ -772,7 +778,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.0';
+const VERSION = '3.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -843,6 +849,7 @@ const P = {
   copy: '<rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2"/><path d="M15.5 8.5V5.5A1.5 1.5 0 0 0 14 4H5.5A1.5 1.5 0 0 0 4 5.5V14a1.5 1.5 0 0 0 1.5 1.5h3"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
   wave: '<path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/>',
+  ear: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3.5" y="14" width="4.5" height="6.5" rx="1.6"/><rect x="16" y="14" width="4.5" height="6.5" rx="1.6"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>',
   note: '<circle cx="7" cy="17.5" r="2.8"/><circle cx="17" cy="15.5" r="2.8"/><path d="M9.8 17.5V6l10-2v11.5"/>',
   folder: '<path d="M3.5 6.5A1.5 1.5 0 0 1 5 5h4.5l2 2.2H19a1.5 1.5 0 0 1 1.5 1.5v9.3A1.5 1.5 0 0 1 19 19.5H5A1.5 1.5 0 0 1 3.5 18z"/>',
@@ -970,7 +977,7 @@ const S = {
   peaks: new Map(), modalLocked: false, precompute: ls.get('precompute', true),
   autoEnh: ls.get('autoEnh', true), target: ls.get('target', 'youtube'), autoText: ls.get('autoText', true),
   textLang: ls.get('textLang', LANG), asrModel: ls.get('asrModel', 'base'), autoText: ls.get('autoText', false), learnVoice: ls.get('learnVoice', true), showBeats: ls.get('showBeats', true), beats: new Map(), texts: new Map(),
-  recQuality: ls.get('recQuality', 'std'), micSrc: ls.get('micSrc', 'auto'), callPause: ls.get('callPause', true), autoClean: ls.get('autoClean', false),
+  recQuality: ls.get('recQuality', 'std'), recFmt: ls.get('recFmt', 'm4a'), micSrc: ls.get('micSrc', 'auto'), callPause: ls.get('callPause', true), autoClean: ls.get('autoClean', false),
   fmt: ls.get('fmt', CAPS.mp3 ? 'mp3_192' : 'm4a'), nameTpl: ls.get('nameTpl', '{name}'), trashDays: +ls.get('trashDays', 30),
   asrSt: { base: false, small: false }, normalize: ls.get('normalize', true), xfade: +ls.get('xfade', 0), gapless: ls.get('gapless', true), playEq: ls.get('playEq', 'flat'), skipSil: ls.get('skipSil', false),
   artist: ls.get('artist', ''), roomLearn: ls.get('roomLearn', true),
@@ -1429,6 +1436,7 @@ function openSettings() {
     <div class="set-sec"><label class="switch"><input type="checkbox" id="setPre"${S.precompute ? ' checked' : ''}><span>${esc(t('precompute'))}<small>${esc(t('precomputeDesc'))}</small></span></label></div>
     <div class="set-sec"><h4>${esc(t('setRec'))}</h4>
       <div class="set-sub"><span>${esc(t('setQuality'))}</span><select id="setQ" class="sel-full">${['std', 'high', 'stereo'].map(v => `<option value="${v}"${S.recQuality === v ? ' selected' : ''}>${esc(t('q_' + v))}</option>`).join('')}</select></div>
+      ${NATIVE ? `<div class="set-sub"><span>${esc(t('setRecFmt'))}</span><select id="setRecFmt" class="sel-full">${['m4a', 'wav', 'flac'].map(v => `<option value="${v}"${S.recFmt === v ? ' selected' : ''}>${esc(t('rf_' + v))}</option>`).join('')}</select></div>` : ''}
       <div class="set-sub"><span>${esc(t('setMic'))}</span><select id="setMic" class="sel-full">${['auto', 'builtin', 'wired', 'usb'].map(v => `<option value="${v}"${S.micSrc === v ? ' selected' : ''}>${esc(t('mic_' + v))}</option>`).join('')}</select></div>
       <label class="switch"><input type="checkbox" id="setCall"${S.callPause ? ' checked' : ''}><span>${esc(t('setCall'))}<small>${esc(t('setCallD'))}</small></span></label>
       <label class="switch"><input type="checkbox" id="setAgc"${S.agc !== false ? ' checked' : ''}><span>${esc(t('setAgc'))}<small>${esc(t('setAgcD'))}</small></span></label>
@@ -1439,7 +1447,7 @@ function openSettings() {
       <label class="switch"><input type="checkbox" id="setRoom"${S.roomLearn ? ' checked' : ''}><span>${esc(t('setRoom'))}<small>${esc(t('setRoomD'))}</small></span></label>
       <div class="set-sub"><span>${esc(t('setPause'))}</span><select id="setPause" class="sel-full">${Object.keys(PAUSE_KEEP).map(v => `<option value="${v}"${S.pauseMax === +v ? ' selected' : ''}>${esc(t('pauseX', { a: nf1.format(+v), b: nf1.format(PAUSE_KEEP[v]) }))}</option>`).join('')}</select></div></div>
     <div class="set-sec"><h4>${esc(t('setExport'))}</h4>
-      <div class="set-sub"><span>${esc(t('setFmt'))}</span><select id="setFmt" class="sel-full">${['mp3_192', 'mp3_320', 'm4a', 'wav'].filter(f => !f.startsWith('mp3') || CAPS.mp3).map(f => `<option value="${f}"${S.fmt === f ? ' selected' : ''}>${esc(fmtLabel(f))}</option>`).join('')}</select></div>
+      <div class="set-sub"><span>${esc(t('setFmt'))}</span><select id="setFmt" class="sel-full">${FMTS().filter(f => !f.startsWith('mp3') || CAPS.mp3).map(f => `<option value="${f}"${S.fmt === f ? ' selected' : ''}>${esc(fmtLabel(f))}</option>`).join('')}</select></div>
       <div class="set-sub"><span>${esc(t('setChans'))}</span><select id="setChans" class="sel-full">${['auto', 'mono', 'stereo'].map(v => `<option value="${v}"${S.chans === v ? ' selected' : ''}>${esc(t('ch_' + v))}</option>`).join('')}</select></div>
       <div class="set-sub"><span>${esc(t('setName'))}</span><select id="setTpl" class="sel-full">${NAME_TPLS.map(v => `<option value="${esc(v)}"${S.nameTpl === v ? ' selected' : ''}>${esc(t('tplEx', { x: ((S.nameTpl = v), fileName(t('tplSample'), 'clean')) }))}</option>`).join('')}<option value="custom"${NAME_TPLS.includes(ls.get('nameTpl', '{name}')) ? '' : ' selected'}>${esc(t('tplCustom'))}</option></select>
         <input id="setTplC" class="sel-full" type="text" value="${esc(ls.get('nameTpl', '{name}'))}"${NAME_TPLS.includes(ls.get('nameTpl', '{name}')) ? ' hidden' : ''} placeholder="{name}_{date}"><small class="hint" id="setTplEx"></small></div></div>
@@ -1505,7 +1513,7 @@ function openSettings() {
   const ms = card.querySelector('#setMinSong'); if (ms) ms.onchange = () => { S.minSong = +ms.value; ls.set('minSong', S.minSong); render(); };
   const pin = card.querySelector('#setPin'); if (pin) pin.onclick = () => { let ok = false; try { ok = AND.pinRecShortcut(t('recShort')); } catch (e) {} if (!ok) toast(t('setPinNo'), 4500); };
   card.querySelector('#setPriv').onclick = openPrivacy; card.querySelector('#setFeed').onclick = openFeedback;
-  bind('#setQ', 'recQuality'); bind('#setMic', 'micSrc'); bind('#setCall', 'callPause'); bind('#setAuto', 'autoClean'); bind('#setFmt', 'fmt');
+  bind('#setQ', 'recQuality'); bind('#setMic', 'micSrc'); bind('#setCall', 'callPause'); bind('#setAuto', 'autoClean'); bind('#setFmt', 'fmt'); bind('#setRecFmt', 'recFmt');
   const st = card.querySelector('#setStr'); if (st) st.onchange = () => { CL.strength = +st.value; ls.set('clStrength', CL.strength); };
   const tr = card.querySelector('#setTrash'); if (tr) tr.onchange = () => { S.trashDays = +tr.value; ls.set('trashDays', S.trashDays); purgeTrash().then(() => render(), () => {}); };
   const ot = card.querySelector('#openTrash'); if (ot) ot.onclick = openTrash;
@@ -4169,16 +4177,18 @@ function askParams(title, desc, rows) {
 }
 
 /* ---------- 1.8: export format, file names, trash ---------- */
-const recOpts = () => JSON.stringify({ q: S.recQuality, src: S.micSrc, call: !!S.callPause, agc: S.agc !== false });
+const recOpts = () => JSON.stringify({ q: S.recQuality, src: S.micSrc, call: !!S.callPause, agc: S.agc !== false, fmt: S.recFmt });
+const FMTS = () => ['mp3_192', 'mp3_320', 'm4a', 'wav', 'flac'].concat(CAPS.opus ? ['ogg'] : []);
 /** default export format as job arguments: {format, kbps} */
 function fmtArgs(f) {
   f = f || S.fmt;
   if (f.startsWith('mp3') && !CAPS.mp3) f = 'm4a';
-  const o = f.startsWith('mp3') ? { format: 'mp3', kbps: +f.split('_')[1] || 192 } : { format: f === 'wav' ? 'wav' : 'm4a' };
+  if (f === 'ogg' && !CAPS.opus) f = 'm4a';
+  const o = f.startsWith('mp3') ? { format: 'mp3', kbps: +f.split('_')[1] || 192 } : { format: ['wav', 'flac', 'ogg'].includes(f) ? f : 'm4a' };
   if (S.chans === 'mono' || S.chans === 'stereo') o.chans = S.chans;
   return o;
 }
-const fmtLabel = f => ({ mp3_192: 'MP3 192 kbps', mp3_320: 'MP3 320 kbps', m4a: 'M4A (AAC)', wav: 'WAV' })[f] || f;
+const fmtLabel = f => ({ mp3_192: 'MP3 192 kbps', mp3_320: 'MP3 320 kbps', m4a: 'M4A (AAC)', wav: 'WAV', flac: 'FLAC', ogg: 'Opus (OGG)' })[f] || f;
 const NAME_TPLS = ['{name}', '{rec}_{date}_{tag}', '{date}_{time}_{name}'];
 /** file name from the template: {name} title, {date} 2026-10-23, {time} 14.05, {tag} clean/edited, {rec} "Recording" */
 function fileName(title, tag) {
@@ -4498,7 +4508,7 @@ async function startRecNative() {
     try { res = JSON.parse(AND.recStart(R.mode, name, recOpts())); } catch (e) { res = { ok: false }; }
   }
   if (!res.ok) { R.state = 'idle'; updateRecUI(); toast(t('recFail'), 4200); return; }
-  R.native = true; R.levels = []; R.marks = []; R.acc = 0; R.curMax = 0; R.cancel = false;
+  R.native = true; R.levels = []; R.marks = []; R.acc = 0; R.curMax = 0; R.cancel = false; R.mon = false; R.mv = null;
   R.state = 'rec'; R.t0 = performance.now(); R.started = Date.now();
   loopRec(); updateRecUI();
 }
@@ -4653,6 +4663,7 @@ function loopRec() {
     showRecTime(el);
     if (R.state === 'rec') recWarnCheck(m);
     if (R.native && frame % 20 === 0) recCallSync();
+    if (R.native && frame % 3 === 0) { try { const j = AND.recMeter(); R.mv = j ? JSON.parse(j) : null; } catch (e) {} drawRecSpec(); }
     const lvl = m > 0 ? 20 * Math.log10(m) : -Infinity, now = performance.now();
     if (lvl > R.peakDb || now - R.peakAt > 900) { R.peakDb = lvl; R.peakAt = now; }
     if (++frame % 4 === 0) {
@@ -4736,9 +4747,34 @@ function drawLive() {
   for (const mk of R.marks) { const i = Math.floor(mk.t * LR / 2); if (i < start) continue; const x = right - (nb - i) * step; ctx.fillRect(x, 0, 2, h); }
   if (R.state === 'rec' || R.state === 'paused') { ctx.fillStyle = R.state === 'rec' ? COL.sRec : COL.sMark; ctx.fillRect(right + 1, 6, 2, h - 12); }
 }
+/* 3.1: live spectrum and loudness of what the microphone hears */
+function drawRecSpec() {
+  const cv = $('#recSpec'), lu = $('#recLufs'), m = R.mv;
+  if (cv.hidden || $('#recSheet').hidden) return;
+  const c = sizeCanvas(cv); if (!c) return;
+  const { ctx, w, h } = c, b = m ? m.b : [], n = 32, gw = w / n;
+  ctx.fillStyle = COL.sInk; ctx.globalAlpha = 0.85;
+  for (let i = 0; i < n; i++) {
+    const v = b.length ? clamp((b[i] + 72) / 72, 0, 1) : 0, hh = Math.max(1, v * (h - 2));
+    ctx.fillStyle = b[i] > -3 ? COL.sRec : COL.sInk; ctx.fillRect(i * gw + 1, h - hh, Math.max(1, gw - 2), hh);
+  }
+  ctx.globalAlpha = 1;
+  lu.textContent = m && m.s > -90 ? `${nf1.format(m.s).replace('-', '−')} LUFS` : '— LUFS';
+}
+function recMonitor() {
+  if (!R.native) return;
+  let on = false; try { on = AND.recMonitor(!R.mon); } catch (e) {}
+  if (!R.mon && !on) { toast(t('monFail'), 3500); return; }
+  R.mon = on; if (on) toast(t('monOn'), 3500);
+  updateRecUI();
+}
+$('#recMon').addEventListener('click', recMonitor);
 function updateRecUI() {
   const sh = $('#recSheet'); sh.dataset.state = R.state;
   const main = $('#recMain'), active = R.state === 'rec' || R.state === 'paused';
+  const mb = $('#recMon'), live = R.native && active;
+  mb.hidden = !live; mb.innerHTML = ic('ear'); mb.setAttribute('aria-pressed', !!R.mon); mb.setAttribute('aria-label', t('recMon'));
+  $('#recSpec').hidden = !live; $('#recLufs').hidden = !live;
   $('#recStateText').textContent = t('st_' + R.state);
   if (R.state === 'rec') { main.innerHTML = ic('pause'); main.setAttribute('aria-label', t('pause')); }
   else { main.innerHTML = '<span class="dot"></span>'; main.setAttribute('aria-label', t(R.state === 'paused' ? 'recResume' : 'recStart')); }

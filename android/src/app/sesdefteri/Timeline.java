@@ -427,8 +427,12 @@ final class Timeline {
         static final int RING = 1 << 16, N = 2048, BANDS = 32;
         final float[] ring = new float[RING];
         long written;
-        final app.sesdefteri.dsp.Loudness lu = new app.sesdefteri.dsp.Loudness(2, RATE);
+        final int rate;
+        final app.sesdefteri.dsp.Loudness lu;
         float peak;
+
+        Meter() { this(RATE); }
+        Meter(int rate) { this.rate = rate; lu = new app.sesdefteri.dsp.Loudness(2, rate); }
         final app.sesdefteri.dsp.Fft fft = new app.sesdefteri.dsp.Fft(N);
         final double[] win = app.sesdefteri.dsp.Fft.hann(N, false), re = new double[N], im = new double[N];
         final float[] bands = new float[BANDS];
@@ -451,7 +455,7 @@ final class Timeline {
             fft.transform(re, im, false);
             // 32 log bands, 40 Hz – 16 kHz, in dB (0 dB = full-scale sine)
             StringBuilder b = new StringBuilder("{\"b\":[");
-            double lo = 40, step = Math.pow(16000 / 40.0, 1.0 / BANDS), bin = (double) RATE / N;
+            double lo = 40, step = Math.pow(16000 / 40.0, 1.0 / BANDS), bin = (double) rate / N;
             for (int k = 0; k < BANDS; k++) {
                 double f0 = lo * Math.pow(step, k), f1 = f0 * step, s = 0;
                 int a = Math.max(1, (int) Math.floor(f0 / bin)), z = Math.max(a + 1, (int) Math.ceil(f1 / bin));

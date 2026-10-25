@@ -346,6 +346,15 @@ public class MainActivity extends Activity implements Player.Listener {
             }
         } catch (Exception ignored) { }
         intent.setAction(null);
+        // videos shared from the gallery: their sound becomes a recording
+        List<Uri> vids = new ArrayList<>();
+        for (int i = uris.size() - 1; i >= 0; i--) {
+            String m = null;
+            try { m = getContentResolver().getType(uris.get(i)); } catch (Exception ignored) { }
+            if (m == null) m = intent.getType();
+            if (m != null && m.startsWith("video/")) vids.add(0, uris.remove(i));
+        }
+        if (!vids.isEmpty()) importVideos(vids.toArray(new Uri[0]));
         if (!uris.isEmpty()) importUris(uris.toArray(new Uri[0]), false);
     }
 
@@ -505,6 +514,7 @@ public class MainActivity extends Activity implements Player.Listener {
                 o.put("asr", Studio.asrAvailable());
                 o.put("sep", Separator.available());
                 o.put("mp3", Mp3.available());
+                o.put("opus", Build.VERSION.SDK_INT >= 29);
                 o.put("folder", MediaLib.scoped() ? "Music/Ses Defteri" : "Android/data/app.sesdefteri/files/Music/Ses Defteri");
             } catch (Exception ignored) { }
             return o.toString();
@@ -739,6 +749,8 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public boolean recResume() { return Recorder.resumeManual(); }
         @JavascriptInterface public String recInfo() { return Recorder.info(); }
         @JavascriptInterface public float recLevel() { return Recorder.level(); }
+        @JavascriptInterface public String recMeter() { return Recorder.meter(); }
+        @JavascriptInterface public boolean recMonitor(boolean on) { return Recorder.monitor(on); }
         @JavascriptInterface public String recStop() {
             ui(new Runnable() { @Override public void run() { getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); } });
             return Recorder.stop(MainActivity.this);

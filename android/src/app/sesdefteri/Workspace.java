@@ -1242,22 +1242,38 @@ final class Workspace {
             java.io.FileOutputStream os = new java.io.FileOutputStream(out);
             try { byte[] b = new byte[1 << 16]; int n; while ((n = is.read(b)) > 0) os.write(b, 0, n); } finally { is.close(); os.close(); }
         } else {
-            wav(in, inf, p, new double[] { 0, 1 }, cancel).run(new Studio.EncNode(out, inf.rate, inf.ch > 1 ? 192000 : 128000));
+            encode(in, inf, out, fmt, p, new double[] { 0, 1 }, cancel);
         }
         JSONObject res = new JSONObject();
         JSONObject src = new JSONObject();
         src.put("path", out.getAbsolutePath());
         res.put("src", src);
         res.put("name", out.getName());
-        res.put("mime", wavFmt ? "audio/wav" : "mp3".equals(fmt) ? "audio/mpeg" : "audio/mp4");
+        res.put("mime", wavFmt ? "audio/wav" : mime(fmt));
         return res;
     }
 
-    /** wav / m4a / mp3 (mp3 falls back to m4a where the encoder isn't shipped) */
+    /** wav / m4a / mp3 / flac / ogg (Opus, Android 10+); mp3 falls back to m4a where the encoder isn't shipped */
     static String fmt(JSONObject a) {
         String f = a.optString("format", "m4a");
         if ("mp3".equals(f) && !Mp3.available()) return "m4a";
-        return "wav".equals(f) || "mp3".equals(f) ? f : "m4a";
+        if ("ogg".equals(f) && android.os.Build.VERSION.SDK_INT < 29) return "m4a";
+        return "wav".equals(f) || "mp3".equals(f) || "flac".equals(f) || "ogg".equals(f) ? f : "m4a";
+    }
+
+    static String mime(String fmt) {
+        return "mp3".equals(fmt) ? "audio/mpeg" : "flac".equals(fmt) ? "audio/flac" : "ogg".equals(fmt) ? "audio/ogg" : "wav".equals(fmt) ? "audio/x-wav" : "audio/mp4";
+    }
+
+    /** m4a (AAC), flac or ogg (Opus at 48 kHz) from a 16-bit WAV */
+    static void encode(File in, Info inf, File out, String fmt, AudioTools.Progress p, double[] range, AtomicBoolean cancel) throws Exception {
+        if ("flac".equals(fmt)) { wav(in, inf, p, range, cancel).run(new Studio.FlacNode(out, inf.rate)); return; }
+        boolean op = "ogg".equals(fmt);
+        Studio.EncNode e = new Studio.EncNode(out, op ? 48000 : inf.rate, inf.ch > 1 ? (op ? 128000 : 192000) : (op ? 64000 : 128000));
+        e.enc.opus = op;
+        Node head = e;
+        if (op && inf.rate != 48000) { Resampler r = new Resampler(inf.ch, (double) inf.rate, 48000.0); r.to(e); head = r; }
+        wav(in, inf, p, range, cancel).run(head);
     }
 
     static void mp3(File in, Info inf, File out, int kbps, AudioTools.Progress p, AtomicBoolean cancel, JSONObject meta) throws Exception {
@@ -1355,11 +1371,10 @@ final class Workspace {
             item = MediaLib.copyInTarget(c, tg, in);
             if (item == null) { MediaLib.discard(c, tg); throw new IllegalStateException("publish"); }
         } else {
-            File out = new File(dir(c), "e" + System.nanoTime() + ".m4a");
+            File out = new File(dir(c), "e" + System.nanoTime() + "." + fmt);
             try {
-                Studio.EncNode enc = new Studio.EncNode(out, inf.rate, inf.ch > 1 ? 192000 : 128000);
-                wav(in, inf, p, new double[] { 0, 0.95 }, cancel).run(enc);
-                MediaLib.Target tg = MediaLib.create(c, name + ".m4a", "audio/mp4");
+                encode(in, inf, out, fmt, p, new double[] { 0, 0.95 }, cancel);
+                MediaLib.Target tg = MediaLib.create(c, name + "." + fmt, mime(fmt));
                 item = MediaLib.copyInTarget(c, tg, out);
                 if (item == null) { MediaLib.discard(c, tg); throw new IllegalStateException("publish"); }
             } finally {
