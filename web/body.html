@@ -216,7 +216,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.4.1';
+const VERSION = '3.4.2';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -2373,6 +2373,19 @@ function tlXfOk(c) {
   if (o.length === 2) { const [p, q] = o[0].at < o[1].at ? o : [o[1], o[0]]; if (p.at + tlLen(p) > q.at + 0.001) return false; }
   return true;
 }
+/** a trimmed edge may reach into a neighbour only as far as a crossfade allows, never over it */
+function tlTrimFit(c, m) {
+  if (tlXfOk(c)) return;
+  const o = TL.p.clips.filter(d => d !== c && d.tr === c.tr), end = c.at + tlLen(c);
+  if (m.mode === 'trimR') {
+    const lim = Math.min(...o.filter(d => d.at > c.at + 0.001).map(d => d.at)), end0 = c.at + m.out0 - c.in;
+    if (isFinite(lim)) c.out = end0 > lim + 0.001 ? m.out0 : Math.max(c.in + 0.1, c.in + lim - c.at);   // it was already crossfading: keep it as it was
+  } else {
+    const lim = Math.max(...o.filter(d => d.at + tlLen(d) < end - 0.001).map(d => d.at + tlLen(d)));
+    if (isFinite(lim)) { const at = m.at0 < lim - 0.001 ? m.at0 : Math.min(lim, end - 0.1); c.in += at - c.at; c.at = at; }
+  }
+  c.fi = Math.min(c.fi || 0, tlLen(c) / 2); c.fo = Math.min(c.fo || 0, tlLen(c) / 2);
+}
 /** first track where [a, b) is free, a new one if there is room, else the first */
 function tlFreeTrack(a, b, skipId, prefer) {
   const free = i => !TL.p.clips.some(c => c.id !== skipId && c.tr === i && c.at < b - 0.001 && c.at + tlLen(c) > a + 0.001);
@@ -3064,7 +3077,7 @@ function drawWs() { drawTl(); }
       if (ov && tlXfOk(c)) { if (!ls.get('xfSeen', false)) { ls.set('xfSeen', true); toast(t('tlXfMade'), 3500); } }
       else c.tr = tlFreeTrack(c.at, c.at + tlLen(c), c.id, c.tr);
       tlEnsureTrack(c.tr);
-    }
+    } else if (m.mode === 'trimL' || m.mode === 'trimR') tlTrimFit(m.c, m);
     tlCommit(m.before);
   };
   box.addEventListener('pointerup', end);

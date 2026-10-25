@@ -10,7 +10,7 @@ Ses Defteri, **internetsiz çalışan bir Android uygulaması**: ses kaydı, mü
 - **Ses işleme:** saf Java DSP (`dsp/`), masaüstü JVM'de de test edilebilir.
 - **Yapay zekâ:** sherpa-onnx v1.13.8 (ONNX Runtime) — Whisper (sesten metne, isteğe bağlı indirilir), Spleeter (sesi ayır), DPDFNet-2 48 kHz (gelişmiş gürültü temizliği). Kendi JNI köprüleri: `libsdsep.so` (ayırma + gürültü temizleme), `libsdmp3.so` (LAME MP3).
 - **Derleme:** Gradle YOK. `android/build_apk.py`: aapt → javac (-source 8, android-34.jar) → dalvik-exchange → aapt add (dex + .so) → zipalign → apksigner.
-- **Sürüm:** şu an **3.4.1** (versionCode 31). minSdk 24, targetSdk 34. Paket adı `app.sesdefteri`.
+- **Sürüm:** şu an **3.4.2** (versionCode 32). minSdk 24, targetSdk 34. Paket adı `app.sesdefteri`.
 
 ## Kullanıcıyla çalışma kuralları (önemli)
 - Kullanıcıyla **Türkçe** konuş. Teknik olmayan, kısa ve net anlat.
