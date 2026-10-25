@@ -51,6 +51,21 @@ final class Timeline {
         }
     }
 
+    /** 3.3: a ready-made sound, synthesised into a new project clip */
+    static JSONObject sfx(Context c, JSONObject a) throws Exception {
+        String id = a.getString("id");
+        float[][] y = app.sesdefteri.dsp.Sfx.finish(id, app.sesdefteri.dsp.Sfx.make(id, RATE), RATE);
+        File out = new File(dir(c), "c" + System.nanoTime() + ".wav");
+        Studio.WavNode w = new Studio.WavNode(out, RATE);
+        w.push(y, y[0].length);
+        w.end();
+        JSONObject o = new JSONObject();
+        o.put("path", out.getAbsolutePath());
+        o.put("dur", y[0].length * 1000.0 / RATE);
+        o.put("ch", 2);
+        return o;
+    }
+
     static void clean(Context c, JSONArray keep) {
         java.util.HashSet<String> k = new java.util.HashSet<>();
         if (keep != null) for (int i = 0; i < keep.length(); i++) k.add(keep.optString(i));

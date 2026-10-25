@@ -864,6 +864,8 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.init(MainActivity.this, a.getJSONObject("src"), p, cancel);
                         } else if ("wsOp".equals(kind)) {
                             res = Workspace.op(MainActivity.this, a, p, cancel);
+                        } else if ("tlSfx".equals(kind)) {
+                            res = Timeline.sfx(MainActivity.this, a);
                         } else if ("tlAdd".equals(kind)) {
                             res = Timeline.add(MainActivity.this, a, p, cancel);
                         } else if ("fillers".equals(kind)) {

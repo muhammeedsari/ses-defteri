@@ -407,6 +407,26 @@ final class Workspace {
                     slice = new double[] { 0, 1 };
                     break;
                 }
+                case "autotune": {
+                    // 3.3 pitch correction: the key is found from the sung notes unless chosen
+                    int key = a.optInt("key", -1);
+                    String sc = a.optString("scale", "major");
+                    if (key < 0) {
+                        AutoTune.KeyFinder kf = new AutoTune.KeyFinder(ch, fs);
+                        wav(in, inf, p, new double[] { 0, 0.3 }, cancel).run(kf);
+                        int[] k = kf.key();
+                        if (k == null) { key = 0; sc = "chromatic"; } else { key = k[0]; sc = k[1] == 1 ? "minor" : "major"; }
+                    }
+                    String st = a.optString("style", "natural");
+                    final AutoTune at = new AutoTune(ch, fs, key, sc, "robot".equals(st) ? 0 : "strong".equals(st) ? 0.03 : 0.1, "robot".equals(st) ? 1 : "strong".equals(st) ? 1 : 0.85);
+                    rep.put("key", key); rep.put("scale", sc); rep.put("style", st);
+                    m = new Meter(ch, fs);
+                    head = at;
+                    at.to(new Limiter(ch, fs, -1.0, 0)).to(m);
+                    slice = new double[] { a.optInt("key", -1) < 0 ? 0.3 : 0, 1 };
+                    autoTunes.set(at);
+                    break;
+                }
                 case "mix":
                     return mix(c, in, inf, out, a, p, cancel);
                 default:
@@ -416,6 +436,8 @@ final class Workspace {
             wav(in, inf, p, slice, cancel).run(head);
             Analyzer after = tees.get();
             if (after != null) { rep.put("after", Math.round(after.finish().noiseDb)); tees.remove(); }
+            AutoTune atn = autoTunes.get();
+            if (atn != null) { rep.put("seconds", Math.round(atn.corrected * 10) / 10.0); autoTunes.remove(); }
             Stages.ClickRepair cr = clicks.get();
             if (cr != null) { rep.put("count", cr.repaired); clicks.remove(); }
             Stages.PlosiveTamer pt = plos.get();
@@ -987,6 +1009,7 @@ final class Workspace {
     // per-job holders for the stage objects whose counters go into the report
     private static final ThreadLocal<Analyzer> tees = new ThreadLocal<>();
     private static final ThreadLocal<Stages.ClickRepair> clicks = new ThreadLocal<>();
+    private static final ThreadLocal<AutoTune> autoTunes = new ThreadLocal<>();
     private static final ThreadLocal<Stages.PlosiveTamer> plos = new ThreadLocal<>();
     private static final ThreadLocal<Stages.DeEsser> dees = new ThreadLocal<>();
 
