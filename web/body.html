@@ -199,6 +199,7 @@
 <script src="i18n16.js"></script>
 <script src="i18n17.js"></script>
 <script src="i18n18.js"></script>
+<script src="i18n19.js"></script>
 <script>
 (() => {
 'use strict';
@@ -209,7 +210,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '2.8';
+const VERSION = '2.9';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -2372,6 +2373,8 @@ function tlSnapPoints(skip) {
     if (o.beats) for (const bt of o.beats) if (bt >= o.in && bt <= o.out) pts.push(o.at + bt - o.in);
   }
   for (const m of TL.p.markers || []) pts.push(m.t);
+  const ck = TL.p.click;
+  if (ck && ck.on) { const per = 60 / ck.bpm, a = TL.pos - 60, b = Math.min(TL.pos + 60, tlEnd() + 30); for (let k = Math.max(0, Math.ceil(a / per)); k * per <= b; k++) pts.push(k * per); }
   return pts;
 }
 /** nearest point within 10 px of any of the given times; returns the shift to apply (0 if none) */
@@ -2388,13 +2391,14 @@ function tlGuide(p) {
 }
 
 /* ----- playback through the native mixer ----- */
-function tlPlay(mix) {
+function tlPlay(mix, from, minEnd) {
   if (TL.play) { tlStop(); return; }
-  if (!TL.p.clips.length) return;
+  if (!TL.p.clips.length && !minEnd) return;
   if (!Array.isArray(mix)) mix = null;
-  if (!mix && TL.pos >= tlEnd() - 0.05) TL.pos = 0;
+  if (!mix && from == null && TL.pos >= tlEnd() - 0.05) TL.pos = 0;
   if (!audio.paused) audio.pause();
-  const err = AND.tlPlay(JSON.stringify(mix || tlMix()), TL.pos);
+  try { AND.tlClick(JSON.stringify(tlClickCfg())); } catch (e) {}
+  const err = AND.tlPlayFrom(JSON.stringify(mix || tlMix()), from != null ? from : TL.pos, minEnd || 0);
   if (err) { toast(err, 4000); return; }
   TL.play = true; renderTlPlay();
   cancelAnimationFrame(TL.raf);
@@ -2431,13 +2435,14 @@ async function tlRunJob(label, kind, args) {
   try { return await runJob(kind, args, f => { if (TL.busy) { TL.busy.p = f; tlBusyUi(); } }); }
   finally { TL.busy = null; tlBusyUi(); renderTlBar(); }
 }
-async function tlAddFrom(r, atSec) {
+async function tlAddFrom(r, atSec, skip) {
   if (TL.busy) return;
   tlStop();
   let res;
   try { res = await tlRunJob(t('tlAdding'), 'tlAdd', { src: r.src }); } catch (e) { toast(errText(e), 5000); return; }
   const before = tlSnap(), dur = res.dur / 1000, at = atSec != null ? atSec : TL.p.clips.length ? TL.pos : 0;
-  const c = { id: uid(), tr: tlFreeTrack(at, at + dur), path: res.path, ch: res.ch, dur, in: 0, out: dur, at, gain: 0, fi: 0, fo: 0, name: r.title || '' };
+  const sk = Math.min(skip || 0, Math.max(0, dur - 0.1));
+  const c = { id: uid(), tr: tlFreeTrack(at, at + dur - sk), path: res.path, ch: res.ch, dur, in: sk, out: dur, at, gain: 0, fi: 0, fo: 0, name: r.title || '' };
   tlEnsureTrack(c.tr);
   TL.p.clips.push(c); TL.sel = c.id;
   if (!TL.p.name) TL.p.name = r.title || '';
@@ -2490,6 +2495,7 @@ function tlSliders(title, rows, apply) {
   for (const r of rows) { const o = card.querySelector('#' + r.id + 'v'); if (o && r.fmt) o.textContent = r.fmt(r.value); }
   card.querySelector('[data-x]').onclick = closeModal;
   card.querySelector('[data-ok]').onclick = () => { ok = true; closeModal(); tlCommit(before); };
+  return card;
 }
 const dbTxt = v => t('tlDb', { v: (v > 0 ? '+' : v < 0 ? '−' : '') + nf1.format(Math.abs(v)) });
 function tlGain() {
@@ -2743,7 +2749,7 @@ function renderTlBar() {
   bar.innerHTML = c
     ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('env', 'envl', t('tlEnv')) + b('clarify', 'spark', t('op_clarify')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
       b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('bass', 'wave', t('tlBass')) + b('treble', 'spark', t('tlTreble')) + b('sep', 'mixer', t('tlSep')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
-    : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
+    : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('metro', 'beat', t('tlClick')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
   tlFxList();
   if (TL.rec) bar.innerHTML = `<button class="btn danger-fill" type="button" data-tl="rec">${ic('pause')} ${esc(t('tlRecStop'))} <span class="tc" id="tlRecT"></span></button><span class="hint">${esc(t('tlRecHint'))}</span>`;
 }
@@ -2781,6 +2787,16 @@ function drawTl() {
     ctx.fillStyle = COL.muted; ctx.font = `12px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('+', w / 2, y + TL_ROW / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = `11px ${MONO}`;
     ctx.strokeStyle = COL.line; ctx.setLineDash([4, 4]); ctx.strokeRect(8.5, y + 6.5, w - 17, TL_ROW - 13); ctx.setLineDash([]);
+  }
+  // metronome grid: bar lines stronger than beats
+  const ck = TL.p.click;
+  if (ck && ck.on) {
+    const per = 60 / ck.bpm;
+    if (per * pps >= 6) for (let k = Math.max(0, Math.floor(t0 / per)); k * per <= t1; k++) {
+      const x = X(k * per), bar = k % ck.bar === 0;
+      ctx.fillStyle = COL.line; ctx.globalAlpha = bar ? 0.75 : 0.3; ctx.fillRect(x - 0.5, TL_RULER, 1, h - TL_RULER);
+    }
+    ctx.globalAlpha = 1;
   }
   const x0Start = X(0); if (x0Start > 0) { ctx.fillStyle = COL.line; ctx.globalAlpha = 0.25; ctx.fillRect(0, TL_RULER, x0Start, h - TL_RULER); ctx.globalAlpha = 1; }
   // clips
@@ -2849,8 +2865,8 @@ function drawTl() {
     ctx.globalAlpha = 1;
   }
   if (TL.rec) {
-    const len = (performance.now() - TL.rec.t0) / 1000, row = Math.min(TL.p.tracks.length, TL_MAX - 1), y = TL_RULER + row * TL_ROW + 4;
-    ctx.fillStyle = COL.rec; ctx.globalAlpha = 0.35; rr(ctx, X(TL.rec.at), y, Math.max(2, len * pps), TL_ROW - 9, 7); ctx.globalAlpha = 1;
+    const pre = TL.rec.pre || 0, len = (performance.now() - TL.rec.t0) / 1000 - pre, row = Math.min(TL.p.tracks.length, TL_MAX - 1), y = TL_RULER + row * TL_ROW + 4;
+    if (len > 0) { ctx.fillStyle = COL.rec; ctx.globalAlpha = 0.35; rr(ctx, X(TL.rec.at + pre), y, Math.max(2, len * pps), TL_ROW - 9, 7); ctx.globalAlpha = 1; }
   }
   // track badges: number + speaker, tap to mute / unmute
   for (let i = 0; i < rows; i++) {
@@ -3050,6 +3066,7 @@ $('#editTab').addEventListener('click', e => {
   else if (k === 'envDone') { TL.env = false; renderTlBar(); drawTl(); }
   else if (k === 'envReset') { const c = tlSel(), before = tlSnap(); if (c) { delete c.env; tlCommit(before); } }
   else if (k === 'video') tlVideo();
+  else if (k === 'metro') tlMetro();
   else if (k === 'split') tlSplit();
   else if (k === 'del') tlDelete();
   else if (k === 'dup') tlDup();
@@ -3152,8 +3169,9 @@ async function tlPunchFinish(it, p) {
   const c = TL.p.clips.find(x => x.id === p.id); if (!c) return;
   const dur = res.dur / 1000;
   if (dur <= p.pre + 0.1) { toast(t('recShort'), 3500); return; }
-  const before = tlSnap(), len = dur - p.pre, end = p.t + len, cEnd = c.at + tlLen(c);
-  const n = { id: uid(), tr: c.tr, path: res.path, ch: res.ch, dur, in: p.pre, out: dur, at: p.t, gain: c.gain || 0, fi: 0.01, fo: 0, name: (c.name || '') + ' · ' + t('tlPunch') };
+  const inn = Math.min(dur - 0.1, Math.max(0, p.pre + (+ls.get('recLat', 0) || 0) / 1000));
+  const before = tlSnap(), len = dur - inn, end = p.t + len, cEnd = c.at + tlLen(c);
+  const n = { id: uid(), tr: c.tr, path: res.path, ch: res.ch, dur, in: inn, out: dur, at: p.t, gain: c.gain || 0, fi: 0.01, fo: 0, name: (c.name || '') + ' · ' + t('tlPunch') };
   if (end < cEnd - 0.05) {
     TL.p.clips.push(Object.assign({}, c, { id: uid(), in: c.in + (end - c.at), at: end, fi: 0.01 }));
     n.fo = 0.01;
@@ -3276,14 +3294,16 @@ async function tlRec() {
     try { res = JSON.parse(AND.recStart('voice', name, recOpts())); } catch (e) { res = {}; }
   }
   if (!res.ok) { toast(t('recFail'), 4200); return; }
-  TL.rec = { at: TL.pos, t0: performance.now(), started: Date.now() };
-  if (TL.pos < tlEnd() - 0.1) tlPlay();   // hear the other tracks while recording
+  // hear the other tracks (and the metronome, with one bar to count in) while recording
+  const ck = tlClickCfg(), pre = ck.on && ck.count ? ck.bar * 60 / ck.bpm : 0, cue = ck.on || TL.pos < tlEnd() - 0.1;
+  TL.rec = { at: TL.pos - pre, pre, cue, t0: performance.now(), started: Date.now() };
+  if (cue) tlPlay(null, TL.pos - pre, ck.on ? 3600 : 0);
   renderTlBar();
   const loop = () => {
     const r = TL.rec; if (!r) return;
     const len = (performance.now() - r.t0) / 1000;
-    if (!TL.play) TL.pos = r.at + len;
-    const el = $('#tlRecT'); if (el) el.textContent = fmt(len);
+    if (!TL.play) TL.pos = Math.max(0, r.at + len);
+    const el = $('#tlRecT'); if (el) el.textContent = len < r.pre ? '−' + Math.ceil(r.pre - len) : fmt(len - r.pre);
     drawTl();
     requestAnimationFrame(loop);
   };
@@ -3300,8 +3320,50 @@ async function tlRecStop() {
   Object.assign(it, { title: defaultTitle('voice', r.started), userTitle: true, created: r.started, categoryId: defaultCat(), notes: '', bookmarks: [], source: 'mic', mode: 'voice', fav: false, kind: 'rec' });
   S.items.set(it.id, it); await saveRec(it);
   if (r.punch) return tlPunchFinish(it, r.punch);
-  TL.pos = r.at;
-  tlAddFrom(it, r.at);
+  // the take is late by the measured latency when it was recorded against playback: skip it (and the count-in)
+  const lat = r.cue ? (+ls.get('recLat', 0) || 0) / 1000 : 0, skip = Math.max(0, (r.pre || 0) + lat), at = Math.max(0, r.at + skip - lat);
+  TL.pos = at;
+  tlAddFrom(it, at, skip);
+}
+
+/* ----- 2.9: metronome, count-in, latency of recording against playback ----- */
+function tlClickCfg() {
+  const ck = TL.p && TL.p.click;
+  if (ck) return ck;
+  const b = TL.p && TL.p.clips.find(c => c.bpm > 0);
+  return { on: false, bpm: b ? Math.round(b.bpm) : 120, bar: 4, vol: 0.5, count: true };
+}
+function tlMetro() {
+  const ck = tlClickCfg(), lat = ls.get('recLat', null);
+  const sw = (id, on, k, d) => ({ id, value: on, html: `<label class="switch"><input type="checkbox" id="${id}"${on ? ' checked' : ''}><span>${esc(t(k))}${d ? `<small>${esc(t(d))}</small>` : ''}</span></label>` });
+  const card = tlSliders(t('tlClick'), [sw('mo', !!ck.on, 'clickOn'),
+    { id: 'mb', label: 'BPM', min: 40, max: 240, step: 1, value: ck.bpm, fmt: v => String(v) },
+    { id: 'mr', label: t('clickBar'), min: 2, max: 7, step: 1, value: ck.bar, fmt: v => v + '/4' },
+    { id: 'mv', label: t('tlVol'), min: 0.1, max: 1, step: 0.05, value: ck.vol, fmt: v => Math.round(v * 100) + '%' },
+    sw('mc', ck.count !== false, 'clickCount', 'clickCountD'),
+    { id: 'ml', html: `<div class="set-sub"><span>${esc(t('latTitle'))}: ${esc(lat == null ? t('latNone') : t('latMs', { ms: lat }))}</span><button class="btn sm" type="button" id="latGo">${ic('mic')}${esc(t('latGo'))}</button><small class="hint">${esc(t('latD'))}</small></div>` }],
+    v => { TL.p.click = { on: v.mo, bpm: v.mb, bar: v.mr, vol: v.mv, count: v.mc }; try { AND.tlClick(JSON.stringify(TL.p.click)); } catch (e) {} });
+  card.querySelector('#latGo').onclick = () => { card.querySelector('[data-ok]').click(); tlLatency(); };
+}
+async function tlLatency() {
+  if (TL.busy || TL.rec) return;
+  if (!(await confirmBox({ title: t('latTitle'), text: t('latHow'), ok: t('latGo') }))) return;
+  tlStop();
+  const o = JSON.parse(recOpts()); o.temp = true;
+  const start = () => { try { return JSON.parse(AND.recStart('voice', 'latency.m4a', JSON.stringify(o))); } catch (e) { return {}; } };
+  let res = start();
+  if (!res.ok && res.error === 'perm') { if (!(await askPerm('mic'))) { toast(t('micPerm'), 4500); return; } res = start(); }
+  if (!res.ok) { toast(t('recFail'), 4200); return; }
+  TL.busy = { label: t('latTitle'), p: 0 }; tlBusyUi(); renderTlBar();
+  try { AND.tlCalib(); } catch (e) {}
+  const t0 = performance.now();
+  await new Promise(done => { const f = () => { const k = (performance.now() - t0) / 5600; if (TL.busy) { TL.busy.p = Math.min(1, k); tlBusyUi(); } if (k >= 1) done(); else setTimeout(f, 100); }; f(); });
+  let st = {}; try { st = JSON.parse(AND.recStop()); } catch (e) {}
+  try { AND.tlStop(); } catch (e) {}
+  TL.busy = null; tlBusyUi(); renderTlBar();
+  if (!st.ok || !st.item) { toast(t('latFail'), 5000); return; }
+  try { const r = await tlRunJob(t('latTitle'), 'latency', { src: st.item.src }); ls.set('recLat', r.ms); toast(t('latDone', { ms: r.ms }), 5000); }
+  catch (e) { toast(String((e && e.message) || '').includes('nolat') ? t('latFail') : errText(e), 5000); }
 }
 
 /** 2.8: live spectrum (40 Hz – 16 kHz) and loudness of what the timeline is playing; integrated = since play was pressed */
@@ -3626,6 +3688,7 @@ function clPlay() {
   if (CL.play) { clStopPlay(); clPlayIcon(); return; }
   if (CL.pos >= CL.res.dur / 1000 - 0.1) CL.pos = 0;
   const mapped = clCuts().length && CL.cmp === 'before';
+  try { AND.tlClick('{}'); } catch (e) {}
   const err = AND.tlPlay(JSON.stringify(clMix()), mapped ? clToBefore(CL.pos) : CL.pos);
   if (err) { toast(err, 4000); return; }
   CL.play = true; clPlayIcon();

@@ -776,10 +776,14 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public void plSkips(final String id, final String json) { ui(new Runnable() { @Override public void run() { Player.I.setSkips(id, json); } }); }
         @JavascriptInterface public void plSleep(final double ms, final boolean end) { ui(new Runnable() { @Override public void run() { Player.I.setSleep((long) ms, end); } }); }
         @JavascriptInterface public String tlPlay(String json, double sec) { try { Timeline.play(json, sec); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
+        /** 2.9: from may be negative (count-in), and play at least until minSec even without clips (metronome) */
+        @JavascriptInterface public String tlPlayFrom(String json, double sec, double minSec) { try { Timeline.fixedClicks = null; Timeline.play(json, sec, Math.round(minSec * Timeline.RATE)); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
         @JavascriptInterface public void tlUpdate(String json) { try { Timeline.update(json); } catch (Exception ignored) { } }
         @JavascriptInterface public void tlStop() { Timeline.stop(); }
         @JavascriptInterface public double tlPos() { return Timeline.pos(); }
         @JavascriptInterface public String tlMeter() { return Timeline.meter(); }
+        @JavascriptInterface public void tlClick(String json) { Timeline.click(json); }
+        @JavascriptInterface public String tlCalib() { try { Timeline.calibrate(); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
 
         /** true once after the app was opened from the "new recording" shortcut */
         @JavascriptInterface public boolean takeQuickRec() { boolean q = quickRec; quickRec = false; return q; }
@@ -875,6 +879,8 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Separator.split(MainActivity.this, a, p, cancel);
                         } else if ("tlRender".equals(kind)) {
                             res = Timeline.render(MainActivity.this, a, p, cancel);
+                        } else if ("latency".equals(kind)) {
+                            res = Timeline.latency(MainActivity.this, a, p, cancel);
                         } else if ("tlVideo".equals(kind)) {
                             res = VideoMux.run(MainActivity.this, a, p, cancel);
                         } else if ("tlClean".equals(kind)) {

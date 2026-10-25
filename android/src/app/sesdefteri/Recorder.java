@@ -9,6 +9,8 @@ import android.os.ParcelFileDescriptor;
 
 import org.json.JSONObject;
 
+import java.io.File;
+
 /** Native recorder: AAC in an .m4a file inside Music/Ses Defteri, kept alive by RecordService. */
 final class Recorder {
     private static MediaRecorder mr;
@@ -26,17 +28,20 @@ final class Recorder {
         try { o = new JSONObject(optsJson == null ? "{}" : optsJson); } catch (Exception e) { o = new JSONObject(); }
         callPause = o.optBoolean("call", true);
         agc = o.optBoolean("agc", true);
+        temp = o.optBoolean("temp", false);
         return start(c, mode, displayName, o.optString("q", "std"), o.optString("src", "auto"));
     }
 
     private static boolean agc = true;
+    private static boolean temp;   // 2.9 latency test: a throwaway file in the cache, not in Music
 
     private static String start(Context c, String mode, String displayName, String q, String src) {
         JSONObject res = new JSONObject();
         try {
             if (!"idle".equals(state)) { res.put("ok", false); res.put("error", "busy"); return res.toString(); }
             boolean music = mode.startsWith("music");
-            target = MediaLib.create(c, displayName, "audio/mp4");
+            if (temp) { target = new MediaLib.Target(); target.file = new File(c.getCacheDir(), "latency.m4a"); target.name = target.file.getName(); }
+            else target = MediaLib.create(c, displayName, "audio/mp4");
             mr = Build.VERSION.SDK_INT >= 31 ? new MediaRecorder(c) : new MediaRecorder();
             // automatic gain off: VOICE_RECOGNITION is the source Android requires to be free of AGC
             int source = agc ? MediaRecorder.AudioSource.MIC : MediaRecorder.AudioSource.VOICE_RECOGNITION;

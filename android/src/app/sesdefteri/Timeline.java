@@ -224,6 +224,7 @@ final class Timeline {
         Engine eng;
         AudioTrack track;
         final Meter meter = new Meter();
+        long minEnd;   // play at least this far (the latency test has clicks but no clips)
 
         Play(Engine e, long start) { eng = e; this.start = start; }
 
@@ -237,9 +238,12 @@ final class Timeline {
                 while (!stop) {
                     Engine p = pending;
                     if (p != null) { pending = null; eng.close(); eng = p; }
-                    if (pos >= eng.end) break;
-                    int n = (int) Math.min(BL, eng.end - pos);
+                    long end = Math.max(eng.end, minEnd);
+                    if (pos >= end) break;
+                    int n = (int) Math.min(BL, end - pos);
                     eng.render(pos, n, mix);
+                    meter.feed(mix, n);
+                    clicks(pos, n, mix);
                     for (int i = 0, j = 0; i < n; i++) {
                         for (int c = 0; c < 2; c++, j++) {
                             float v = mix[c][i], av = Math.abs(v);
@@ -248,7 +252,6 @@ final class Timeline {
                             pcm[j] = (short) (v * 32767);
                         }
                     }
-                    meter.feed(mix, n);
                     track.write(pcm, 0, n * 2);
                     pos += n;
                 }
@@ -270,10 +273,16 @@ final class Timeline {
     }
 
     static synchronized void play(String json, double sec) throws Exception {
+        fixedClicks = null;
+        play(json, sec, 0);
+    }
+
+    static synchronized void play(String json, double sec, long minEnd) throws Exception {
         stop();
         Engine e = new Engine(new JSONArray(json));
         int min = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT);
-        Play p = new Play(e, Math.max(0, Math.round(sec * RATE)));
+        Play p = new Play(e, Math.round(sec * RATE));   // negative: count-in before the start
+        p.minEnd = minEnd;
         p.track = new AudioTrack(AudioManager.STREAM_MUSIC, RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT,
             Math.max(min * 2, RATE / 10 * 4), AudioTrack.MODE_STREAM);
         synchronized (Play.class) { Play.cur = p; }
@@ -303,7 +312,113 @@ final class Timeline {
         Play p;
         synchronized (Play.class) { p = Play.cur; }
         if (p == null) return -1;
-        try { return (p.start + (p.track.getPlaybackHeadPosition() & 0xffffffffL)) / (double) RATE; } catch (Exception e) { return p.start / (double) RATE; }
+        try { return Math.max(0, (p.start + (p.track.getPlaybackHeadPosition() & 0xffffffffL)) / (double) RATE); } catch (Exception e) { return Math.max(0, p.start / (double) RATE); }
+    }
+
+    /* ---------- 2.9: metronome (heard while playing and recording, never exported) ---------- */
+
+    static volatile double clickBpm;          // 0 = off
+    static volatile int clickBar = 4;
+    static volatile float clickVol = 0.5f;
+    static volatile long[] fixedClicks;       // latency test: clicks at these frames instead of a beat
+    static final float[] HI = clickWave(1600), LO = clickWave(1000);
+
+    private static float[] clickWave(double hz) {
+        float[] w = new float[(int) (0.03 * RATE)];
+        for (int i = 0; i < w.length; i++) w[i] = (float) (Math.sin(2 * Math.PI * hz * i / RATE) * Math.exp(-i / (0.006 * RATE)));
+        return w;
+    }
+
+    static void click(String json) {
+        try {
+            JSONObject o = new JSONObject(json);
+            clickBar = Math.max(1, Math.min(12, o.optInt("bar", 4)));
+            clickVol = (float) Math.max(0, Math.min(1, o.optDouble("vol", 0.5)));
+            clickBpm = o.optBoolean("on", false) ? Math.max(30, Math.min(300, o.optDouble("bpm", 120))) : 0;
+        } catch (Exception ignored) { }
+    }
+
+    private static void addWave(float[] w, long at, long pos, int n, float[][] mix, float g) {
+        for (int i = (int) Math.max(0, at - pos); i < n && pos + i - at < w.length; i++) {
+            float v = w[(int) (pos + i - at)] * g;
+            mix[0][i] += v; mix[1][i] += v;
+        }
+    }
+
+    static void clicks(long pos, int n, float[][] mix) {
+        long[] fx = fixedClicks;
+        int len = HI.length;
+        if (fx != null) { for (long at : fx) if (at + len > pos && at < pos + n) addWave(HI, at, pos, n, mix, 0.7f); return; }
+        double bpm = clickBpm;
+        if (bpm <= 0) return;
+        double per = 60.0 * RATE / bpm;
+        for (long k = (long) Math.ceil((pos - len) / per); k * per < pos + n; k++) {
+            long at = Math.round(k * per);
+            if (at + len <= pos) continue;
+            boolean one = Math.floorMod(k, (long) clickBar) == 0;
+            addWave(one ? HI : LO, at, pos, n, mix, clickVol * (one ? 0.9f : 0.6f));
+        }
+    }
+
+    /** latency test: clicks at uneven times (so the match can't be off by a beat), 5 s long */
+    static final double[] CALIB = { 1.0, 1.35, 1.9, 2.2, 2.85, 3.3, 3.6, 4.2 };
+
+    static synchronized void calibrate() throws Exception {
+        long[] f = new long[CALIB.length];
+        for (int i = 0; i < f.length; i++) f[i] = Math.round(CALIB[i] * RATE);
+        fixedClicks = f;
+        play("[]", 0, 5L * RATE);
+    }
+
+    /** where the clicks landed in the test recording: ms to skip at the start of an overdub so it lines up */
+    static JSONObject latency(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        fixedClicks = null;
+        final float[][] env = { new float[8000] };
+        final int[] len = { 0 };
+        AudioTools.decode(c, a.getJSONObject("src"), new AudioTools.PcmSink() {
+            long frame; int rate; double prev, acc; int cnt;
+            @Override public void pcm(short[] d, int count, int ch, int sr) {
+                rate = sr;
+                int per = Math.max(1, sr / 1000);
+                for (int i = 0; i < count; i += ch) {
+                    double x = d[i] / 32768.0, hp = x - prev; prev = x;   // first difference: the click, not the room hum
+                    acc += hp * hp;
+                    if (++cnt == per) {
+                        if (len[0] == env[0].length) env[0] = java.util.Arrays.copyOf(env[0], len[0] * 2);
+                        env[0][len[0]++] = (float) acc;
+                        acc = 0; cnt = 0;
+                    }
+                }
+            }
+        }, p, cancel);
+        JSONObject r = new JSONObject();
+        r.put("ms", match(env[0], len[0]));
+        return r;
+    }
+
+    /** e: energy per ms of the test recording → offset (ms) of the click pattern in it */
+    static int match(float[] e, int n) {
+        float[] on = new float[n];
+        for (int i = 1; i < n; i++) on[i] = Math.max(0, e[i] - e[i - 1]);
+        double best = -1, second = 0; int bd = 0;
+        double[] score = new double[1001];
+        for (int d = -200; d <= 800; d++) {
+            double s = 0;
+            for (double t : CALIB) {
+                int m = (int) Math.round(t * 1000) + d;
+                float mx = 0;
+                for (int j = m - 2; j <= m + 2; j++) if (j >= 0 && j < n) mx = Math.max(mx, on[j]);
+                s += mx;
+            }
+            score[d + 200] = s;
+            if (s > best) { best = s; bd = d; }
+        }
+        double[] srt = score.clone();
+        java.util.Arrays.sort(srt);
+        double med = srt[srt.length / 2];
+        for (int d = -200; d <= 800; d++) if (Math.abs(d - bd) > 20) second = Math.max(second, score[d + 200]);
+        if (best <= 0 || best < med * 4 || best < second * 1.3) throw new IllegalStateException("nolat");
+        return bd;
     }
 
     /* ---------- 2.8: live meter (spectrum, LUFS, peak) of what is playing ---------- */

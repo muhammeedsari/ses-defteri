@@ -40,6 +40,8 @@ Kullanıcı her sürümü telefonda test ediyor; aşağıdakiler teslim edildi. 
 
 - **2.8:** Düzenle sekmesinde **ses ölçer** (üst çubukta spektrum düğmesi; `Timeline.Meter`: çalınan karışımdan 32 bantlı spektrum + anlık/kısa/ortalama LUFS + tepe, `AND.tlMeter()`; ortalama = oynatmaya basıldığından beri; hedef Ayarlar'daki platform). Kayıt sırasında spektrum YOK: MediaRecorder PCM vermiyor (AudioRecord'a geçiş gerekir). **Kayıt kısayolu**: uygulama simgesine basılı tutunca "Yeni kayıt" (statik kısayol, `res/xml/shortcuts.xml`), Ayarlar > Genel'den ana ekrana sabitleme (`pinRecShortcut`, Android 8+); eylem `app.sesdefteri.RECORD` → `takeQuickRec()` → `quickRec()`. Cihazda denenmedi.
 
+- **2.9:** **Metronom** (Düzenle > Metronom; `TL.p.click {on,bpm,bar,vol,count}`, sesi sadece canlı çalmada `Timeline.clicks`, dışa aktarmaya girmez; zaman çizelgesinde vuruş çizgileri + yapışma), **kayıttan önce bir ölçü sayma** (oynatma negatif zamandan başlar, `tlPlayFrom`), **kayıt gecikmesi ölçümü** (8 düzensiz tık hoparlörden çalınır, önbelleğe geçici kayıt, `Timeline.match` başlangıç eğimiyle hizalar; sentetik testte ±2 ms) → `recLat` ms; arka plan dinlenerek yapılan kayıtlar ve punch-in bu kadar kaydırılır. Cihazda denenmedi.
+
 ## 3. En son yazılan ve çalışan kod (2.4–2.5)
 - `android/src/app/sesdefteri/Denoiser.java` — DPDFNet akışlı gürültü temizleme düğümü (`Stage`): stereo → orta kanal, 1920 örnek gecikme telafisi, orijinalden `keep` oranı geri karıştırma (Hafif −12 dB, Dengeli −23 dB, Güçlü −34 dB), sonunda sessizlik + flush.
 - `Workspace.java`:
