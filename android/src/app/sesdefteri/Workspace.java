@@ -391,7 +391,8 @@ final class Workspace {
                     double airDb = Math.min(5, (1 + Math.max(0, -air) * 0.4) * str);
                     m = new Meter(ch, fs);
                     head = new app.sesdefteri.dsp.Clarity(ch, fs, mudDb, presDb, airDb, 0.25 * str);
-                    head.to(new Stages.Compressor(ch, fs, an.speechMeanDb + 4, 1.6 + 0.6 * str)).to(new Limiter(ch, fs, -1.0, 1.5 * str)).to(m);
+                    // the compressor and the mud cut take about 3 dB: given back before the limiter so the voice is not quieter than before
+                    head.to(new Stages.Compressor(ch, fs, an.speechMeanDb + 4, 1.6 + 0.6 * str)).to(new Limiter(ch, fs, -1.0, 2.5 + 1.2 * str)).to(m);
                     rep.put("mud", Math.round(-mudDb * 10) / 10.0);
                     rep.put("pres", Math.round(presDb * 10) / 10.0);
                     rep.put("air", Math.round(airDb * 10) / 10.0);

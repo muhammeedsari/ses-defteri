@@ -6,7 +6,7 @@ package app.sesdefteri.dsp;
  */
 public final class VoiceFx extends Node {
     final int ch;
-    final Biquad[] f;
+    final Biquad[] f, post;   // post: the band limit again after the saturation, which makes new highs
     final double drive, norm, ring, makeup;
     final float[][] comb;
     final int combLen;
@@ -21,17 +21,21 @@ public final class VoiceFx extends Node {
             case "phone":
                 f = new Biquad[] { Biquad.highpass(ch, fs, 320, 0.707), Biquad.highpass(ch, fs, 320, 0.707),
                     Biquad.lowpass(ch, fs, 3300, 0.707), Biquad.lowpass(ch, fs, 3300, 0.707), Biquad.peaking(ch, fs, 1800, 1, 3) };
+                post = new Biquad[] { Biquad.highpass(ch, fs, 300, 0.707), Biquad.lowpass(ch, fs, 3400, 0.707), Biquad.lowpass(ch, fs, 3400, 0.707) };
                 drive = 2.2; ring = 0; makeup = 4; break;
             case "radio":
                 f = new Biquad[] { Biquad.highpass(ch, fs, 450, 0.707), Biquad.lowpass(ch, fs, 5000, 0.707), Biquad.lowpass(ch, fs, 5000, 0.707),
                     Biquad.peaking(ch, fs, 1500, 0.8, 4) };
+                post = new Biquad[] { Biquad.lowpass(ch, fs, 5500, 0.707) };
                 drive = 3; ring = 0; makeup = 3; break;
             case "megaphone":
                 f = new Biquad[] { Biquad.highpass(ch, fs, 650, 0.707), Biquad.highpass(ch, fs, 650, 0.707), Biquad.lowpass(ch, fs, 3600, 1.2),
                     Biquad.peaking(ch, fs, 1900, 1.4, 8) };
+                post = new Biquad[] { Biquad.lowpass(ch, fs, 4200, 0.707), Biquad.lowpass(ch, fs, 4200, 0.707) };
                 drive = 5; ring = 0; makeup = 1; break;
             default:   // robot
                 f = new Biquad[] { Biquad.highpass(ch, fs, 120, 0.707) };
+                post = new Biquad[0];
                 drive = 1.6; ring = 55; makeup = 6; break;
         }
         norm = 1 / Math.tanh(drive);
@@ -58,6 +62,7 @@ public final class VoiceFx extends Node {
             }
             if (combLen > 0 && ++cp >= combLen) cp = 0;
         }
+        for (int c = 0; c < ch; c++) for (Biquad q : post) q.process(c, b[c], 0, n);
         t += n;
         next.push(b, n);
     }

@@ -783,7 +783,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.4';
+const VERSION = '3.4.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -3336,7 +3336,7 @@ function renderTlBar() {
   bar.innerHTML = c
     ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('env', 'envl', t('tlEnv')) + b('clarify', 'spark', t('op_clarify')) + b('spec', 'spec', t('tlSpec')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
       b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('bass', 'wave', t('tlBass')) + b('treble', 'spark', t('tlTreble')) + b('sep', 'mixer', t('tlSep')) + b('spk', 'people', t('tlSpk')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
-    : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('metro', 'beat', t('tlClick')) + b('sfx', 'bell', t('tlSfx')) + b('tts', 'speak', t('tlTts')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
+    : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + b('sfx', 'bell', t('tlSfx')) + b('tts', 'speak', t('tlTts')) + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('metro', 'beat', t('tlClick')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
   tlFxList();
   if (TL.rec) bar.innerHTML = `<button class="btn danger-fill" type="button" data-tl="rec">${ic('pause')} ${esc(t('tlRecStop'))} <span class="tc" id="tlRecT"></span></button><span class="hint">${esc(t('tlRecHint'))}</span>`;
 }
@@ -4616,7 +4616,7 @@ $('#batchBtn').addEventListener('click', openBatch);
 /* ---------- recorder ---------- */
 const R = { state: 'idle', mode: ls.get('mode', 'voice'), stream: null, ctx: null, an: null, mr: null, mime: '', chunks: [], idx: 0,
   draftId: null, t0: 0, acc: 0, started: 0, levels: [], marks: [], curMax: 0, raf: 0, wake: null, lastSave: 0, peakDb: -Infinity, peakAt: 0, cancel: false, endEl: 0, native: false };
-const modeHint = m => t((m === 'music' ? 'hintMusic' : 'hintVoice') + (NATIVE ? 'N' : 'W'));
+const modeHint = m => NATIVE && S.recFmt && S.recFmt !== 'm4a' ? t('setRecFmt') + ': ' + t('rf_' + S.recFmt) : t((m === 'music' ? 'hintMusic' : 'hintVoice') + (NATIVE ? 'N' : 'W'));
 function setMode(m) {
   R.mode = m; ls.set('mode', m);
   $('#modeSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', b.dataset.mode === m));
