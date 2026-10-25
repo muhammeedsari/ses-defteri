@@ -205,6 +205,7 @@
 <script src="i18n21.js"></script>
 <script src="i18n22.js"></script>
 <script src="i18n23.js"></script>
+<script src="i18n24.js"></script>
 <script>
 (() => {
 'use strict';
@@ -215,7 +216,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.3';
+const VERSION = '3.4';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -289,6 +290,7 @@ const P = {
   ear: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3.5" y="14" width="4.5" height="6.5" rx="1.6"/><rect x="16" y="14" width="4.5" height="6.5" rx="1.6"/>',
   people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c3 .2 5.5 2.4 5.5 5.8"/>',
   bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2H4.5z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  speak: '<path d="M4 6.5h11M4 11h8M4 15.5h5"/><path d="M15.5 13.5v5l3-2.5h2v-5h-2z"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>',
   note: '<circle cx="7" cy="17.5" r="2.8"/><circle cx="17" cy="15.5" r="2.8"/><path d="M9.8 17.5V6l10-2v11.5"/>',
   folder: '<path d="M3.5 6.5A1.5 1.5 0 0 1 5 5h4.5l2 2.2H19a1.5 1.5 0 0 1 1.5 1.5v9.3A1.5 1.5 0 0 1 19 19.5H5A1.5 1.5 0 0 1 3.5 18z"/>',
@@ -2011,6 +2013,9 @@ function errText(e) {
   if (m.includes('novideo')) return t('vidNone');
   if (m.includes('videofmt')) return t('vidFmt');
   if (m.includes('dia-long')) return t('spkLong');
+  if (m.includes('tts-lang')) return t('ttsLangNo');
+  if (m.includes('tts-none')) return t('ttsNone');
+  if (m.includes('tts-empty')) return t('ttsEmpty');
   if (m.includes('dia-short')) return t('spkShort');
   if (m.includes('download-')) return t('spkNet');
   return t('errGeneric') + (m && m !== 'job' ? ' (' + m.slice(0, 120) + ')' : '');
@@ -2764,7 +2769,7 @@ function renderTlBar() {
   bar.innerHTML = c
     ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('env', 'envl', t('tlEnv')) + b('clarify', 'spark', t('op_clarify')) + b('spec', 'spec', t('tlSpec')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
       b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('bass', 'wave', t('tlBass')) + b('treble', 'spark', t('tlTreble')) + b('sep', 'mixer', t('tlSep')) + b('spk', 'people', t('tlSpk')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
-    : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('metro', 'beat', t('tlClick')) + b('sfx', 'bell', t('tlSfx')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
+    : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('metro', 'beat', t('tlClick')) + b('sfx', 'bell', t('tlSfx')) + b('tts', 'speak', t('tlTts')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
   tlFxList();
   if (TL.rec) bar.innerHTML = `<button class="btn danger-fill" type="button" data-tl="rec">${ic('pause')} ${esc(t('tlRecStop'))} <span class="tc" id="tlRecT"></span></button><span class="hint">${esc(t('tlRecHint'))}</span>`;
 }
@@ -3083,6 +3088,7 @@ $('#editTab').addEventListener('click', e => {
   else if (k === 'video') tlVideo();
   else if (k === 'metro') tlMetro();
   else if (k === 'sfx') tlSfx();
+  else if (k === 'tts') tlTts();
   else if (k === 'split') tlSplit();
   else if (k === 'del') tlDelete();
   else if (k === 'dup') tlDup();
@@ -3165,6 +3171,59 @@ async function tlSfx() {
   tlEnsureTrack(c.tr);
   TL.p.clips.push(c); TL.sel = c.id;
   tlCommit(before);
+}
+/* ----- 3.4: text to speech: the phone's own voice, or a natural voice downloaded once ----- */
+async function tlTts() {
+  if (TL.busy) return;
+  let st = {}; try { st = await runJob('ttsStatus', {}); } catch (e) {}
+  const lang0 = ls.get('ttsLang', LANG), eng0 = ls.get('ttsEng', 'phone');
+  const card = openModal(`<h3>${esc(t('tlTts'))}</h3><p class="mtext">${esc(t('ttsD'))}</p>
+    <textarea id="ttsText" class="tts-text" rows="6" placeholder="${esc(t('ttsPh'))}">${esc(ls.get('ttsText', ''))}</textarea>
+    <div class="set-sub"><span>${esc(t('ttsLang'))}</span><select id="ttsLang" class="sel-full">${LANGS.map(([k, n]) => `<option value="${k}"${k === lang0 ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+    <div class="set-sub"><span>${esc(t('ttsVoice'))}</span><select id="ttsEng" class="sel-full">${['phone', 'ai'].map(k => `<option value="${k}"${k === eng0 ? ' selected' : ''}>${esc(t('tts_' + k))}</option>`).join('')}</select></div>
+    <p class="hint" id="ttsNote"></p>
+    <div class="slider"><span>${esc(t('ttsSpeed'))}</span><input type="range" id="ttsSpd" min="0.6" max="1.6" step="0.05" value="${ls.get('ttsSpd', 1)}"><span class="tc" id="ttsSpdV"></span></div>
+    <div class="modal-actions"><button class="btn sm danger" type="button" id="ttsDel" hidden>${esc(t('ttsDel'))}</button><span class="spacer"></span>
+      <button class="btn" type="button" id="ttsSave">${esc(t('ttsSave'))}</button><button class="btn primary" type="button" id="ttsAdd">${esc(t('ttsAdd'))}</button></div>`);
+  const $c = q => card.querySelector(q), mb = l => l === 'zh' ? 67 : 21;
+  const note = () => {
+    const l = $c('#ttsLang').value, ai = $c('#ttsEng').value === 'ai';
+    $c('#ttsNote').textContent = ai ? (st[l] ? t('ttsHave') : t('ttsNeed', { n: mb(l) })) : t('ttsPhoneD');
+    $c('#ttsDel').hidden = !(ai && st[l]);
+    $c('#ttsSpdV').textContent = '×' + nf1.format(+$c('#ttsSpd').value);
+  };
+  $c('#ttsLang').onchange = $c('#ttsEng').onchange = $c('#ttsSpd').oninput = note; note();
+  $c('#ttsDel').onclick = async () => { try { st = await runJob('ttsDelete', { lang: $c('#ttsLang').value }); } catch (e) {} note(); };
+  const go = async save => {
+    const text = $c('#ttsText').value.trim(), lang = $c('#ttsLang').value, engine = $c('#ttsEng').value, speed = +$c('#ttsSpd').value;
+    if (!text) { toast(t('ttsEmpty')); return; }
+    ls.set('ttsText', text); ls.set('ttsLang', lang); ls.set('ttsEng', engine); ls.set('ttsSpd', speed);
+    closeModal(); tlStop();
+    if (engine === 'ai' && !st[lang]) {
+      if (!(await confirmBox({ title: t('ttsGetQ'), text: t('ttsGetD', { n: mb(lang) }), ok: t('spkGetOk') }))) return;
+      try { st = await tlRunJob(t('ttsGetting'), 'ttsGet', { lang }); } catch (e) { toast(errText(e), 5000); return; }
+    }
+    let res;
+    try { res = await tlRunJob(t('ttsBusy'), 'ttsSpeak', { text, lang, engine, speed }); } catch (e) { toast(errText(e), 6000); return; }
+    const name = text.replace(/\s+/g, ' ').slice(0, 40);
+    if (save) {
+      try {
+        const sv = await runJob('wsSave', Object.assign({ path: res.path, name: safeName(name) }, fmtArgs()));
+        const it = fromNative(sv.item, null);
+        Object.assign(it, { title: name, userTitle: true, created: Date.now(), categoryId: defaultCat(), notes: text, bookmarks: [], source: 'tts', mode: 'voice', fav: false, kind: 'rec' });
+        S.items.set(it.id, it); await saveRec(it); render();
+        toast(t('ttsSaved'), 3500);
+      } catch (e) { toast(errText(e), 5000); }
+      return;
+    }
+    const before = tlSnap(), dur = res.dur / 1000, at = TL.p.clips.length ? TL.pos : 0;
+    const c = { id: uid(), tr: tlFreeTrack(at, at + dur), path: res.path, ch: res.ch, dur, in: 0, out: dur, at, gain: 0, fi: 0, fo: 0, name };
+    tlEnsureTrack(c.tr);
+    TL.p.clips.push(c); TL.sel = c.id;
+    tlCommit(before);
+  };
+  $c('#ttsAdd').onclick = () => go(false);
+  $c('#ttsSave').onclick = () => go(true);
 }
 /* ----- 3.2: speaker separation: every voice on its own track, levels evened out ----- */
 async function tlSpk() {

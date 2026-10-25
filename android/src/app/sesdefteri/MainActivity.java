@@ -823,7 +823,7 @@ public class MainActivity extends Activity implements Player.Listener {
             jobs.put(id, cancel);
             boolean bg = false;
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
-            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"spectro".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind);
+            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"spectro".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind) && !"ttsStatus".equals(kind) && !"ttsDelete".equals(kind);
             if (heavy) WorkService.begin(MainActivity.this);
             (bg ? bgPool : heavy || "wsClean".equals(kind) || "tlClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
                 @Override
@@ -864,6 +864,14 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.init(MainActivity.this, a.getJSONObject("src"), p, cancel);
                         } else if ("wsOp".equals(kind)) {
                             res = Workspace.op(MainActivity.this, a, p, cancel);
+                        } else if ("ttsSpeak".equals(kind)) {
+                            res = Tts.speak(MainActivity.this, a, p, cancel);
+                        } else if ("ttsGet".equals(kind)) {
+                            res = Tts.download(MainActivity.this, a, p, cancel);
+                        } else if ("ttsDelete".equals(kind)) {
+                            res = Tts.delete(MainActivity.this, a);
+                        } else if ("ttsStatus".equals(kind)) {
+                            res = Tts.status(MainActivity.this);
                         } else if ("tlSfx".equals(kind)) {
                             res = Timeline.sfx(MainActivity.this, a);
                         } else if ("tlAdd".equals(kind)) {

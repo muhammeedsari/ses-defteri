@@ -61,6 +61,8 @@ Kullanıcı her sürümü telefonda test ediyor; aşağıdakiler teslim edildi. 
 - `web/body.html` — `tlEq`, `tlTone`, `tlFxList`, `tlCopy/tlPaste/tlInsertSilence`, çalma listeleri (`playlistsHTML`, `songMenu`, `plAdd`…), `enqueue`, `silenceCut`, `openPrivacy/openFeedback`, `needLang/showLangPick`, `hasAsr/asrOffer/asrModelUi/asrDownload`.
 - `web/i18n13.js` (2.3 + 2.3.2), `i18n14.js` (2.4), `i18n15.js` (2.5).
 
+- **3.4:** **Metinden ses** (Düzenle > Metinden ses; `Tts.java`, işler `ttsSpeak/ttsGet/ttsDelete/ttsStatus`). İki motor: "Telefonun sesi" (Android `TextToSpeech.synthesizeToFile`, metin cümle sonlarından ≤3000 karakterlik parçalara bölünür, parçalar 48 kHz'e çevrilip birleştirilir; manifest'te `TTS_SERVICE` queries) ve "Doğal ses" (sherpa-onnx `OfflineTts` VITS/Piper, dil başına int8 model ≈21 MB, zh 67 MB, GitHub `tts-models/vits-piper-*.tar.bz2`; telefonda `Untar.java` ile açılır: kendi bzip2 çözücüsü + tar okuyucu, masaüstünde 36 MB arşivde `tar` ile birebir aynı; `files/tts/<dil>/model.onnx + tokens.txt`, ortak `files/tts/espeak-ng-data`). Java aynaları: `OfflineTts*Config` (JNI tüm alt yapılandırmaları okur: vits, matcha, kokoro, zipvoice, kitten, pocket, supertonic). Sonuç Düzenle'ye klip ya da "Kayıt olarak kaydet" (`wsSave`). Cihazda denenmedi.
+
 ## 4. Bitmemiş / riskli / sıradaki işler
 ### Kullanıcının telefonda doğrulaması gerekenler (bilgi bekleniyor)
 - **Whisper base indirme adresi** (`huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/base-encoder.int8.onnx` …) geliştirme ortamından denenemedi. Small bu yolla çalışıyordu. Hata olursa: modelleri kullanıcının GitHub release sayfasına koyup `AsrModels.hosts()`'a ekle.

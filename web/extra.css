@@ -213,3 +213,5 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
 .rec-spec{width:100%;height:46px;display:block;margin-top:6px;opacity:.9}
 .rec-mon[aria-pressed="true"]{background:var(--stage-ink);color:var(--stage)}
 #recLufs{color:var(--stage-ink)}
+/* 3.4: text to speech */
+.tts-text{width:100%;box-sizing:border-box;min-height:120px;resize:vertical;font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);margin:4px 0 10px}
