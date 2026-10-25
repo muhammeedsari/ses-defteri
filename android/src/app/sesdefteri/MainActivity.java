@@ -320,10 +320,19 @@ public class MainActivity extends Activity implements Player.Listener {
         handleIntent(intent);
     }
 
+    static final String ACTION_QUICK_REC = "app.sesdefteri.RECORD";
+    private volatile boolean quickRec;
+
     private void handleIntent(Intent intent) {
         if (intent == null || intent.getAction() == null) return;
         List<Uri> uris = new ArrayList<>();
         String action = intent.getAction();
+        if (ACTION_QUICK_REC.equals(action)) {
+            intent.setAction(null);
+            quickRec = true;
+            js("window.__sdQuickRec && window.__sdQuickRec()");
+            return;
+        }
         try {
             if (Intent.ACTION_SEND.equals(action)) {
                 Uri u = intent.getParcelableExtra(Intent.EXTRA_STREAM);
@@ -770,6 +779,25 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public void tlUpdate(String json) { try { Timeline.update(json); } catch (Exception ignored) { } }
         @JavascriptInterface public void tlStop() { Timeline.stop(); }
         @JavascriptInterface public double tlPos() { return Timeline.pos(); }
+        @JavascriptInterface public String tlMeter() { return Timeline.meter(); }
+
+        /** true once after the app was opened from the "new recording" shortcut */
+        @JavascriptInterface public boolean takeQuickRec() { boolean q = quickRec; quickRec = false; return q; }
+
+        /** asks the launcher to put a "new recording" icon on the home screen (Android 8+) */
+        @JavascriptInterface public boolean pinRecShortcut(String label) {
+            if (Build.VERSION.SDK_INT < 26) return false;
+            try {
+                android.content.pm.ShortcutManager sm = getSystemService(android.content.pm.ShortcutManager.class);
+                if (sm == null || !sm.isRequestPinShortcutSupported()) return false;
+                Intent i = new Intent(ACTION_QUICK_REC).setClass(MainActivity.this, MainActivity.class);
+                android.content.pm.ShortcutInfo si = new android.content.pm.ShortcutInfo.Builder(MainActivity.this, "rec-pin")
+                    .setShortLabel(label).setIcon(android.graphics.drawable.Icon.createWithResource(MainActivity.this, R.mipmap.ic_rec)).setIntent(i).build();
+                return sm.requestPinShortcut(si, null);
+            } catch (Exception e) {
+                return false;
+            }
+        }
 
         /* -- background jobs: waveform, editing, saving -- */
         @JavascriptInterface public String job(final String kind, final String argsJson) {

@@ -38,6 +38,8 @@ Kullanıcı her sürümü telefonda test ediyor; aşağıdakiler teslim edildi. 
 - **2.6:** Ses seviyesi çizgisi (klip başına `env: [[dosya zamanı, dB]]`, en alt −40 dB = sessiz; `Timeline.Engine` canlı + render), otomatik çapraz geçiş (aynı katmanda kısmi örtüşme, eşit güç `xi/xo`; Ayarlar > Stüdyo `tlXf`), **Videoya koy** (`VideoMux.java`: görüntü yeniden kodlanmadan kopyalanır, karışım AAC, Movies/Ses Defteri). Cihazda denenmedi.
 - **2.7:** **Sesi netleştir** (op `clarify`, `dsp/Clarity.java`: 80 Hz HP, 300 Hz kesme, 3 kHz artırma, 8 kHz raf, hafif exciter + kompresör + limiter; miktarlar ortalama sese göre ölçülür), **Ses efektleri** (op `voicefx`, `dsp/VoiceFx.java`: radyo, telefon, megafon, robot; ince/kalın = TimePitch ±5 yarım ton, formant yok). Cihazda denenmedi.
 
+- **2.8:** Düzenle sekmesinde **ses ölçer** (üst çubukta spektrum düğmesi; `Timeline.Meter`: çalınan karışımdan 32 bantlı spektrum + anlık/kısa/ortalama LUFS + tepe, `AND.tlMeter()`; ortalama = oynatmaya basıldığından beri; hedef Ayarlar'daki platform). Kayıt sırasında spektrum YOK: MediaRecorder PCM vermiyor (AudioRecord'a geçiş gerekir). **Kayıt kısayolu**: uygulama simgesine basılı tutunca "Yeni kayıt" (statik kısayol, `res/xml/shortcuts.xml`), Ayarlar > Genel'den ana ekrana sabitleme (`pinRecShortcut`, Android 8+); eylem `app.sesdefteri.RECORD` → `takeQuickRec()` → `quickRec()`. Cihazda denenmedi.
+
 ## 3. En son yazılan ve çalışan kod (2.4–2.5)
 - `android/src/app/sesdefteri/Denoiser.java` — DPDFNet akışlı gürültü temizleme düğümü (`Stage`): stereo → orta kanal, 1920 örnek gecikme telafisi, orijinalden `keep` oranı geri karıştırma (Hafif −12 dB, Dengeli −23 dB, Güçlü −34 dB), sonunda sessizlik + flush.
 - `Workspace.java`:

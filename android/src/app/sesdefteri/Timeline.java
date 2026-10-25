@@ -223,6 +223,7 @@ final class Timeline {
         volatile boolean stop;
         Engine eng;
         AudioTrack track;
+        final Meter meter = new Meter();
 
         Play(Engine e, long start) { eng = e; this.start = start; }
 
@@ -247,6 +248,7 @@ final class Timeline {
                             pcm[j] = (short) (v * 32767);
                         }
                     }
+                    meter.feed(mix, n);
                     track.write(pcm, 0, n * 2);
                     pos += n;
                 }
@@ -302,6 +304,65 @@ final class Timeline {
         synchronized (Play.class) { p = Play.cur; }
         if (p == null) return -1;
         try { return (p.start + (p.track.getPlaybackHeadPosition() & 0xffffffffL)) / (double) RATE; } catch (Exception e) { return p.start / (double) RATE; }
+    }
+
+    /* ---------- 2.8: live meter (spectrum, LUFS, peak) of what is playing ---------- */
+
+    static final class Meter {
+        static final int RING = 1 << 16, N = 2048, BANDS = 32;
+        final float[] ring = new float[RING];
+        long written;
+        final app.sesdefteri.dsp.Loudness lu = new app.sesdefteri.dsp.Loudness(2, RATE);
+        float peak;
+        final app.sesdefteri.dsp.Fft fft = new app.sesdefteri.dsp.Fft(N);
+        final double[] win = app.sesdefteri.dsp.Fft.hann(N, false), re = new double[N], im = new double[N];
+        final float[] bands = new float[BANDS];
+
+        synchronized void feed(float[][] mix, int n) {
+            lu.measure(mix, n);
+            for (int i = 0; i < n; i++) {
+                float l = mix[0][i], r = mix[1][i];
+                ring[(int) ((written + i) & (RING - 1))] = (l + r) * 0.5f;
+                float a = Math.max(Math.abs(l), Math.abs(r));
+                if (a > peak) peak = a;
+            }
+            written += n;
+        }
+
+        /** the spectrum at the frame that is being heard now (`played` frames since the start) */
+        synchronized String json(long played) {
+            long end = Math.min(written, Math.max(N, played));
+            for (int i = 0; i < N; i++) { re[i] = end - N + i < 0 ? 0 : ring[(int) ((end - N + i) & (RING - 1))] * win[i]; im[i] = 0; }
+            fft.transform(re, im, false);
+            // 32 log bands, 40 Hz – 16 kHz, in dB (0 dB = full-scale sine)
+            StringBuilder b = new StringBuilder("{\"b\":[");
+            double lo = 40, step = Math.pow(16000 / 40.0, 1.0 / BANDS), bin = (double) RATE / N;
+            for (int k = 0; k < BANDS; k++) {
+                double f0 = lo * Math.pow(step, k), f1 = f0 * step, s = 0;
+                int a = Math.max(1, (int) Math.floor(f0 / bin)), z = Math.max(a + 1, (int) Math.ceil(f1 / bin));
+                for (int j = a; j < z && j < N / 2; j++) s = Math.max(s, re[j] * re[j] + im[j] * im[j]);
+                double db = 10 * Math.log10(s / (N * N / 16.0) + 1e-12);
+                bands[k] = (float) Math.max(-90, Math.min(6, db));
+                if (k > 0) b.append(',');
+                b.append(Math.round(bands[k]));
+            }
+            b.append("],\"m\":").append(r1(lu.momentary())).append(",\"s\":").append(r1(lu.shortTerm()))
+             .append(",\"i\":").append(r1(lu.integrated())).append(",\"pk\":").append(r1(20 * Math.log10(Math.max(1e-6, peak)))).append('}');
+            peak *= 0.9f;   // slow fall
+            return b.toString();
+        }
+
+        private static double r1(double v) { return Double.isInfinite(v) || Double.isNaN(v) ? -99 : Math.round(v * 10) / 10.0; }
+    }
+
+    /** JSON for the live meter, or "" when nothing is playing */
+    static String meter() {
+        Play p;
+        synchronized (Play.class) { p = Play.cur; }
+        if (p == null) return "";
+        long played;
+        try { played = p.track.getPlaybackHeadPosition() & 0xffffffffL; } catch (Exception e) { played = 0; }
+        return p.meter.json(played);
     }
 
     /* ---------- final mix ---------- */

@@ -463,6 +463,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tl-top .tc{font-size:13px;color:var(--muted);min-width:96px}
 .tl-top .icon-btn:disabled,.tl-top .ctl:disabled{opacity:.4}
 .tl-redo .ic{transform:scaleX(-1)}
+.tl-meter{width:100%;height:104px;display:block;margin-top:8px;border-radius:12px;background:var(--surface);border:1px solid var(--line)}
 .tl-cv{width:100%;height:142px;display:block;margin-top:10px;touch-action:none;border-radius:12px;background:var(--surface);border:1px solid var(--line);user-select:none;-webkit-user-select:none}
 .tl-bar{display:flex;gap:8px;overflow-x:auto;padding:12px 0 4px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .tl-bar::-webkit-scrollbar{display:none}
@@ -756,6 +757,7 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
 <script src="i18n15.js"></script>
 <script src="i18n16.js"></script>
 <script src="i18n17.js"></script>
+<script src="i18n18.js"></script>
 <script>
 (() => {
 'use strict';
@@ -766,7 +768,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '2.7';
+const VERSION = '2.8';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -853,6 +855,7 @@ const P = {
   textic: '<path d="M5 6h14M5 10h14M5 14h9M5 18h6"/>',
   beat: '<path d="M3 12h3l2-6 3 12 3-9 2 3h5"/>',
   film: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M7.5 5v14M16.5 5v14M3.5 9.5h4M3.5 14.5h4M16.5 9.5h4M16.5 14.5h4"/>',
+  spec: '<path d="M4 20v-5M8 20V9M12 20V4M16 20v-8M20 20v-4"/>',
   envl: '<path d="M3 17l5-6 4 3 4-7 5 5"/><circle cx="8" cy="11" r="1.6" fill="currentColor"/><circle cx="16" cy="7" r="1.6" fill="currentColor"/>',
   magnet: '<path d="M6 4v8a6 6 0 0 0 12 0V4"/><path d="M6 8.5h3.2M14.8 8.5H18"/>',
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
@@ -1417,7 +1420,8 @@ function openSettings() {
       <div><button class="btn sm" type="button" id="learnReset">${esc(t('setLearnReset'))}</button></div>
       <label class="switch"><input type="checkbox" id="setTlXf"${S.tlXf ? ' checked' : ''}><span>${esc(t('setTlXf'))}<small>${esc(t('setTlXfD'))}</small></span></label></div>
     <div class="set-sec"><h4>${esc(t('setGeneral'))}</h4>
-      <div class="set-sub"><span>${esc(t('setStartTab'))}</span><select id="setStartTab" class="sel-full">${['last', 'rec', 'music', 'edit'].map(v => `<option value="${v}"${S.startTab === v ? ' selected' : ''}>${esc(t(v === 'last' ? 'stLast' : v === 'rec' ? 'tabRec' : v === 'music' ? 'tabMusic' : 'tabEdit'))}</option>`).join('')}</select></div></div>
+      <div class="set-sub"><span>${esc(t('setStartTab'))}</span><select id="setStartTab" class="sel-full">${['last', 'rec', 'music', 'edit'].map(v => `<option value="${v}"${S.startTab === v ? ' selected' : ''}>${esc(t(v === 'last' ? 'stLast' : v === 'rec' ? 'tabRec' : v === 'music' ? 'tabMusic' : 'tabEdit'))}</option>`).join('')}</select></div>
+      ${NATIVE ? `<div class="set-sub"><span>${esc(t('setPin'))}</span><button class="btn sm" type="button" id="setPin">${ic('mic')}${esc(t('setPinB'))}</button><small class="hint">${esc(t('setPinD'))}</small></div>` : ''}</div>
     <div class="set-sec"><label class="switch"><input type="checkbox" id="setPre"${S.precompute ? ' checked' : ''}><span>${esc(t('precompute'))}<small>${esc(t('precomputeDesc'))}</small></span></label></div>
     <div class="set-sec"><h4>${esc(t('setRec'))}</h4>
       <div class="set-sub"><span>${esc(t('setQuality'))}</span><select id="setQ" class="sel-full">${['std', 'high', 'stereo'].map(v => `<option value="${v}"${S.recQuality === v ? ' selected' : ''}>${esc(t('q_' + v))}</option>`).join('')}</select></div>
@@ -1495,6 +1499,7 @@ function openSettings() {
   bind('#setAgc', 'agc'); bind('#setSilCut', 'silCut'); bind('#setTlXf', 'tlXf'); bind('#setChans', 'chans'); bind('#setStartTab', 'startTab');
   const ps = card.querySelector('#setPause'); if (ps) ps.onchange = () => { S.pauseMax = +ps.value; ls.set('pauseMax', S.pauseMax); };
   const ms = card.querySelector('#setMinSong'); if (ms) ms.onchange = () => { S.minSong = +ms.value; ls.set('minSong', S.minSong); render(); };
+  const pin = card.querySelector('#setPin'); if (pin) pin.onclick = () => { let ok = false; try { ok = AND.pinRecShortcut(t('recShort')); } catch (e) {} if (!ok) toast(t('setPinNo'), 4500); };
   card.querySelector('#setPriv').onclick = openPrivacy; card.querySelector('#setFeed').onclick = openFeedback;
   bind('#setQ', 'recQuality'); bind('#setMic', 'micSrc'); bind('#setCall', 'callPause'); bind('#setAuto', 'autoClean'); bind('#setFmt', 'fmt');
   const st = card.querySelector('#setStr'); if (st) st.onchange = () => { CL.strength = +st.value; ls.set('clStrength', CL.strength); };
@@ -2818,7 +2823,7 @@ function srtOf(segs) {
 /* ---------- edit sound: every step is its own file you can play, compare and undo ---------- */
 /* ---------- "Edit sound": multitrack timeline ---------- */
 const TL_MAX = 6, TL_RULER = 26, TL_ROW = 58;
-const TL = { p: null, sel: null, pos: 0, pps: 40, play: false, busy: null, undo: [], redo: [], raf: 0, cleanT: 0, rec: null, snap: ls.get('tlSnap', true), guide: null, env: false };
+const TL = { p: null, sel: null, pos: 0, pps: 40, play: false, busy: null, undo: [], redo: [], raf: 0, cleanT: 0, rec: null, snap: ls.get('tlSnap', true), guide: null, env: false, meter: ls.get('tlMeter', false), mv: null };
 const tlNew = () => ({ tracks: [{ vol: 0, mute: false }], clips: [] });
 function tlLoad() {
   const p = ls.get('proj', null);
@@ -2957,6 +2962,7 @@ function tlPlay(mix) {
     const p = AND.tlPos();
     if (p < 0) { TL.play = false; TL.pos = Math.min(TL.pos, tlEnd()); renderTlPlay(); drawTl(); return; }
     TL.pos = p; drawTl();
+    if (TL.meter) { try { const j = AND.tlMeter(); if (j) TL.mv = JSON.parse(j); } catch (e) {} drawMeter(); }
     TL.raf = requestAnimationFrame(f);
   };
   TL.raf = requestAnimationFrame(f);
@@ -3268,11 +3274,13 @@ function renderEdit() {
       <button class="icon-btn" type="button" data-tl="undo" aria-label="${esc(t('undo'))}"${TL.undo.length && !TL.busy ? '' : ' disabled'}>${ic('undo')}</button>
       <button class="icon-btn tl-redo" type="button" data-tl="redo" aria-label="${esc(t('tlRedo'))}"${TL.redo.length && !TL.busy ? '' : ' disabled'}>${ic('undo')}</button>
       <button class="icon-btn tl-snap${TL.snap ? ' on' : ''}" type="button" data-tl="snap" aria-pressed="${TL.snap}" aria-label="${esc(t('tlSnap'))}">${ic('magnet')}</button>
+      <button class="icon-btn tl-snap${TL.meter ? ' on' : ''}" type="button" data-tl="meter" aria-pressed="${TL.meter}" aria-label="${esc(t('tlMeter'))}">${ic('spec')}</button>
       <span class="spacer"></span>
       <button class="ctl" type="button" data-tl="play" id="tlPlay" style="width:48px;height:48px"${empty ? ' disabled' : ''}>${ic(TL.play ? 'pause' : 'play')}</button>
       <span class="tc" id="tlTime"></span><span class="spacer"></span>
       <button class="btn primary sm" type="button" data-tl="export"${empty || TL.busy ? ' disabled' : ''}>${esc(t('tlExport'))}</button></div>
     <canvas class="tl-cv" id="tl" aria-label="${esc(t('tabEdit'))}"></canvas>
+    <canvas class="tl-meter" id="tlMeter" aria-label="${esc(t('tlMeter'))}"${TL.meter ? '' : ' hidden'}></canvas>
     <div id="tlBusy" hidden><p class="st-desc"><b id="tlBusyT"></b></p><div class="prog"><i id="tlBusyBar"></i></div></div>
     <div class="tl-bar" id="tlBar"></div>
     <div class="tl-fx" id="tlFxList" hidden></div>
@@ -3280,6 +3288,7 @@ function renderEdit() {
   renderTlBar(); tlBusyUi();
   for (const c of TL.p.clips) { const it = tlItem(c); if (!isComplete(S.peaks.get(it.id))) ensurePeaks(it, {}).then(drawTl, () => {}); }
   requestAnimationFrame(drawTl);
+  if (TL.meter) requestAnimationFrame(drawMeter);
 }
 function renderTlBar() {
   const bar = $('#tlBar'); if (!bar) return;
@@ -3619,6 +3628,7 @@ $('#editTab').addEventListener('click', e => {
   else if (k === 'bass' || k === 'treble') tlTone(k);
   else if (k === 'snap') { TL.snap = !TL.snap; ls.set('tlSnap', TL.snap); b.classList.toggle('on', TL.snap); b.setAttribute('aria-pressed', TL.snap); toast(t(TL.snap ? 'snapOn' : 'snapOff')); }
   else if (k === 'marker') tlAddMarker();
+  else if (k === 'meter') { TL.meter = !TL.meter; ls.set('tlMeter', TL.meter); b.classList.toggle('on', TL.meter); b.setAttribute('aria-pressed', TL.meter); const cv = $('#tlMeter'); if (cv) cv.hidden = !TL.meter; if (TL.meter) drawMeter(); }
   else if (k === 'punch') tlPunch();
   else if (k === 'beats') tlBeats();
   else if (k === 'rec') tlRec();
@@ -3852,6 +3862,39 @@ async function tlRecStop() {
   TL.pos = r.at;
   tlAddFrom(it, r.at);
 }
+
+/** 2.8: live spectrum (40 Hz – 16 kHz) and loudness of what the timeline is playing; integrated = since play was pressed */
+function drawMeter() {
+  const cv = $('#tlMeter'); if (!cv || cv.hidden) return;
+  const c = sizeCanvas(cv); if (!c) return;
+  const { ctx, w, h } = c, m = TL.mv, tg = { youtube: -14, podcast: -16, whatsapp: -16 }[S.target] || -14;
+  const tw = Math.min(150, w * 0.42), bw = w - tw - 16, top = 8, bh = h - 24;
+  ctx.font = `10px ${MONO}`; ctx.textBaseline = 'top'; ctx.textAlign = 'center'; ctx.fillStyle = COL.muted;
+  [[100, '100'], [1000, '1k'], [10000, '10k']].forEach(([f, l]) => ctx.fillText(l, 8 + bw * Math.log(f / 40) / Math.log(400), h - 13));
+  const bands = m ? m.b : [], n = 32, gw = bw / n;
+  for (let i = 0; i < n; i++) {
+    const v = bands.length ? clamp((bands[i] + 72) / 72, 0, 1) : 0, hh = Math.max(1, v * bh);
+    ctx.fillStyle = bands[i] > -3 ? COL.rec : COL.accent; ctx.globalAlpha = m ? 0.9 : 0.25;
+    ctx.fillRect(8 + i * gw + 1, top + bh - hh, Math.max(1, gw - 2), hh);
+  }
+  ctx.globalAlpha = 1;
+  const x = w - tw - 2, f = v => v <= -90 ? '—' : nf1.format(v).replace('-', '−');
+  const rows = [[t('luM'), m ? f(m.m) : '—', null], [t('luS'), m ? f(m.s) : '—', null], [t('luI'), m ? f(m.i) : '—', m && m.i > -90 ? Math.abs(m.i - tg) <= 1 : null], [t('luPk'), m ? f(m.pk) + ' dB' : '—', m ? m.pk <= -1 : null]];
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  rows.forEach(([a, b, ok], i) => {
+    const y = top + 9 + i * ((h - 30) / 3.4);
+    ctx.fillStyle = COL.muted; ctx.font = `11px ${MONO}`; ctx.fillText(a, x, y);
+    ctx.fillStyle = ok === false ? COL.rec : ok ? COL.accent : COL.ink; ctx.font = `600 12.5px ${MONO}`; ctx.textAlign = 'right'; ctx.fillText(b, w - 8, y); ctx.textAlign = 'left';
+  });
+  ctx.fillStyle = COL.muted; ctx.font = `10px ${MONO}`; ctx.fillText(t('luTarget', { t: t('tg_' + S.target), v: String(tg).replace('-', '−') }), x, h - 8);
+}
+function quickRec() {
+  if (!NATIVE) return;
+  if (R.state === 'rec' || R.state === 'paused') { openOverlay('rec'); return; }
+  if (!$('#modal').hidden) closeModal();
+  openRecorder(); startRec();
+}
+window.__sdQuickRec = () => { try { if (AND.takeQuickRec()) quickRec(); } catch (e) {} };
 
 /** 2.6: the project's sound goes into a video (the picture is copied untouched) */
 async function tlVideo() {
@@ -4995,6 +5038,7 @@ async function boot() {
     applyPlayerPrefs();
     if (CAPS.asr) asrRefresh();
     if (!S.media && !ls.get('askedMedia', false)) { ls.set('askedMedia', true); requestLibrary(); }
+    window.__sdQuickRec();
   }
 }
 boot();

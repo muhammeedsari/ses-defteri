@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="rec" android:enabled="true" android:icon="@mipmap/ic_rec"
+        android:shortcutShortLabel="@string/rec_short">
+        <intent android:action="app.sesdefteri.RECORD"
+            android:targetPackage="app.sesdefteri" android:targetClass="app.sesdefteri.MainActivity" />
+    </shortcut>
+</shortcuts>
