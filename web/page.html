@@ -755,6 +755,7 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
 <script src="i18n14.js"></script>
 <script src="i18n15.js"></script>
 <script src="i18n16.js"></script>
+<script src="i18n17.js"></script>
 <script>
 (() => {
 'use strict';
@@ -765,7 +766,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '2.6';
+const VERSION = '2.7';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -3061,7 +3062,7 @@ function tlTrack() {
     { id: 'td', value: !!tr.duck, html: `<label class="switch"><input type="checkbox" id="td"${tr.duck ? ' checked' : ''}><span>${esc(t('tlDuck'))}<small>${esc(t('tlDuckD'))}</small></span></label>` },
     { id: 'tdd', label: t('tlDuckAmt'), min: -30, max: -3, step: 1, value: tr.duckDb || -12, fmt: dbTxt }], v => { tr.vol = v.tv; tr.mute = v.tm; tr.duck = v.td; tr.duckDb = v.tdd; });
 }
-const TL_FX = ['fillers', 'aidenoise', 'sepdenoise', 'denoise', 'gate', 'dereverb', 'hum', 'clicks', 'mouth', 'plosive', 'deess', 'declip', 'breaths', 'channels', 'stereo', 'eq', 'level', 'comp', 'loud', 'reverb', 'delay', 'trim', 'pauses', 'silence'];
+const TL_FX = ['clarify', 'voicefx', 'fillers', 'aidenoise', 'sepdenoise', 'denoise', 'gate', 'dereverb', 'hum', 'clicks', 'mouth', 'plosive', 'deess', 'declip', 'breaths', 'channels', 'stereo', 'eq', 'level', 'comp', 'loud', 'reverb', 'delay', 'trim', 'pauses', 'silence'];
 async function tlFx() {
   const c = tlSel(); if (!c || TL.busy) return;
   const op = await chooseBox(t('tlFx'), t('tlFxD'), TL_FX.filter(x => ((x !== 'aidenoise' && x !== 'sepdenoise') || CAPS.sep) && (x !== 'stereo' || c.ch < 2)).map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
@@ -3072,6 +3073,12 @@ async function tlFx() {
     return;
   }
   if (op === 'eq') return tlEffect(c, 'eq', { learned: S.learnVoice ? await learnedProfile() : null });
+  if (op === 'clarify') return tlClarify(c);
+  if (op === 'voicefx') {
+    const v = await chooseBox(t('op_voicefx'), t('fxd_voicefx'), VFX.map(x => ({ value: x, label: t('vfx_' + x), desc: t('vfxd_' + x) })));
+    if (v) tlEffect(c, 'voicefx', { preset: v });
+    return;
+  }
   if (op === 'silence') return tlSilence(c);
   if (op === 'fillers') return tlFillers(c);
   if (op === 'denoise') {
@@ -3107,6 +3114,13 @@ async function tlFx() {
     return;
   }
   tlEffect(c, op);
+}
+/* ----- 2.7: one tap "make the voice clearer", character voices ----- */
+const VFX = ['radio', 'phone', 'megaphone', 'robot', 'high', 'deep'];
+async function tlClarify(c) {
+  c = c || tlSel(); if (!c || TL.busy) return;
+  const v = await chooseBox(t('op_clarify'), t('fxd_clarify'), [[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([x, k]) => ({ value: String(x), label: t(k), desc: '' })));
+  if (v) tlEffect(c, 'clarify', { strength: +v });
 }
 function tlSpeed() {
   const c = tlSel(); if (!c || TL.busy) return;
@@ -3199,6 +3213,8 @@ function wsReport(op, st) {
     case 'dereverb': return t('rpw_derev');
     case 'comp': return t('rpw_comp', { m: n(r.makeup || 0) });
     case 'reverb': case 'delay': return t('rpw_fx', { x: t('op_' + op) });
+    case 'clarify': return t('rpw_clarify', { m: n(r.mud || 0), p: n(r.pres || 0), a: n(r.air || 0) });
+    case 'voicefx': return t('vfx_' + (r.preset || 'radio'));
   }
   return '';
 }
@@ -3275,7 +3291,7 @@ function renderTlBar() {
   }
   TL.env = false;
   bar.innerHTML = c
-    ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('env', 'envl', t('tlEnv')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
+    ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('env', 'envl', t('tlEnv')) + b('clarify', 'spark', t('op_clarify')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
       b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('bass', 'wave', t('tlBass')) + b('treble', 'spark', t('tlTreble')) + b('sep', 'mixer', t('tlSep')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
     : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
   tlFxList();
@@ -3595,6 +3611,7 @@ $('#editTab').addEventListener('click', e => {
   else if (k === 'fade') tlFade();
   else if (k === 'fx') tlFx();
   else if (k === 'speed') tlSpeed();
+  else if (k === 'clarify') tlClarify();
   else if (k === 'track') tlTrack();
   else if (k === 'sep') tlSep();
   else if (k === 'merge') tlMerge();
