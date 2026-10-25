@@ -810,7 +810,7 @@ public class MainActivity extends Activity implements Player.Listener {
             jobs.put(id, cancel);
             boolean bg = false;
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
-            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind);
+            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"spectro".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind);
             if (heavy) WorkService.begin(MainActivity.this);
             (bg ? bgPool : heavy || "wsClean".equals(kind) || "tlClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
                 @Override
@@ -879,6 +879,8 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Separator.split(MainActivity.this, a, p, cancel);
                         } else if ("tlRender".equals(kind)) {
                             res = Timeline.render(MainActivity.this, a, p, cancel);
+                        } else if ("spectro".equals(kind)) {
+                            res = Workspace.spectro(a);
                         } else if ("latency".equals(kind)) {
                             res = Timeline.latency(MainActivity.this, a, p, cancel);
                         } else if ("tlVideo".equals(kind)) {

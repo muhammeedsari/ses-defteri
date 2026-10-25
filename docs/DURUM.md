@@ -42,6 +42,8 @@ Kullanıcı her sürümü telefonda test ediyor; aşağıdakiler teslim edildi. 
 
 - **2.9:** **Metronom** (Düzenle > Metronom; `TL.p.click {on,bpm,bar,vol,count}`, sesi sadece canlı çalmada `Timeline.clicks`, dışa aktarmaya girmez; zaman çizelgesinde vuruş çizgileri + yapışma), **kayıttan önce bir ölçü sayma** (oynatma negatif zamandan başlar, `tlPlayFrom`), **kayıt gecikmesi ölçümü** (8 düzensiz tık hoparlörden çalınır, önbelleğe geçici kayıt, `Timeline.match` başlangıç eğimiyle hizalar; sentetik testte ±2 ms) → `recLat` ms; arka plan dinlenerek yapılan kayıtlar ve punch-in bu kadar kaydırılır. Cihazda denenmedi.
 
+- **3.0:** **Spektrum** (seçili parça > Spektrum: 20 sn'lik pencere, log frekans 40 Hz–20 kHz, `Workspace.spectro` → `SpecPaint.view`), parmakla kutu çizip **spektrumdan silme** (op `spaint`, `SpecPaint.repair`: STFT 2048/512, kutudaki bin'ler kutunun önü/arkasındaki aynı bin'in medyanına indirilir = "arka plana karıştır", ya da −34 dB "sustur"; yumuşak kenarlar; sadece kutu çevresi yeniden yazılır). Masaüstü ölçüm: 2,4 kHz zil −13,5 → −46,7 dB (arka plan −46,3), aynı andaki 300 Hz ses değişmedi, kutu dışı birebir aynı. Cihazda denenmedi.
+
 ## 3. En son yazılan ve çalışan kod (2.4–2.5)
 - `android/src/app/sesdefteri/Denoiser.java` — DPDFNet akışlı gürültü temizleme düğümü (`Stage`): stereo → orta kanal, 1920 örnek gecikme telafisi, orijinalden `keep` oranı geri karıştırma (Hafif −12 dB, Dengeli −23 dB, Güçlü −34 dB), sonunda sessizlik + flush.
 - `Workspace.java`:

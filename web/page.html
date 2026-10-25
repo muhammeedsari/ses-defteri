@@ -463,6 +463,8 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tl-top .tc{font-size:13px;color:var(--muted);min-width:96px}
 .tl-top .icon-btn:disabled,.tl-top .ctl:disabled{opacity:.4}
 .tl-redo .ic{transform:scaleX(-1)}
+.sp-cv{width:100%;height:280px;display:block;border-radius:10px;background:#000;touch-action:none;user-select:none;-webkit-user-select:none}
+.sp-nav{display:flex;align-items:center;gap:8px;margin:8px 0}.sp-nav .tc{flex:1;text-align:center}
 .tl-meter{width:100%;height:104px;display:block;margin-top:8px;border-radius:12px;background:var(--surface);border:1px solid var(--line)}
 .tl-cv{width:100%;height:142px;display:block;margin-top:10px;touch-action:none;border-radius:12px;background:var(--surface);border:1px solid var(--line);user-select:none;-webkit-user-select:none}
 .tl-bar{display:flex;gap:8px;overflow-x:auto;padding:12px 0 4px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
@@ -759,6 +761,7 @@ html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
 <script src="i18n17.js"></script>
 <script src="i18n18.js"></script>
 <script src="i18n19.js"></script>
+<script src="i18n20.js"></script>
 <script>
 (() => {
 'use strict';
@@ -769,7 +772,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '2.9';
+const VERSION = '3.0';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -3227,6 +3230,7 @@ function wsReport(op, st) {
     case 'reverb': case 'delay': return t('rpw_fx', { x: t('op_' + op) });
     case 'clarify': return t('rpw_clarify', { m: n(r.mud || 0), p: n(r.pres || 0), a: n(r.air || 0) });
     case 'voicefx': return t('vfx_' + (r.preset || 'radio'));
+    case 'spaint': return t('rpw_spaint', { n: r.n || 0 });
   }
   return '';
 }
@@ -3306,7 +3310,7 @@ function renderTlBar() {
   }
   TL.env = false;
   bar.innerHTML = c
-    ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('env', 'envl', t('tlEnv')) + b('clarify', 'spark', t('op_clarify')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
+    ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('env', 'envl', t('tlEnv')) + b('clarify', 'spark', t('op_clarify')) + b('spec', 'spec', t('tlSpec')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
       b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('bass', 'wave', t('tlBass')) + b('treble', 'spark', t('tlTreble')) + b('sep', 'mixer', t('tlSep')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
     : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('metro', 'beat', t('tlClick')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
   tlFxList();
@@ -3638,6 +3642,7 @@ $('#editTab').addEventListener('click', e => {
   else if (k === 'fx') tlFx();
   else if (k === 'speed') tlSpeed();
   else if (k === 'clarify') tlClarify();
+  else if (k === 'spec') tlSpec();
   else if (k === 'track') tlTrack();
   else if (k === 'sep') tlSep();
   else if (k === 'merge') tlMerge();
@@ -3923,6 +3928,97 @@ async function tlLatency() {
   if (!st.ok || !st.item) { toast(t('latFail'), 5000); return; }
   try { const r = await tlRunJob(t('latTitle'), 'latency', { src: st.item.src }); ls.set('recLat', r.ms); toast(t('latDone', { ms: r.ms }), 5000); }
   catch (e) { toast(String((e && e.message) || '').includes('nolat') ? t('latFail') : errText(e), 5000); }
+}
+
+/* ----- 3.0: spectral view; paint boxes over unwanted sounds, then blend them into the background or mute them ----- */
+const SP_LUT = (() => {
+  const st = [[0, 0, 0, 4], [0.25, 60, 15, 110], [0.5, 180, 40, 100], [0.75, 250, 130, 30], [1, 255, 250, 180]], l = new Uint8Array(256 * 3);
+  for (let i = 0; i < 256; i++) {
+    const v = i / 255; let j = 0; while (j < st.length - 2 && v > st[j + 1][0]) j++;
+    const [a, ...ca] = st[j], [b, ...cb] = st[j + 1], k = (v - a) / (b - a);
+    for (let c = 0; c < 3; c++) l[i * 3 + c] = Math.round(ca[c] + (cb[c] - ca[c]) * k);
+  }
+  return l;
+})();
+async function tlSpec() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  tlStop();
+  const L = Math.min(tlLen(c), 20), SP = { boxes: [], mode: ls.get('spMode', 'blend'), img: null, w0: 0, w1: 0, fmax: 20000, rows: 160, drag: null, raf: 0 };
+  const setWin = s => { SP.w0 = clamp(s, c.in, Math.max(c.in, c.out - L)); SP.w1 = SP.w0 + L; };
+  setWin(c.in + (TL.pos - c.at) - L / 2);
+  const card = openModal(`<h3>${esc(t('tlSpec'))}</h3><p class="mtext">${esc(t('specHint'))}</p>
+    <canvas class="sp-cv" id="spCv"></canvas>
+    <div class="sp-nav"><button class="icon-btn" type="button" data-sp="prev" aria-label="${esc(t('specPrev'))}">${ic('prev')}</button><span class="tc" id="spT"></span><button class="icon-btn" type="button" data-sp="next" aria-label="${esc(t('specNext'))}">${ic('next')}</button></div>
+    <div class="seg2" role="radiogroup">${['blend', 'mute'].map(v => `<button type="button" role="radio" data-spm="${v}" aria-checked="${SP.mode === v}">${esc(t('spm_' + v))}</button>`).join('')}</div>
+    <div class="modal-actions"><button class="btn" type="button" data-sp="play">${ic('play')}${esc(t('eqListen'))}</button><button class="btn" type="button" data-sp="clear">${esc(t('specClear'))}</button><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-sp="go" disabled>${esc(t('specGo'))}</button></div>`,
+    () => { cancelAnimationFrame(SP.raf); tlStop(); $('#modalCard').onclick = null; });
+  const cv = card.querySelector('#spCv');
+  const T = x => SP.w0 + x / cv.clientWidth * (SP.w1 - SP.w0), Xt = s => (s - SP.w0) / (SP.w1 - SP.w0) * cv.clientWidth;
+  const F = y => 40 * Math.pow(SP.fmax / 40, clamp(1 - y / cv.clientHeight, 0, 1)), Yf = f => (1 - Math.log(f / 40) / Math.log(SP.fmax / 40)) * cv.clientHeight;
+  const draw = () => {
+    const g = sizeCanvas(cv); if (!g) return;
+    const { ctx, w, h } = g;
+    if (SP.img) { ctx.imageSmoothingEnabled = true; ctx.drawImage(SP.img, 0, 0, w, h); }
+    else { ctx.fillStyle = '#fff'; ctx.font = `12px ${MONO}`; ctx.textAlign = 'center'; ctx.fillText(t('specLoad'), w / 2, h / 2); }
+    ctx.font = `10px ${MONO}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = 'rgba(255,255,255,.7)';
+    for (const f of [100, 500, 1000, 5000, 10000]) if (f < SP.fmax) { const y = Yf(f); ctx.fillRect(0, y, 6, 1); ctx.fillText(f >= 1000 ? f / 1000 + 'k' : String(f), 8, y); }
+    const bx = SP.boxes.concat(SP.drag && SP.drag.box ? [SP.drag.box] : []);
+    for (const b of bx) {
+      const x0 = Xt(b.t0), x1 = Xt(b.t1), y0 = Yf(b.f1), y1 = Yf(b.f0);
+      ctx.fillStyle = 'rgba(80,200,255,.22)'; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.strokeStyle = '#5cf'; ctx.lineWidth = 1.5; ctx.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0 - 1, y1 - y0 - 1);
+    }
+    if (TL.play) { const p = c.in + TL.pos - c.at; if (p >= SP.w0 && p <= SP.w1) { ctx.fillStyle = COL.rec; ctx.fillRect(Xt(p) - 1, 0, 2, h); } }
+    card.querySelector('#spT').textContent = `${fmtT(SP.w0 - c.in)} – ${fmtT(SP.w1 - c.in)}`;
+    const go = card.querySelector('[data-sp="go"]'); go.disabled = !SP.boxes.length; go.textContent = SP.boxes.length ? t('specGoN', { n: SP.boxes.length }) : t('specGo');
+  };
+  const load = async () => {
+    SP.img = null; draw();
+    const cols = Math.min(1200, Math.round(cv.clientWidth * (window.devicePixelRatio || 1) / 2)) || 600;
+    let r; try { r = await runJob('spectro', { path: c.path, t0: SP.w0, t1: SP.w1, rows: SP.rows, cols }); } catch (e) { toast(errText(e), 4000); return; }
+    const by = b64ToBytes(r.img), oc = document.createElement('canvas'); oc.width = r.cols; oc.height = r.rows;
+    const ox = oc.getContext('2d'), im = ox.createImageData(r.cols, r.rows);
+    for (let y = 0; y < r.rows; y++) for (let x = 0; x < r.cols; x++) { const v = by[(r.rows - 1 - y) * r.cols + x], o = (y * r.cols + x) * 4; im.data[o] = SP_LUT[v * 3]; im.data[o + 1] = SP_LUT[v * 3 + 1]; im.data[o + 2] = SP_LUT[v * 3 + 2]; im.data[o + 3] = 255; }
+    ox.putImageData(im, 0, 0);
+    SP.img = oc; SP.fmax = r.fmax; draw();
+  };
+  const loc = e => { const rc = cv.getBoundingClientRect(); return { x: clamp(e.clientX - rc.left, 0, rc.width), y: clamp(e.clientY - rc.top, 0, rc.height) }; };
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (x) {} SP.drag = { a: loc(e), box: null }; });
+  cv.addEventListener('pointermove', e => {
+    const d = SP.drag; if (!d) return;
+    const b = loc(e); if (Math.hypot(b.x - d.a.x, b.y - d.a.y) < 8 && !d.box) return;
+    d.box = { t0: T(Math.min(d.a.x, b.x)), t1: T(Math.max(d.a.x, b.x)), f0: F(Math.max(d.a.y, b.y)), f1: F(Math.min(d.a.y, b.y)) };
+    draw();
+  });
+  const up = () => {
+    const d = SP.drag; SP.drag = null; if (!d) return;
+    if (d.box && d.box.t1 - d.box.t0 >= 0.02) SP.boxes.push(d.box);
+    else if (!d.box) { const tm = T(d.a.x), f = F(d.a.y), i = SP.boxes.findIndex(b => tm >= b.t0 && tm <= b.t1 && f >= b.f0 && f <= b.f1); if (i >= 0) SP.boxes.splice(i, 1); }
+    draw();
+  };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+  card.onclick = e => {
+    const m = e.target.closest('[data-spm]');
+    if (m) { SP.mode = m.dataset.spm; ls.set('spMode', SP.mode); card.querySelectorAll('[data-spm]').forEach(x => x.setAttribute('aria-checked', x.dataset.spm === SP.mode)); return; }
+    if (e.target.closest('[data-x]')) { closeModal(); return; }
+    const b = e.target.closest('[data-sp]'); if (!b) return;
+    const k = b.dataset.sp;
+    if (k === 'prev' || k === 'next') { const s = SP.w0 + (k === 'next' ? 1 : -1) * L * 0.75; if (Math.abs(clamp(s, c.in, Math.max(c.in, c.out - L)) - SP.w0) > 0.01) { setWin(s); load(); } }
+    else if (k === 'clear') { SP.boxes = []; draw(); }
+    else if (k === 'play') {
+      if (TL.play) { tlStop(); b.innerHTML = ic('play') + esc(t('eqListen')); return; }
+      const tr = TL.p.tracks[c.tr] || {};
+      tlPlay([{ path: c.path, at: c.at, in: c.in, len: tlLen(c), g: Math.pow(10, ((c.gain || 0) + (tr.vol || 0)) / 20), fi: 0, fo: 0 }], c.at + SP.w0 - c.in);
+      b.innerHTML = ic('pause') + esc(t('eqListen'));
+      const f = () => { if (!TL.play) { b.innerHTML = ic('play') + esc(t('eqListen')); draw(); return; } draw(); SP.raf = requestAnimationFrame(f); };
+      SP.raf = requestAnimationFrame(f);
+    } else if (k === 'go') {
+      const rects = SP.boxes.map(x => [x.t0, x.t1, Math.round(x.f0), Math.round(x.f1)]), mode = SP.mode;
+      closeModal();
+      tlEffect(c, 'spaint', { rects, mode });
+    }
+  };
+  requestAnimationFrame(() => { draw(); load(); });
 }
 
 /** 2.8: live spectrum (40 Hz – 16 kHz) and loudness of what the timeline is playing; integrated = since play was pressed */

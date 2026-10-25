@@ -170,6 +170,7 @@ final class Workspace {
             if ("pauses".equals(op)) return pauses(in, inf, out, a, p, cancel);
             if ("breaths".equals(op)) return breaths(in, inf, out, str, p, cancel);
             if ("declip".equals(op)) return declip(in, inf, out, p, cancel);
+            if ("spaint".equals(op)) return spaint(in, inf, out, a, p, cancel);
             Node head;
             Meter m;
             double[] slice = { 0.3, 1 };
@@ -775,6 +776,80 @@ final class Workspace {
     }
 
     /** per-band correction towards the target tone (smoothed over neighbours, capped) */
+    /* ---------- 3.0: spectral view and painted repair ---------- */
+
+    static float[][] readRegion(RandomAccessFile r, Info inf, long from, int n) throws Exception {
+        float[][] x = new float[inf.ch][n];
+        byte[] b = new byte[n * inf.ch * 2];
+        r.seek(44 + from * inf.ch * 2);
+        r.readFully(b);
+        for (int i = 0, q = 0; i < n; i++) for (int c = 0; c < inf.ch; c++, q += 2) x[c][i] = (short) ((b[q] & 0xff) | (b[q + 1] << 8)) / 32768f;
+        return x;
+    }
+
+    static void writeRegion(RandomAccessFile r, Info inf, long from, float[][] x, int a, int z) throws Exception {
+        byte[] b = new byte[(z - a) * inf.ch * 2];
+        for (int i = a, q = 0; i < z; i++) for (int c = 0; c < inf.ch; c++, q += 2) {
+            int v = (int) Math.round(Math.max(-1, Math.min(1, x[c][i])) * 32767);
+            b[q] = (byte) v; b[q + 1] = (byte) (v >> 8);
+        }
+        r.seek(44 + (from + a) * inf.ch * 2);
+        r.write(b);
+    }
+
+    /** a: {path, t0, t1 (seconds of the file), rows, cols} → spectrogram bytes (base64), row 0 = lowest */
+    static JSONObject spectro(JSONObject a) throws Exception {
+        File f = new File(a.getString("path"));
+        Info inf = info(f);
+        long s0 = Math.max(0, Math.round(a.getDouble("t0") * inf.rate)), s1 = Math.min(inf.frames, Math.round(a.getDouble("t1") * inf.rate));
+        int n = (int) Math.max(1, s1 - s0), rows = Math.max(32, Math.min(256, a.optInt("rows", 160))), cols = Math.max(32, Math.min(1600, a.optInt("cols", 600)));
+        RandomAccessFile r = new RandomAccessFile(f, "r");
+        float[][] x;
+        try { x = readRegion(r, inf, s0, n); } finally { r.close(); }
+        float[] m = x[0];
+        if (inf.ch > 1) { m = new float[n]; for (int i = 0; i < n; i++) m[i] = (x[0][i] + x[1][i]) * 0.5f; }
+        JSONObject o = new JSONObject();
+        o.put("img", android.util.Base64.encodeToString(SpecPaint.view(m, n, inf.rate, rows, cols), android.util.Base64.NO_WRAP));
+        o.put("rows", rows); o.put("cols", cols); o.put("rate", inf.rate);
+        o.put("fmax", Math.min(20000, inf.rate / 2));
+        return o;
+    }
+
+    /** a.rects: [[t0, t1, f0, f1]] (seconds of the file, Hz); a.mode: "blend" (to the background) or "mute" */
+    static JSONObject spaint(File in, Info inf, File out, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        JSONArray rs = a.getJSONArray("rects");
+        boolean mute = "mute".equals(a.optString("mode"));
+        InputStream is = new FileInputStream(in);
+        java.io.OutputStream os = new java.io.FileOutputStream(out);
+        try { byte[] b = new byte[1 << 16]; int k; while ((k = is.read(b)) > 0) os.write(b, 0, k); } finally { is.close(); os.close(); }
+        int fs = inf.rate, pad = (int) (0.4 * fs);
+        RandomAccessFile r = new RandomAccessFile(out, "rw");
+        try {
+            for (int i = 0; i < rs.length(); i++) {
+                if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
+                JSONArray q = rs.getJSONArray(i);
+                long b0 = Math.max(0, Math.round(q.getDouble(0) * fs)), b1 = Math.min(inf.frames, Math.round(q.getDouble(1) * fs));
+                if (b1 - b0 < fs / 100) continue;
+                long from = Math.max(0, b0 - pad), to = Math.min(inf.frames, b1 + pad);
+                int n = (int) (to - from);
+                if (n < 4 * SpecPaint.N) continue;
+                float[][] x = readRegion(r, inf, from, n);
+                float[][] y = SpecPaint.repair(x, n, fs, (int) (b0 - from), (int) (b1 - from), Math.min(q.getDouble(2), q.getDouble(3)), Math.max(q.getDouble(2), q.getDouble(3)), mute);
+                int za = Math.max(SpecPaint.N, (int) (b0 - from) - SpecPaint.N), zz = Math.min(n - SpecPaint.N, (int) (b1 - from) + SpecPaint.N);
+                if (zz > za) writeRegion(r, inf, from, y, za, zz);
+                if (p != null) p.on(0.8 * (i + 1) / rs.length());
+            }
+        } finally {
+            r.close();
+        }
+        Meter m = new Meter(inf.ch, fs);
+        m.to(new Node() { @Override public void push(float[][] b, int n) { } });
+        wav(out, inf, p, new double[] { 0.8, 1 }, cancel).run(m);
+        JSONObject rep = new JSONObject();
+        rep.put("n", rs.length());
+        return done(out, m, rep);
+    }
+
     /** mean of measured − reference over the bands between lo and hi (Hz) */
     static double bandDiff(double[] m, double[] ref, double lo, double hi) {
         double s = 0; int n = 0;
