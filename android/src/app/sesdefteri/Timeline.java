@@ -249,6 +249,7 @@ final class Timeline {
             short[] pcm = new short[BL * 2];
             long pos = start;
             try {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
                 track.play();
                 while (!stop) {
                     Engine p = pending;
@@ -299,7 +300,7 @@ final class Timeline {
         Play p = new Play(e, Math.round(sec * RATE));   // negative: count-in before the start
         p.minEnd = minEnd;
         p.track = new AudioTrack(AudioManager.STREAM_MUSIC, RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT,
-            Math.max(min * 2, RATE / 10 * 4), AudioTrack.MODE_STREAM);
+            Math.max(min * 2, RATE / 5 * 4), AudioTrack.MODE_STREAM);   // 200 ms: room for the phone to be busy (waveforms, effects) without a gap
         synchronized (Play.class) { Play.cur = p; }
         Thread th = new Thread(p, "timeline");
         th.setPriority(Thread.MAX_PRIORITY);

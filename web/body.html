@@ -206,6 +206,7 @@
 <script src="i18n22.js"></script>
 <script src="i18n23.js"></script>
 <script src="i18n24.js"></script>
+<script src="i18n25.js"></script>
 <script>
 (() => {
 'use strict';
@@ -216,7 +217,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.4.2';
+const VERSION = '3.4.3';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -3941,6 +3942,7 @@ function clPlay() {
   if (CL.play) { clStopPlay(); clPlayIcon(); return; }
   if (CL.pos >= CL.res.dur / 1000 - 0.1) CL.pos = 0;
   const mapped = clCuts().length && CL.cmp === 'before';
+  if (!audio.paused) audio.pause();
   try { AND.tlClick('{}'); } catch (e) {}
   const err = AND.tlPlay(JSON.stringify(clMix()), mapped ? clToBefore(CL.pos) : CL.pos);
   if (err) { toast(err, 4000); return; }
@@ -4818,6 +4820,11 @@ async function boot() {
     if (audio.src && S.items.has(audio.src)) { S.cur = audio.src; S.miniOn = true; updateMini(); }
     scheduleBackground(3000);
     purgeTrash().then(() => render(), () => {});
+    // 3.4.3: the app closed unexpectedly last time: offer to send the note (it never leaves the phone otherwise)
+    setTimeout(async () => {
+      let note = ''; try { note = AND.lastCrash ? AND.lastCrash() : ''; } catch (e) {}
+      if (note && await confirmBox({ title: t('crashT'), text: t('crashD'), ok: t('crashSend') })) try { AND.shareText('ses-defteri-hata.txt', note, 'text/plain'); } catch (e) {}
+    }, 1500);
     applyPlayerPrefs();
     if (CAPS.asr) asrRefresh();
     if (!S.media && !ls.get('askedMedia', false)) { ls.set('askedMedia', true); requestLibrary(); }

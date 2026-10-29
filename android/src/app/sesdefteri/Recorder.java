@@ -119,6 +119,7 @@ final class Recorder {
         short[] buf = new short[(rate / 50) * chans];   // 20 ms
         float[][] fl = new float[2][buf.length / chans];
         try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
             while (running) {
                 int n = ar.read(buf, 0, buf.length);
                 if (n <= 0) { if (n < 0) throw new IllegalStateException("read " + n); continue; }

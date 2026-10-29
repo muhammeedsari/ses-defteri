@@ -186,7 +186,7 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lang-card p{margin:0;color:var(--muted)}
 .lang-card .langs{justify-content:center}
 /* 2.3.2: nothing may be wider than the phone; no rubber-band page */
-html,body{overflow-x:hidden;max-width:100%;overscroll-behavior:none}
+html{overflow-x:hidden;overscroll-behavior:none}body{overflow-x:clip;max-width:100%}   /* body must not become a scroll box: with overscroll none it swallowed touch scrolling */
 .modal-card{overflow-x:hidden;overscroll-behavior:contain}
 .set-sub{grid-template-columns:minmax(0,1fr)}
 .sel-full,select,input{min-width:0;max-width:100%}

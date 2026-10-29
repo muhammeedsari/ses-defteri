@@ -15,6 +15,7 @@ import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.net.Uri;
 import android.os.Build;
+import android.os.SystemClock;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -60,6 +61,8 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     private long loopA = -1, loopB = -1;
     private String skipsId = "";
     private long[] skips = new long[0];          // [s0, e0, s1, e1, …] in ms
+    private long seekWait;                       // no loop / skip seek before this (uptime ms)
+    private int lastSkip = -1;                   // the silence just skipped: never twice in a row
     private long sleepAt;                        // wall clock, 0 = off
     private boolean sleepEnd;                    // stop when this track ends
     private MediaPlayer nmp;                     // the next track, prepared ahead
@@ -200,11 +203,20 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
                 if (!playing || mp == null || !prepared) return;
                 long cur, dur;
                 try { cur = mp.getCurrentPosition(); dur = mp.getDuration(); } catch (Exception e) { return; }
-                if (loopB > loopA && loopA >= 0 && cur >= loopB) { seekInternal(loopA); main.postDelayed(this, 50); return; }
-                JSONObject it = current();
-                if (it != null && skipsId.equals(it.optString("id"))) {
-                    for (int i = 0; i + 1 < skips.length; i += 2) if (cur >= skips[i] && cur < skips[i + 1] - 250) { seekInternal(skips[i + 1]); break; }
+                // a seek takes a moment and the position still reads the old place meanwhile: seeking again then made the
+                // same seconds repeat and stutter (A-B loop, skipping silence)
+                long now = SystemClock.uptimeMillis();
+                if (now >= seekWait) {
+                    if (loopB > loopA && loopA >= 0 && cur >= loopB) { seekInternal(loopA); seekWait = now + 400; main.postDelayed(this, 50); return; }
+                    JSONObject it = current();
+                    int hit = -1;
+                    if (it != null && skipsId.equals(it.optString("id"))) {
+                        for (int i = 0; i + 1 < skips.length; i += 2) if (cur >= skips[i] && cur < skips[i + 1] - 250) { hit = i; break; }
+                    }
+                    if (hit >= 0 && hit != lastSkip) { seekInternal(skips[hit + 1]); seekWait = now + 400; }
+                    lastSkip = hit;
                 }
+                JSONObject it = current();
                 if (xfadeMs > 0 && !sleepEnd && dur > 0) {
                     long left = dur - cur;
                     if (nmp == null && left <= xfadeMs + 1500) prepareNext();

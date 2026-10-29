@@ -86,6 +86,7 @@ public class MainActivity extends Activity implements Player.Listener {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        hookCrashes(getApplicationContext());
         Player.I.init(this, this);
         web = new WebView(this);
         web.setBackgroundColor(isDark() ? 0xFF0F1412 : 0xFFEDF1EE);
@@ -113,6 +114,14 @@ public class MainActivity extends Activity implements Player.Listener {
                 Uri u = req.getUrl();
                 if (HOST.equals(u.getHost())) return false;
                 try { startActivity(new Intent(Intent.ACTION_VIEW, u)); } catch (Exception ignored) { }
+                return true;
+            }
+
+            /** the page's process died (crash, or the system needed memory): start over instead of letting Android close the app */
+            @Override
+            public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail d) {
+                saveCrash(MainActivity.this, "web view " + (Build.VERSION.SDK_INT >= 26 && d.didCrash() ? "crashed" : "stopped by the system"));
+                if (view == web) recreate();
                 return true;
             }
 
@@ -487,6 +496,34 @@ public class MainActivity extends Activity implements Player.Listener {
         super.onDestroy();
     }
 
+    /* ---------- crash notes: kept on the phone only, shown once at the next start so the user can send them ---------- */
+
+    private static boolean crashHooked;
+
+    private static void hookCrashes(final Context app) {
+        if (crashHooked) return;
+        crashHooked = true;
+        final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+            @Override public void uncaughtException(Thread t, Throwable e) {
+                try { saveCrash(app, "thread " + t.getName() + "\n" + android.util.Log.getStackTraceString(e)); } catch (Throwable ignored) { }
+                if (prev != null) prev.uncaughtException(t, e); else System.exit(2);
+            }
+        });
+    }
+
+    static void saveCrash(Context c, String what) {
+        String v = "";
+        try { v = c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName; } catch (Exception ignored) { }
+        String s = "Ses Defteri " + v + ", Android " + Build.VERSION.RELEASE + " (" + Build.VERSION.SDK_INT + "), " + Build.MANUFACTURER + " " + Build.MODEL + "\n"
+            + new java.util.Date() + "\n" + what;
+        if (s.length() > 8000) s = s.substring(0, 8000);
+        try {
+            java.io.FileOutputStream o = new java.io.FileOutputStream(new java.io.File(c.getFilesDir(), "crash.txt"));
+            try { o.write(s.getBytes("UTF-8")); } finally { o.close(); }
+        } catch (Exception ignored) { }
+    }
+
     /* ---------- JavaScript bridge ---------- */
 
     private static String safeFileName(String n) {
@@ -503,6 +540,23 @@ public class MainActivity extends Activity implements Player.Listener {
     class Bridge {
         /* -- environment -- */
         @JavascriptInterface public boolean isDark() { return MainActivity.this.isDark(); }
+
+        /** the note of the last unexpected close, once ("" when there is none) */
+        @JavascriptInterface public String lastCrash() {
+            java.io.File f = new java.io.File(getFilesDir(), "crash.txt");
+            if (!f.exists()) return "";
+            try {
+                byte[] b = new byte[(int) Math.min(f.length(), 16000)];
+                java.io.FileInputStream in = new java.io.FileInputStream(f);
+                int n;
+                try { n = in.read(b); } finally { in.close(); }
+                return n > 0 ? new String(b, 0, n, "UTF-8") : "";
+            } catch (Exception e) {
+                return "";
+            } finally {
+                f.delete();
+            }
+        }
 
         @JavascriptInterface public String caps() {
             JSONObject o = new JSONObject();
