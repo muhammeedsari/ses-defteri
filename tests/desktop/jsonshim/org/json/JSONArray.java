@@ -8,6 +8,13 @@ public class JSONArray {
   public JSONArray put(double v) { l.add(v); return this; }
   public JSONArray put(long v) { l.add(v); return this; }
   public JSONArray put(int v) { l.add(v); return this; }
+  public JSONArray put(boolean v) { l.add(v); return this; }
+  public long optLong(int i) { Object v = i < l.size() ? l.get(i) : null; return v instanceof Number ? ((Number) v).longValue() : 0; }
+  public int optInt(int i) { Object v = i < l.size() ? l.get(i) : null; return v instanceof Number ? ((Number) v).intValue() : 0; }
+  public double optDouble(int i) { return optDouble(i, Double.NaN); }
+  public String optString(int i, String d) { return i < l.size() && l.get(i) != null ? String.valueOf(l.get(i)) : d; }
+  public boolean getBoolean(int i) { return (Boolean) l.get(i); }
+  public Object opt(int i) { return i < l.size() ? l.get(i) : null; }
   public int length() { return l.size(); }
   public Object get(int i) { return l.get(i); }
   public double getDouble(int i) { return ((Number) l.get(i)).doubleValue(); }

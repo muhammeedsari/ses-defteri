@@ -217,7 +217,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.4.3';
+const VERSION = '3.4.4';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1567,7 +1567,8 @@ function drawOverview() {
   const end = e => {
     pointers.delete(e.pointerId);
     if (pinch) { if (pointers.size < 2) { pinch = null; ls.set('pps', S.pps); } return; }
-    if (scrub) { const s = scrub; scrub = null; if (s.moved) seek(s.t); else drawScroll(); }
+    // a vertical swipe scrolls the page (touch-action pan-y) and arrives here as pointercancel: no seek then
+    if (scrub) { const s = scrub; scrub = null; if (s.moved && e.type !== 'pointercancel') seek(s.t); else { drawScroll(); updateTimes(); } }
   };
   cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
   const ov = $('#plOverview'); let drag = false;

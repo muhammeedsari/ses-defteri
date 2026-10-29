@@ -38,6 +38,11 @@ public class JSONObject {
   public String optString(String k, String d) { Object v = m.get(k); return v == null ? d : String.valueOf(v); }
   public String optString(String k) { return optString(k, ""); }
   public double optDouble(String k, double d) { Object v = m.get(k); return v instanceof Number ? ((Number) v).doubleValue() : d; }
+  public double optDouble(String k) { return optDouble(k, Double.NaN); }
+  public int optInt(String k) { return optInt(k, 0); }
+  public Object opt(String k) { return m.get(k); }
+  public JSONObject putOpt(String k, Object v) { if (k != null && v != null) m.put(k, v); return this; }
+  public JSONArray names() { JSONArray a = new JSONArray(); for (String k : m.keySet()) a.put(k); return a; }
   public double getDouble(String k) { return ((Number) m.get(k)).doubleValue(); }
   public int optInt(String k, int d) { Object v = m.get(k); return v instanceof Number ? ((Number) v).intValue() : d; }
   public boolean optBoolean(String k) { return optBoolean(k, false); }
