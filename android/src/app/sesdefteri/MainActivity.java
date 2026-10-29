@@ -60,6 +60,7 @@ public class MainActivity extends Activity implements Player.Listener {
     private static final int REQ_PICK = 14;
     private static final int REQ_DELETE = 15;
     private static final int REQ_VIDEO = 16;
+    private static final int REQ_VIDEO_TL = 17;
     private volatile String videoBusy;
 
     private WebView web;
@@ -85,6 +86,7 @@ public class MainActivity extends Activity implements Player.Listener {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        hookCrashes(getApplicationContext());
         Player.I.init(this, this);
         web = new WebView(this);
         web.setBackgroundColor(isDark() ? 0xFF0F1412 : 0xFFEDF1EE);
@@ -112,6 +114,14 @@ public class MainActivity extends Activity implements Player.Listener {
                 Uri u = req.getUrl();
                 if (HOST.equals(u.getHost())) return false;
                 try { startActivity(new Intent(Intent.ACTION_VIEW, u)); } catch (Exception ignored) { }
+                return true;
+            }
+
+            /** the page's process died (crash, or the system needed memory): start over instead of letting Android close the app */
+            @Override
+            public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail d) {
+                saveCrash(MainActivity.this, "web view " + (Build.VERSION.SDK_INT >= 26 && d.didCrash() ? "crashed" : "stopped by the system"));
+                if (view == web) recreate();
                 return true;
             }
 
@@ -286,6 +296,9 @@ public class MainActivity extends Activity implements Player.Listener {
         } else if (code == REQ_VIDEO) {
             Uri[] uris = result == RESULT_OK ? urisFrom(data) : null;
             if (uris != null && uris.length > 0) importVideos(uris);
+        } else if (code == REQ_VIDEO_TL) {
+            Uri[] uris = result == RESULT_OK ? urisFrom(data) : null;
+            js("window.__sdVideo && window.__sdVideo(" + (uris != null && uris.length > 0 ? q(uris[0].toString()) : "null") + ")");
         } else if (code == REQ_PICK) {
             Uri[] uris = result == RESULT_OK ? urisFrom(data) : null;
             if (uris != null && uris.length > 0) importUris(uris, true);
@@ -316,10 +329,19 @@ public class MainActivity extends Activity implements Player.Listener {
         handleIntent(intent);
     }
 
+    static final String ACTION_QUICK_REC = "app.sesdefteri.RECORD";
+    private volatile boolean quickRec;
+
     private void handleIntent(Intent intent) {
         if (intent == null || intent.getAction() == null) return;
         List<Uri> uris = new ArrayList<>();
         String action = intent.getAction();
+        if (ACTION_QUICK_REC.equals(action)) {
+            intent.setAction(null);
+            quickRec = true;
+            js("window.__sdQuickRec && window.__sdQuickRec()");
+            return;
+        }
         try {
             if (Intent.ACTION_SEND.equals(action)) {
                 Uri u = intent.getParcelableExtra(Intent.EXTRA_STREAM);
@@ -333,6 +355,15 @@ public class MainActivity extends Activity implements Player.Listener {
             }
         } catch (Exception ignored) { }
         intent.setAction(null);
+        // videos shared from the gallery: their sound becomes a recording
+        List<Uri> vids = new ArrayList<>();
+        for (int i = uris.size() - 1; i >= 0; i--) {
+            String m = null;
+            try { m = getContentResolver().getType(uris.get(i)); } catch (Exception ignored) { }
+            if (m == null) m = intent.getType();
+            if (m != null && m.startsWith("video/")) vids.add(0, uris.remove(i));
+        }
+        if (!vids.isEmpty()) importVideos(vids.toArray(new Uri[0]));
         if (!uris.isEmpty()) importUris(uris.toArray(new Uri[0]), false);
     }
 
@@ -465,6 +496,34 @@ public class MainActivity extends Activity implements Player.Listener {
         super.onDestroy();
     }
 
+    /* ---------- crash notes: kept on the phone only, shown once at the next start so the user can send them ---------- */
+
+    private static boolean crashHooked;
+
+    private static void hookCrashes(final Context app) {
+        if (crashHooked) return;
+        crashHooked = true;
+        final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+            @Override public void uncaughtException(Thread t, Throwable e) {
+                try { saveCrash(app, "thread " + t.getName() + "\n" + android.util.Log.getStackTraceString(e)); } catch (Throwable ignored) { }
+                if (prev != null) prev.uncaughtException(t, e); else System.exit(2);
+            }
+        });
+    }
+
+    static void saveCrash(Context c, String what) {
+        String v = "";
+        try { v = c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName; } catch (Exception ignored) { }
+        String s = "Ses Defteri " + v + ", Android " + Build.VERSION.RELEASE + " (" + Build.VERSION.SDK_INT + "), " + Build.MANUFACTURER + " " + Build.MODEL + "\n"
+            + new java.util.Date() + "\n" + what;
+        if (s.length() > 8000) s = s.substring(0, 8000);
+        try {
+            java.io.FileOutputStream o = new java.io.FileOutputStream(new java.io.File(c.getFilesDir(), "crash.txt"));
+            try { o.write(s.getBytes("UTF-8")); } finally { o.close(); }
+        } catch (Exception ignored) { }
+    }
+
     /* ---------- JavaScript bridge ---------- */
 
     private static String safeFileName(String n) {
@@ -482,6 +541,23 @@ public class MainActivity extends Activity implements Player.Listener {
         /* -- environment -- */
         @JavascriptInterface public boolean isDark() { return MainActivity.this.isDark(); }
 
+        /** the note of the last unexpected close, once ("" when there is none) */
+        @JavascriptInterface public String lastCrash() {
+            java.io.File f = new java.io.File(getFilesDir(), "crash.txt");
+            if (!f.exists()) return "";
+            try {
+                byte[] b = new byte[(int) Math.min(f.length(), 16000)];
+                java.io.FileInputStream in = new java.io.FileInputStream(f);
+                int n;
+                try { n = in.read(b); } finally { in.close(); }
+                return n > 0 ? new String(b, 0, n, "UTF-8") : "";
+            } catch (Exception e) {
+                return "";
+            } finally {
+                f.delete();
+            }
+        }
+
         @JavascriptInterface public String caps() {
             JSONObject o = new JSONObject();
             try {
@@ -492,6 +568,8 @@ public class MainActivity extends Activity implements Player.Listener {
                 o.put("asr", Studio.asrAvailable());
                 o.put("sep", Separator.available());
                 o.put("mp3", Mp3.available());
+                o.put("opus", Build.VERSION.SDK_INT >= 29);
+                o.put("spk", Speakers.ready(MainActivity.this));
                 o.put("folder", MediaLib.scoped() ? "Music/Ses Defteri" : "Android/data/app.sesdefteri/files/Music/Ses Defteri");
             } catch (Exception ignored) { }
             return o.toString();
@@ -580,6 +658,18 @@ public class MainActivity extends Activity implements Player.Listener {
                     i.setType("video/*");
                     i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                     try { startActivityForResult(i, REQ_VIDEO); } catch (Exception ignored) { }
+                }
+            });
+        }
+
+        /** one video for the project's sound to go into; the answer comes back through window.__sdVideo */
+        @JavascriptInterface public void pickVideoFor() {
+            ui(new Runnable() {
+                @Override public void run() {
+                    Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("video/*");
+                    try { startActivityForResult(i, REQ_VIDEO_TL); } catch (Exception ignored) { js("window.__sdVideo && window.__sdVideo(null)"); }
                 }
             });
         }
@@ -714,6 +804,8 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public boolean recResume() { return Recorder.resumeManual(); }
         @JavascriptInterface public String recInfo() { return Recorder.info(); }
         @JavascriptInterface public float recLevel() { return Recorder.level(); }
+        @JavascriptInterface public String recMeter() { return Recorder.meter(); }
+        @JavascriptInterface public boolean recMonitor(boolean on) { return Recorder.monitor(on); }
         @JavascriptInterface public String recStop() {
             ui(new Runnable() { @Override public void run() { getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); } });
             return Recorder.stop(MainActivity.this);
@@ -751,9 +843,32 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public void plSkips(final String id, final String json) { ui(new Runnable() { @Override public void run() { Player.I.setSkips(id, json); } }); }
         @JavascriptInterface public void plSleep(final double ms, final boolean end) { ui(new Runnable() { @Override public void run() { Player.I.setSleep((long) ms, end); } }); }
         @JavascriptInterface public String tlPlay(String json, double sec) { try { Timeline.play(json, sec); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
+        /** 2.9: from may be negative (count-in), and play at least until minSec even without clips (metronome) */
+        @JavascriptInterface public String tlPlayFrom(String json, double sec, double minSec) { try { Timeline.fixedClicks = null; Timeline.play(json, sec, Math.round(minSec * Timeline.RATE)); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
         @JavascriptInterface public void tlUpdate(String json) { try { Timeline.update(json); } catch (Exception ignored) { } }
         @JavascriptInterface public void tlStop() { Timeline.stop(); }
         @JavascriptInterface public double tlPos() { return Timeline.pos(); }
+        @JavascriptInterface public String tlMeter() { return Timeline.meter(); }
+        @JavascriptInterface public void tlClick(String json) { Timeline.click(json); }
+        @JavascriptInterface public String tlCalib() { try { Timeline.calibrate(); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
+
+        /** true once after the app was opened from the "new recording" shortcut */
+        @JavascriptInterface public boolean takeQuickRec() { boolean q = quickRec; quickRec = false; return q; }
+
+        /** asks the launcher to put a "new recording" icon on the home screen (Android 8+) */
+        @JavascriptInterface public boolean pinRecShortcut(String label) {
+            if (Build.VERSION.SDK_INT < 26) return false;
+            try {
+                android.content.pm.ShortcutManager sm = getSystemService(android.content.pm.ShortcutManager.class);
+                if (sm == null || !sm.isRequestPinShortcutSupported()) return false;
+                Intent i = new Intent(ACTION_QUICK_REC).setClass(MainActivity.this, MainActivity.class);
+                android.content.pm.ShortcutInfo si = new android.content.pm.ShortcutInfo.Builder(MainActivity.this, "rec-pin")
+                    .setShortLabel(label).setIcon(android.graphics.drawable.Icon.createWithResource(MainActivity.this, R.mipmap.ic_rec)).setIntent(i).build();
+                return sm.requestPinShortcut(si, null);
+            } catch (Exception e) {
+                return false;
+            }
+        }
 
         /* -- background jobs: waveform, editing, saving -- */
         @JavascriptInterface public String job(final String kind, final String argsJson) {
@@ -762,7 +877,7 @@ public class MainActivity extends Activity implements Player.Listener {
             jobs.put(id, cancel);
             boolean bg = false;
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
-            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind);
+            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"spectro".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind) && !"ttsStatus".equals(kind) && !"ttsDelete".equals(kind);
             if (heavy) WorkService.begin(MainActivity.this);
             (bg ? bgPool : heavy || "wsClean".equals(kind) || "tlClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
                 @Override
@@ -803,6 +918,16 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.init(MainActivity.this, a.getJSONObject("src"), p, cancel);
                         } else if ("wsOp".equals(kind)) {
                             res = Workspace.op(MainActivity.this, a, p, cancel);
+                        } else if ("ttsSpeak".equals(kind)) {
+                            res = Tts.speak(MainActivity.this, a, p, cancel);
+                        } else if ("ttsGet".equals(kind)) {
+                            res = Tts.download(MainActivity.this, a, p, cancel);
+                        } else if ("ttsDelete".equals(kind)) {
+                            res = Tts.delete(MainActivity.this, a);
+                        } else if ("ttsStatus".equals(kind)) {
+                            res = Tts.status(MainActivity.this);
+                        } else if ("tlSfx".equals(kind)) {
+                            res = Timeline.sfx(MainActivity.this, a);
                         } else if ("tlAdd".equals(kind)) {
                             res = Timeline.add(MainActivity.this, a, p, cancel);
                         } else if ("fillers".equals(kind)) {
@@ -827,10 +952,20 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.diagnose(MainActivity.this, a, p, cancel);
                         } else if ("clean".equals(kind)) {
                             res = Workspace.clean(MainActivity.this, a, p, cancel);
+                        } else if ("spkGet".equals(kind)) {
+                            res = Speakers.download(MainActivity.this, p, cancel);
+                        } else if ("tlSpk".equals(kind)) {
+                            res = Speakers.run(MainActivity.this, a, p, cancel);
                         } else if ("tlSep".equals(kind)) {
                             res = Separator.split(MainActivity.this, a, p, cancel);
                         } else if ("tlRender".equals(kind)) {
                             res = Timeline.render(MainActivity.this, a, p, cancel);
+                        } else if ("spectro".equals(kind)) {
+                            res = Workspace.spectro(a);
+                        } else if ("latency".equals(kind)) {
+                            res = Timeline.latency(MainActivity.this, a, p, cancel);
+                        } else if ("tlVideo".equals(kind)) {
+                            res = VideoMux.run(MainActivity.this, a, p, cancel);
                         } else if ("tlClean".equals(kind)) {
                             Timeline.clean(MainActivity.this, a.optJSONArray("keep"));
                             res = new JSONObject();

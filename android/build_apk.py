@@ -62,7 +62,7 @@ def web_page(local_fonts=True, keep_sw=True):
     if local_fonts:
         page = re.sub(r'<link rel="preconnect"[^>]*>\n', "", page)
         page = re.sub(r'<link rel="stylesheet" href="https://fonts.googleapis.com[^"]*">', '<link rel="stylesheet" href="fonts/fonts.css">', page)
-    for js in ["i18n.js", "i18n2.js", "i18n3.js", "i18n4.js", "i18n5.js", "i18n6.js", "i18n7.js", "i18n8.js", "i18n9.js", "i18n10.js", "i18n11.js", "i18n12.js", "i18n13.js", "i18n14.js", "i18n15.js"]:
+    for js in ["i18n.js", "i18n2.js", "i18n3.js", "i18n4.js", "i18n5.js", "i18n6.js", "i18n7.js", "i18n8.js", "i18n9.js", "i18n10.js", "i18n11.js", "i18n12.js", "i18n13.js", "i18n14.js", "i18n15.js", "i18n16.js", "i18n17.js", "i18n18.js", "i18n19.js", "i18n20.js", "i18n21.js", "i18n22.js", "i18n23.js", "i18n24.js", "i18n25.js"]:
         page = page.replace(f"<script src=\"{js}\"></script>", "<script>\n" + (WEB / js).read_text(encoding="utf-8") + "\n</script>")
     head = f"""<!doctype html>
 <html lang="tr">
@@ -127,6 +127,10 @@ def main():
     for f in ([] if LITE else ["vocals.fp16.onnx", "accompaniment.fp16.onnx"]):
         if not (sep / f).exists() or (sep / f).stat().st_size != (VENDOR / "sepm" / f).stat().st_size:
             shutil.copy(VENDOR / "sepm" / f, sep / f)
+    # speaker segmentation for "who speaks when" (pyannote 3.0, int8; the voice-print model is downloaded in the app)
+    for f in ([] if LITE else ["pyannote.int8.onnx"]):
+        if not (sep / f).exists() or (sep / f).stat().st_size != (VENDOR / "dia" / f).stat().st_size:
+            shutil.copy(VENDOR / "dia" / f, sep / f)
     # speech denoiser (DPDFNet-2, 48 kHz, DeepFilterNet family)
     if not LITE and not (sep / "dpdfnet.onnx").exists():
         shutil.copy(VENDOR / "dn" / "dpdfnet2_48khz_hr.onnx", sep / "dpdfnet.onnx")

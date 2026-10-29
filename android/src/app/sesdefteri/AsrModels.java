@@ -68,36 +68,7 @@ final class AsrModels {
         for (int i = 0; i < SMALL.length; i++) {
             File f = new File(d, SMALL[i]);
             if (f.isFile() && f.length() == sizes[i]) { done += sizes[i]; continue; }
-            File part = new File(d, SMALL[i] + ".part");
-            long have = part.isFile() ? part.length() : 0;
-            HttpURLConnection con = (HttpURLConnection) new URL(host + SMALL[i]).openConnection();
-            con.setConnectTimeout(20000);
-            con.setReadTimeout(30000);
-            if (have > 0) con.setRequestProperty("Range", "bytes=" + have + "-");
-            int code = con.getResponseCode();
-            if (code != 200 && code != 206) throw new IllegalStateException("download-" + code);
-            if (code == 200) have = 0;   // the server ignored the range: start over
-            InputStream is = con.getInputStream();
-            RandomAccessFile out = new RandomAccessFile(part, "rw");
-            try {
-                out.setLength(have);
-                out.seek(have);
-                byte[] b = new byte[1 << 16];
-                int n;
-                long last = 0;
-                while ((n = is.read(b)) > 0) {
-                    if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
-                    out.write(b, 0, n);
-                    have += n;
-                    if (have - last > (1 << 20)) { last = have; p.on((double) (done + have) / total); }
-                }
-            } finally {
-                out.close();
-                is.close();
-                con.disconnect();
-            }
-            if (part.length() != sizes[i]) throw new IllegalStateException("download-short");
-            if (!part.renameTo(f)) throw new IllegalStateException("download-rename");
+            fetch(host + SMALL[i], f, sizes[i], done, total, p, cancel);
             done += sizes[i];
         }
         // the voice detector goes next to the model so both load from files
@@ -110,7 +81,41 @@ final class AsrModels {
         return status(c);
     }
 
-    private static long size(String url) throws Exception {
+    /** downloads url into f (resumable through f.part); progress counts from done of total bytes */
+    static void fetch(String url, File f, long size, long done, long total, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        File part = new File(f.getParentFile(), f.getName() + ".part");
+        long have = part.isFile() ? part.length() : 0;
+        HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
+        con.setConnectTimeout(20000);
+        con.setReadTimeout(30000);
+        if (have > 0) con.setRequestProperty("Range", "bytes=" + have + "-");
+        int code = con.getResponseCode();
+        if (code != 200 && code != 206) throw new IllegalStateException("download-" + code);
+        if (code == 200) have = 0;   // the server ignored the range: start over
+        InputStream is = con.getInputStream();
+        RandomAccessFile out = new RandomAccessFile(part, "rw");
+        try {
+            out.setLength(have);
+            out.seek(have);
+            byte[] b = new byte[1 << 16];
+            int n;
+            long last = 0;
+            while ((n = is.read(b)) > 0) {
+                if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
+                out.write(b, 0, n);
+                have += n;
+                if (have - last > (1 << 20)) { last = have; p.on((double) (done + have) / total); }
+            }
+        } finally {
+            out.close();
+            is.close();
+            con.disconnect();
+        }
+        if (part.length() != size) throw new IllegalStateException("download-short");
+        if (!part.renameTo(f)) throw new IllegalStateException("download-rename");
+    }
+
+    static long size(String url) throws Exception {
         HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
         con.setRequestMethod("HEAD");
         con.setConnectTimeout(15000);
