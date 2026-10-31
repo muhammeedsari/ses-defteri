@@ -207,6 +207,7 @@
 <script src="i18n23.js"></script>
 <script src="i18n24.js"></script>
 <script src="i18n25.js"></script>
+<script src="i18n26.js"></script>
 <script>
 (() => {
 'use strict';
@@ -217,7 +218,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.4.4';
+const VERSION = '3.4.5';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -418,7 +419,7 @@ const S = {
   media: !!CAPS.media, mediaBlocked: false, pps: ls.get('pps', 50),
   peaks: new Map(), modalLocked: false, precompute: ls.get('precompute', true),
   autoEnh: ls.get('autoEnh', true), target: ls.get('target', 'youtube'), autoText: ls.get('autoText', true),
-  textLang: ls.get('textLang', LANG), asrModel: ls.get('asrModel', 'base'), autoText: ls.get('autoText', false), learnVoice: ls.get('learnVoice', true), showBeats: ls.get('showBeats', true), beats: new Map(), texts: new Map(),
+  textLang: ls.get('textLang', ''), asrModel: ls.get('asrModel', 'base'), autoText: ls.get('autoText', false), learnVoice: ls.get('learnVoice', true), showBeats: ls.get('showBeats', true), beats: new Map(), texts: new Map(),
   recQuality: ls.get('recQuality', 'std'), recFmt: ls.get('recFmt', 'm4a'), micSrc: ls.get('micSrc', 'auto'), callPause: ls.get('callPause', true), autoClean: ls.get('autoClean', false),
   fmt: ls.get('fmt', CAPS.mp3 ? 'mp3_192' : 'm4a'), nameTpl: ls.get('nameTpl', '{name}'), trashDays: +ls.get('trashDays', 30),
   asrSt: { base: false, small: false }, normalize: ls.get('normalize', true), xfade: +ls.get('xfade', 0), gapless: ls.get('gapless', true), playEq: ls.get('playEq', 'flat'), skipSil: ls.get('skipSil', false),
@@ -914,7 +915,7 @@ function openSettings() {
   card.addEventListener('click', e => {
     const lb = e.target.closest('[data-lang]');
     if (lb && lb.dataset.lang !== LANG) {
-      ls.set('lang', lb.dataset.lang); ls.set('textLang', lb.dataset.lang);   // speech-to-text follows the app language
+      ls.set('lang', lb.dataset.lang);
       if (AND && AND.setLang) { try { AND.setLang(lb.dataset.lang); } catch (x) {} }
       card.querySelectorAll('[data-lang]').forEach(b => b.setAttribute('aria-checked', b === lb));
       setTimeout(() => location.reload(), 150);
@@ -2020,7 +2021,10 @@ function errText(e) {
   if (m.includes('tts-empty')) return t('ttsEmpty');
   if (m.includes('dia-short')) return t('spkShort');
   if (m.includes('download-')) return t('spkNet');
-  return t('errGeneric') + (m && m !== 'job' ? ' (' + m.slice(0, 120) + ')' : '');
+  if (/No such file|FileNotFound|ENOENT/.test(m)) return t('errMissing');
+  // keep a short hint for bug reports, but no file paths or Java class names
+  const d = m.replace(/\/[^\s()]+/g, '').replace(/\b(java|javax|android|org)\.[\w.$]+:?\s*/g, '').replace(/\(\s*\)/g, '').trim();
+  return t('errGeneric') + (d && d !== 'job' ? ' (' + d.slice(0, 80) + ')' : '');
 }
 const baseName = it => (it.name || it.title || 'Ses').replace(/\.[^.]+$/, '');
 const isVoice = it => !(it.mode === 'music' || kindOf(it) === 'music');
@@ -2328,7 +2332,7 @@ function tlClean() {
   const keep = new Set(TL.p.clips.map(c => c.path)), cb = tlClip();
   if (cb) keep.add(cb.path);
   for (const s of TL.undo.concat(TL.redo)) try { for (const c of JSON.parse(s).clips) keep.add(c.path); } catch (e) {}
-  try { runJob('tlClean', { keep: [...keep] }).catch(() => {}); } catch (e) {}
+  try { runJob('tlClean', { keep: [...keep], since: Date.now() - 60000 }).catch(() => {}); } catch (e) {}
 }
 /** what the native mixer plays: one entry per audible clip */
 function tlMix() {
@@ -4768,7 +4772,7 @@ function showLangPick() {
     const b = e.target.closest('[data-lang]');
     if (b) { pick = b.dataset.lang; d.querySelectorAll('[data-lang]').forEach(x => x.setAttribute('aria-checked', x === b)); return; }
     if (e.target.closest('#langGo')) {
-      ls.set('lang', pick); ls.set('textLang', pick);
+      ls.set('lang', pick);
       if (AND && AND.setLang) { try { AND.setLang(pick); } catch (x) {} }
       location.reload();
     }

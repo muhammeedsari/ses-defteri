@@ -967,7 +967,7 @@ public class MainActivity extends Activity implements Player.Listener {
                         } else if ("tlVideo".equals(kind)) {
                             res = VideoMux.run(MainActivity.this, a, p, cancel);
                         } else if ("tlClean".equals(kind)) {
-                            Timeline.clean(MainActivity.this, a.optJSONArray("keep"));
+                            Timeline.clean(MainActivity.this, a.optJSONArray("keep"), a.optLong("since", Long.MAX_VALUE));
                             res = new JSONObject();
                         } else if ("wsExport".equals(kind)) {
                             res = Workspace.export(MainActivity.this, a, p, cancel);

@@ -289,9 +289,18 @@ final class Workspace {
                     Analyzer.Analysis an = analyze(in, inf, p, cancel);
                     rep.put("lraBefore", Math.round(an.lra * 10) / 10.0);
                     if (an.lra < 4) { rep.put("none", true); return same(a, rep); }
+                    double thr = an.speechMeanDb + 2, ratio = 1 + 1.5 * str;
+                    // the compressor only pulls loud parts down; give the lost loudness back so quiet parts come up and the level stays
+                    Loudness before = new Loudness(ch, fs), after = new Loudness(ch, fs);
+                    before.to(new Stages.Compressor(ch, fs, thr, ratio)).to(after).to(new Sink());
+                    wav(in, inf, p, new double[] { 0.3, 0.6 }, cancel).run(before);
+                    double lb = before.integrated(), la = after.integrated();
+                    double makeup = Double.isInfinite(lb) || Double.isInfinite(la) ? 0 : Math.max(0, Math.min(18, lb - la));
+                    rep.put("makeup", Math.round(makeup * 10) / 10.0);
                     m = new Meter(ch, fs);
-                    head = new Stages.Compressor(ch, fs, an.speechMeanDb + 2, 1 + 1.5 * str);
-                    head.to(m);
+                    head = new Stages.Compressor(ch, fs, thr, ratio);
+                    head.to(new Limiter(ch, fs, -1.0, makeup)).to(m);
+                    slice = new double[] { 0.6, 1 };
                     break;
                 }
                 case "loud": {
