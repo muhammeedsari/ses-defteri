@@ -288,18 +288,17 @@ final class Workspace {
                 case "level": {
                     Analyzer.Analysis an = analyze(in, inf, p, cancel);
                     rep.put("lraBefore", Math.round(an.lra * 10) / 10.0);
-                    if (an.lra < 4) { rep.put("none", true); return same(a, rep); }
-                    double thr = an.speechMeanDb + 2, ratio = 1 + 1.5 * str;
-                    // the compressor only pulls loud parts down; give the lost loudness back so quiet parts come up and the level stays
-                    Loudness before = new Loudness(ch, fs), after = new Loudness(ch, fs);
-                    before.to(new Stages.Compressor(ch, fs, thr, ratio)).to(after).to(new Sink());
-                    wav(in, inf, p, new double[] { 0.3, 0.6 }, cancel).run(before);
-                    double lb = before.integrated(), la = after.integrated();
-                    double makeup = Double.isInfinite(lb) || Double.isInfinite(la) ? 0 : Math.max(0, Math.min(18, lb - la));
-                    rep.put("makeup", Math.round(makeup * 10) / 10.0);
+                    if (an.lra < 3) { rep.put("none", true); return same(a, rep); }
+                    // 3.4.6: a slow leveller instead of a compressor (that only pulled loud words down, so quiet sentences
+                    // hardly came up): every sentence is brought to the speech level of the whole file, pauses keep the
+                    // gain of the speech around them, then a light compressor and the limiter
+                    Leveler lv = new Leveler(ch, fs, an.noiseDb, an.speechMeanDb, Math.min(1, 0.55 + 0.35 * str));
+                    wav(in, inf, p, new double[] { 0.3, 0.6 }, cancel).run(lv.measure());
+                    lv.plan();
+                    rep.put("range", Math.round(lv.range * 10) / 10.0);
                     m = new Meter(ch, fs);
-                    head = new Stages.Compressor(ch, fs, thr, ratio);
-                    head.to(new Limiter(ch, fs, -1.0, makeup)).to(m);
+                    head = lv;
+                    head.to(new Stages.Compressor(ch, fs, an.speechMeanDb + 6, 1.5 + 0.5 * str)).to(new Limiter(ch, fs, -1.0, 0)).to(m);
                     slice = new double[] { 0.6, 1 };
                     break;
                 }
@@ -316,7 +315,7 @@ final class Workspace {
                 }
                 case "mouth": {
                     // lip and tongue clicks: smaller and a little longer than vinyl clicks, so a more sensitive detector
-                    final Stages.ClickRepair cr = new Stages.ClickRepair(ch, fs, 16 + 14 * str, 0.004);
+                    final Stages.ClickRepair cr = new Stages.ClickRepair(ch, fs, 8 + 8 * str, 0.004);   // 3.4.6: less sensitive: 114 "clicks" were found in clean speech
                     m = new Meter(ch, fs);
                     cr.to(m);
                     head = cr;
@@ -500,6 +499,77 @@ final class Workspace {
     }
 
     /** turns the found regions down by `db`, with short ramps */
+    /** two passes: measure 100 ms levels, then apply a smooth gain curve that evens out sentences (see case "level") */
+    static final class Leveler extends Node {
+        final int ch, blk;
+        final double floorDb, amount;
+        double targetDb;
+        final java.util.ArrayList<Float> db = new java.util.ArrayList<>();
+        float[] gain;   // dB per block
+        double range;   // largest boost − largest cut
+        long pos;
+        Leveler(int ch, int fs, double floorDb, double targetDb, double amount) {
+            this.ch = ch; this.blk = Math.max(1, fs / 10); this.floorDb = floorDb; this.targetDb = targetDb; this.amount = amount;
+        }
+        Node measure() {
+            return new Node() {
+                double acc; int k;
+                @Override public void push(float[][] x, int n) {
+                    for (int i = 0; i < n; i++) {
+                        double e = 0; for (int c = 0; c < ch; c++) e += x[c][i] * x[c][i];
+                        acc += e / ch;
+                        if (++k == blk) { db.add((float) (10 * Math.log10(acc / blk + 1e-12))); acc = 0; k = 0; }
+                    }
+                }
+                @Override public void end() { if (k > 0) db.add((float) (10 * Math.log10(acc / k + 1e-12))); }
+            };
+        }
+        void plan() {
+            int n = db.size();
+            gain = new float[n + 1];
+            double speech = Math.max(floorDb + 10, targetDb - 22);
+            // the goal is the file's own average speech level (in the same 100 ms measure), so the overall loudness stays
+            { double sum = 0; int cnt = 0; for (float d : db) if (d > speech) { sum += Math.pow(10, d / 10); cnt++; } if (cnt > 0) targetDb = 10 * Math.log10(sum / cnt) + 1; }
+            float[] raw = new float[n];
+            boolean[] has = new boolean[n];
+            final int W = 8;                                   // ±0.8 s
+            for (int i = 0; i < n; i++) {
+                double sum = 0; int cnt = 0;
+                for (int j = Math.max(0, i - W); j <= Math.min(n - 1, i + W); j++) if (db.get(j) > speech) { sum += Math.pow(10, db.get(j) / 10); cnt++; }
+                if (cnt >= 3) { raw[i] = (float) Math.max(-10, Math.min(12, (targetDb - 10 * Math.log10(sum / cnt)) * amount)); has[i] = true; }
+            }
+            // pauses take the gain of the nearest speech, never more than +6 dB so room noise stays down
+            int first = -1;
+            for (int i = 0; i < n && first < 0; i++) if (has[i]) first = i;
+            if (first >= 0) {
+                for (int i = 0; i < first; i++) raw[i] = Math.min(6, raw[first]);
+                float last = raw[first];
+                for (int i = first; i < n; i++) { if (has[i]) last = raw[i]; else raw[i] = Math.min(6, last); }
+            }
+            // smooth: 300 ms either way
+            float mx = -99, mn = 99;
+            for (int i = 0; i < n; i++) {
+                double s = 0; int c = 0;
+                for (int j = Math.max(0, i - 3); j <= Math.min(n - 1, i + 3); j++) { s += raw[j]; c++; }
+                gain[i] = (float) (s / c);
+                mx = Math.max(mx, gain[i]); mn = Math.min(mn, gain[i]);
+            }
+            gain[n] = n > 0 ? gain[n - 1] : 0;
+            range = n > 0 ? mx - mn : 0;
+        }
+        @Override public void push(float[][] x, int n) throws Exception {
+            for (int i = 0; i < n; i++, pos++) {
+                int b = (int) (pos / blk);
+                double f = (pos % blk) / (double) blk, g;
+                if (b >= gain.length - 1) g = gain[gain.length - 1];
+                else g = gain[b] + (gain[b + 1] - gain[b]) * f;
+                float k = (float) Math.pow(10, g / 20);
+                for (int c = 0; c < ch; c++) x[c][i] *= k;
+            }
+            next.push(x, n);
+        }
+    }
+
     static final class GainRegions extends Node {
         final long[] a, b;
         final double g;
@@ -529,7 +599,7 @@ final class Workspace {
         JSONObject rep = new JSONObject();
         if (l.isEmpty()) { rep.put("none", true); return same(null, rep); }
         Meter m = new Meter(inf.ch, inf.rate);
-        GainRegions gr = new GainRegions(l, sc.hop, -(4 + 6 * str), (int) (inf.rate * 0.015));
+        GainRegions gr = new GainRegions(l, sc.hop, -(8 + 10 * str), (int) (inf.rate * 0.015));   // 3.4.6: −18 dB (was −10, hard to hear)
         gr.to(m).to(new Studio.WavNode(out, inf.rate));
         wav(in, inf, part(p, 0.4, 1), new double[] { 0, 1 }, cancel).run(gr);
         rep.put("count", l.size());
@@ -542,17 +612,35 @@ final class Workspace {
      */
     static JSONObject declip(File in, Info inf, File out, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         final int ch = inf.ch, B = 1 << 16, M = 256;
-        final float CL = 0.985f;
         final int maxRun = Math.max(8, inf.rate * 3 / 1000);
         RandomAccessFile r = new RandomAccessFile(in, "r");
+        // 3.4.6: the clip level is the file's own flat top (a clipped file turned down to 0.95 was "not clipped" at 0.985)
+        float CL = 0.985f;
+        {
+            byte[] bb = new byte[1 << 16];
+            int top = 0; long topN = 0, left = inf.frames * ch * 2;
+            r.seek(44);
+            while (left > 0) {
+                int n = r.read(bb, 0, (int) Math.min(bb.length, left));
+                if (n <= 0) break;
+                left -= n;
+                for (int q = 0; q + 1 < n; q += 2) {
+                    int v = Math.abs((short) ((bb[q] & 0xff) | (bb[q + 1] << 8)));
+                    if (v > top + 3) { top = v; topN = 1; } else if (v >= top - 3) topN++;
+                }
+            }
+            if (top > 8000 && topN >= 40) CL = Math.min(CL, (top - 40) / 32768f);
+        }
         int[] runs = new int[1];
         double peak = 0;
         Meter m = null;
         try {
             for (int pass = 0; pass < 2; pass++) {
-                double gain = pass == 0 ? 1 : Math.min(1, 0.97 / Math.max(1e-6, peak));
+                // 3.4.6: turn down at most 4 dB and let a limiter hold the rebuilt peaks (a long clipped stretch made the
+                // whole file 12 dB quieter)
+                double gain = pass == 0 ? 1 : Math.max(Math.pow(10, -4 / 20.0), Math.min(1, 0.97 / Math.max(1e-6, peak)));
                 Node sink = null;
-                if (pass == 1) { m = new Meter(ch, inf.rate); m.to(new Studio.WavNode(out, inf.rate)); sink = m; }
+                if (pass == 1) { m = new Meter(ch, inf.rate); Limiter lim = new Limiter(ch, inf.rate, -1.0, 0); lim.to(m).to(new Studio.WavNode(out, inf.rate)); sink = lim; }
                 float[][] x = new float[ch][B + 2 * M], o = new float[ch][B];
                 byte[] buf = new byte[(B + 2 * M) * ch * 2];
                 for (long s = 0; s < inf.frames; s += B) {
@@ -579,7 +667,8 @@ final class Workspace {
                                         for (int b2 = 0; b2 < 4; b2++) if (b2 != a2) w *= (t - tx[b2]) / (tx[a2] - tx[b2]);
                                         y += w * ty[a2];
                                     }
-                                    if (Math.abs(y) > Math.abs(v[i + k]) && Math.signum(y) == Math.signum(v[i + k])) v[i + k] = (float) Math.max(-4, Math.min(4, y));
+                                    double cap = CL * 2;   // a peak rebuilt at most 6 dB above the clip level
+                                    if (Math.abs(y) > Math.abs(v[i + k]) && Math.signum(y) == Math.signum(v[i + k])) v[i + k] = (float) Math.max(-cap, Math.min(cap, y));
                                 }
                                 if (pass == 0 && i >= off && i < off + keep) runs[0]++;
                             }
@@ -601,7 +690,7 @@ final class Workspace {
         }
         JSONObject rep = new JSONObject();
         rep.put("count", runs[0]);
-        rep.put("gain", Math.round(20 * Math.log10(Math.min(1, 0.97 / Math.max(1e-6, peak))) * 10) / 10.0);
+        rep.put("gain", Math.round(20 * Math.log10(Math.max(Math.pow(10, -4 / 20.0), Math.min(1, 0.97 / Math.max(1e-6, peak)))) * 10) / 10.0);
         return done(out, m, rep);
     }
 

@@ -92,8 +92,9 @@ final class Timeline {
     static java.util.ArrayList<app.sesdefteri.dsp.Biquad> eq(JSONArray g, double bass, double treble) {
         java.util.ArrayList<app.sesdefteri.dsp.Biquad> l = new java.util.ArrayList<>();
         // "bass boost" / "treble boost" buttons: wide shelves under the 5-band EQ
-        if (bass != 0) l.add(new app.sesdefteri.dsp.Biquad(2).setLowShelf(RATE, 150, 0.6, bass));
-        if (treble != 0) l.add(new app.sesdefteri.dsp.Biquad(2).setHighShelf(RATE, 5000, 0.6, treble));
+        // 3.4.6: 250 Hz / 3.5 kHz so a phone speaker can play what is boosted (150 Hz / 5 kHz were barely heard)
+        if (bass != 0) l.add(new app.sesdefteri.dsp.Biquad(2).setLowShelf(RATE, 250, 0.7, bass));
+        if (treble != 0) l.add(new app.sesdefteri.dsp.Biquad(2).setHighShelf(RATE, 3500, 0.7, treble));
         if (g == null || g.length() < 5) return l.isEmpty() ? null : l;
         double[] mid = { 300, 1000, 3000 };
         double v = g.optDouble(0, 0);

@@ -481,10 +481,12 @@ public class MainActivity extends Activity implements Player.Listener {
     }
 
     private boolean resumed, needRecreate;
+    static volatile boolean visible;   // the app is on screen (no "work done" notification then)
 
     @Override
     protected void onPause() {
         resumed = false;
+        visible = false;
         super.onPause();
     }
 
@@ -492,6 +494,8 @@ public class MainActivity extends Activity implements Player.Listener {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        visible = true;
+        try { ((android.app.NotificationManager) getSystemService(NOTIFICATION_SERVICE)).cancel(10); } catch (Exception ignored) { }
         if (needRecreate) { needRecreate = false; recreate(); return; }
         js("window.__sdResume && window.__sdResume()");
     }

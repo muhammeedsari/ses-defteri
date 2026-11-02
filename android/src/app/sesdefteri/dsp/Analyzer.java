@@ -94,6 +94,7 @@ public final class Analyzer extends Node {
                 sLL += l * l; sRR += r * r; sLR += l * r;
                 if (Math.abs(l) >= 0.999f) clipL++;
                 if (Math.abs(r) >= 0.999f) clipR++;
+                flat(Math.abs(l)); flat(Math.abs(r));
                 peak = Math.max(peak, Math.max(Math.abs(l), Math.abs(r)));
             } else {
                 float m = l;
@@ -101,6 +102,7 @@ public final class Analyzer extends Node {
                 buf[0][fill] = m;
                 peak = Math.max(peak, Math.abs(m));
                 if (Math.abs(m) >= 0.999f) clipL++;
+                flat(Math.abs(m));
             }
             float main = buf[views == 4 ? 2 : 0][fill];
             lbuf[lfill++] = main;
@@ -169,11 +171,21 @@ public final class Analyzer extends Node {
 
     @Override public void end() { }
 
+    // 3.4.6: clipping below full scale (clipped, then turned down a little: flat tops at e.g. 0.95) — samples sitting
+    // exactly on the file's highest value; a natural peak has only one or two of them
+    private float topV;
+    private long topN;
+    private void flat(float v) {
+        if (v > topV + 1e-4f) { topV = v; topN = 1; }
+        else if (v >= topV - 1e-4f) topN++;
+    }
+
     public Analysis finish() {
         Analysis a = new Analysis();
         a.fs = fs; a.inCh = inCh; a.samples = samples; a.frameHop = hop; a.fftSize = N;
         a.peak = peak;
         a.clipped = clipL + clipR;
+        if (topV > 0.25f && topN >= 40) a.clipped = Math.max(a.clipped, topN);
         // ---- channels ----
         int view = 0;
         a.channelMode = Stages.ChannelMap.KEEP;

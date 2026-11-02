@@ -38,12 +38,36 @@ public class WorkService extends Service {
         } catch (Exception e) { requested = false; }
     }
 
+    private static long since;
+
     static synchronized void end(Context c) {
         running = Math.max(0, running - 1);
         if (running == 0 && fg) {
             fg = false;
             try { c.stopService(new Intent(c, WorkService.class)); } catch (Exception ignored) { }
+            // 3.4.6: long work finished while the app was out of sight (screen off): say so, also on the lock screen
+            if (!MainActivity.visible && System.currentTimeMillis() - since > 8000) done(c.getApplicationContext());
         }
+    }
+
+    private static void done(Context c) {
+        try {
+            NotificationManager nm = (NotificationManager) c.getSystemService(NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            Notification.Builder b;
+            if (Build.VERSION.SDK_INT >= 26) {
+                NotificationChannel ch = new NotificationChannel("done", Str.get(c, "chDone"), NotificationManager.IMPORTANCE_DEFAULT);
+                ch.setShowBadge(true);
+                nm.createNotificationChannel(ch);
+                b = new Notification.Builder(c, "done");
+            } else b = new Notification.Builder(c);
+            Intent open = new Intent(c, MainActivity.class);
+            open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            PendingIntent pi = PendingIntent.getActivity(c, 3, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            b.setSmallIcon(R.drawable.ic_stat_rec).setContentTitle(Str.get(c, "doneTitle")).setContentText(Str.get(c, "doneText"))
+                .setAutoCancel(true).setContentIntent(pi).setVisibility(Notification.VISIBILITY_PUBLIC);
+            nm.notify(10, b.build());
+        } catch (Exception ignored) { }
     }
 
     @Override
@@ -65,6 +89,7 @@ public class WorkService extends Service {
             .setContentTitle(Str.get(this, "workTitle"))
             .setContentText(Str.get(this, "workText"))
             .setOngoing(true)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setProgress(0, 0, true)
             .setContentIntent(pi);
         try {
@@ -74,7 +99,7 @@ public class WorkService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
-        synchronized (WorkService.class) { fg = true; if (running == 0) { fg = false; stopSelf(); } }
+        synchronized (WorkService.class) { fg = true; since = System.currentTimeMillis(); if (running == 0) { fg = false; stopSelf(); } }
         return START_NOT_STICKY;
     }
 
