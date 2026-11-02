@@ -315,6 +315,15 @@ final class MediaLib {
             out.close(); out = null;
             JSONObject o = publish(c, t);
             if (o == null) throw new IOException("publish failed");
+            // the media library has not read a fresh file yet: its length was 0 and the player/wave had nothing to go by
+            try {
+                if (o.optLong("dur", 0) <= 0) {
+                    JSONObject src = o.optJSONObject("src");
+                    Uri su = src != null ? srcUri(src) : null;
+                    File sf = src != null ? srcFile(src) : null;
+                    o.put("dur", su != null ? AudioTools.durationMs(c.getApplicationContext(), su) : sf != null ? AudioTools.durationMs(null, sf) : 0);
+                }
+            } catch (Exception ignored) { }
             return o;
         } catch (IOException e) {
             discard(c, t);

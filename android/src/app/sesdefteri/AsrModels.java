@@ -62,15 +62,52 @@ final class AsrModels {
         for (String h : hosts(m)) {
             try { for (int i = 0; i < SMALL.length; i++) sizes[i] = size(h + SMALL[i]); host = h; break; } catch (Exception ignored) { }
         }
-        if (host == null) throw new IllegalStateException("download-unreachable");
+        if (host == null) { fromGithub(c, m, d, p, cancel); return finish(c, d); }
         long total = 0, done = 0;
         for (long s : sizes) total += s;
-        for (int i = 0; i < SMALL.length; i++) {
-            File f = new File(d, SMALL[i]);
-            if (f.isFile() && f.length() == sizes[i]) { done += sizes[i]; continue; }
-            fetch(host + SMALL[i], f, sizes[i], done, total, p, cancel);
-            done += sizes[i];
+        try {
+            for (int i = 0; i < SMALL.length; i++) {
+                File f = new File(d, SMALL[i]);
+                if (f.isFile() && f.length() == sizes[i]) { done += sizes[i]; continue; }
+                fetch(host + SMALL[i], f, sizes[i], done, total, p, cancel);
+                done += sizes[i];
+            }
+        } catch (InterruptedException e) {
+            throw e;
+        } catch (Exception e) {
+            if (cancel != null && cancel.get()) throw e;
+            fromGithub(c, m, d, p, cancel);
         }
+        return finish(c, d);
+    }
+
+    /** 3.4.6: Hugging Face could not be reached from the phone ("no internet"), GitHub can (the voices come from there):
+     *  the sherpa-onnx release archive holds the same int8 files, only those are unpacked */
+    static final String GH = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-";
+
+    private static void fromGithub(Context c, String m, final File d, final AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        String url = GH + m + ".tar.bz2";
+        File arc = new File(d, "whisper.tar.bz2");
+        long n;
+        try { n = size(url); } catch (Exception e) { MainActivity.saveNote(c, "whisper " + m + " download: " + e.getMessage()); throw new IllegalStateException("download-unreachable"); }
+        if (!arc.isFile() || arc.length() != n)
+            fetch(url, arc, n, 0, n, new AudioTools.Progress() { @Override public void on(double f) { p.on(f * 0.9); } }, cancel);
+        p.on(0.91);
+        final java.util.List<String> want = java.util.Arrays.asList(files(m));
+        InputStream in = new java.io.BufferedInputStream(new java.io.FileInputStream(arc), 1 << 16);
+        try {
+            Untar.extract(in, new Untar.Place() {
+                @Override public File to(String name) {
+                    String base = name.substring(name.lastIndexOf('/') + 1);
+                    return want.contains(base) ? new File(d, base) : null;
+                }
+            });
+        } finally { in.close(); }
+        arc.delete();
+        for (String f : files(m)) if (!new File(d, f).isFile()) throw new IllegalStateException("download-short");
+    }
+
+    private static JSONObject finish(Context c, File d) throws Exception {
         // the voice detector goes next to the model so both load from files
         File vad = new File(d, "silero_vad.onnx");
         if (!vad.isFile()) {
@@ -115,7 +152,24 @@ final class AsrModels {
         if (!part.renameTo(f)) throw new IllegalStateException("download-rename");
     }
 
+    /** file size: HEAD, or when that is refused (signed download links only allow GET) the first byte with GET */
     static long size(String url) throws Exception {
+        try { return head(url); } catch (Exception e) {
+            HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
+            con.setConnectTimeout(15000);
+            con.setReadTimeout(15000);
+            con.setRequestProperty("Range", "bytes=0-0");
+            try {
+                int code = con.getResponseCode();
+                String cr = con.getHeaderField("Content-Range");
+                if (code == 206 && cr != null && cr.lastIndexOf('/') > 0) return Long.parseLong(cr.substring(cr.lastIndexOf('/') + 1).trim());
+                if (code == 200 && con.getContentLengthLong() > 0) return con.getContentLengthLong();
+                throw new IllegalStateException("head-" + code);
+            } finally { con.disconnect(); }
+        }
+    }
+
+    private static long head(String url) throws Exception {
         HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
         con.setRequestMethod("HEAD");
         con.setConnectTimeout(15000);

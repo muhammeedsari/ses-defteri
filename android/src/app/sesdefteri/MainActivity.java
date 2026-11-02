@@ -120,8 +120,17 @@ public class MainActivity extends Activity implements Player.Listener {
             /** the page's process died (crash, or the system needed memory): start over instead of letting Android close the app */
             @Override
             public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail d) {
-                saveCrash(MainActivity.this, "web view " + (Build.VERSION.SDK_INT >= 26 && d.didCrash() ? "crashed" : "stopped by the system"));
-                if (view == web) recreate();
+                // the system ends the page's process to free memory while the app is in the background: that is no crash, so no note
+                // (3.4.5 showed "closed unexpectedly" after the sleep timer stopped the music)
+                boolean crashed = Build.VERSION.SDK_INT >= 26 && d.didCrash();
+                if (crashed) saveCrash(MainActivity.this, "web view crashed");
+                if (view != web) return true;
+                // a dead web view must not be used again
+                pageReady = false;
+                try { ((android.view.ViewGroup) web.getParent()).removeView(web); } catch (Exception ignored) { }
+                try { web.destroy(); } catch (Exception ignored) { }
+                web = null;
+                if (resumed) recreate(); else needRecreate = true;
                 return true;
             }
 
@@ -160,7 +169,9 @@ public class MainActivity extends Activity implements Player.Listener {
         });
 
         web.addJavascriptInterface(new Bridge(), "SesDefteriAndroid");
-        handleIntent(getIntent());
+        // only a fresh start handles the intent: after recreate() or a restart from recents the same "share"/"open with"
+        // intent comes back and imported the file again (copies of a recording)
+        if (state == null && (getIntent().getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0) handleIntent(getIntent());
         web.loadUrl(START);
     }
 
@@ -368,7 +379,7 @@ public class MainActivity extends Activity implements Player.Listener {
     }
 
     private void importUris(final Uri[] uris, final boolean picked) {
-        js("window.__sdBusy && window.__sdBusy(" + q(uris.length > 1 ? uris.length + " dosya ekleniyor…" : "Dosya ekleniyor…") + ")");
+        js("window.__sdBusy && window.__sdBusy(" + uris.length + ")");   // the page says it in the app's language
         pool.execute(new Runnable() {
             @Override
             public void run() {
@@ -464,14 +475,24 @@ public class MainActivity extends Activity implements Player.Listener {
     public void onConfigurationChanged(Configuration cfg) {
         super.onConfigurationChanged(cfg);
         boolean dark = isDark();
-        web.setBackgroundColor(dark ? 0xFF0F1412 : 0xFFEDF1EE);
+        if (web != null) web.setBackgroundColor(dark ? 0xFF0F1412 : 0xFFEDF1EE);
         applyBars(barMode);
         js("window.__sdTheme && window.__sdTheme('" + (dark ? "dark" : "light") + "')");
+    }
+
+    private boolean resumed, needRecreate;
+
+    @Override
+    protected void onPause() {
+        resumed = false;
+        super.onPause();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
+        if (needRecreate) { needRecreate = false; recreate(); return; }
         js("window.__sdResume && window.__sdResume()");
     }
 
@@ -524,6 +545,23 @@ public class MainActivity extends Activity implements Player.Listener {
         } catch (Exception ignored) { }
     }
 
+    /** a note about something that went wrong without closing the app (kept for Settings › Send a problem note) */
+    static void saveNote(Context c, String what) {
+        if (c == null) return;
+        try {
+            java.io.File f = new java.io.File(c.getFilesDir(), "notes.txt");
+            String old = "";
+            if (f.exists() && f.length() < 6000) {
+                byte[] b = new byte[(int) f.length()];
+                java.io.FileInputStream in = new java.io.FileInputStream(f);
+                try { int n = in.read(b); old = n > 0 ? new String(b, 0, n, "UTF-8") : ""; } finally { in.close(); }
+            }
+            String s = old + new java.util.Date() + " " + what + "\n";
+            java.io.FileOutputStream o = new java.io.FileOutputStream(f);
+            try { o.write(s.getBytes("UTF-8")); } finally { o.close(); }
+        } catch (Exception ignored) { }
+    }
+
     /* ---------- JavaScript bridge ---------- */
 
     private static String safeFileName(String n) {
@@ -542,6 +580,21 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public boolean isDark() { return MainActivity.this.isDark(); }
 
         /** the note of the last unexpected close, once ("" when there is none) */
+        /** the problem notes (stalls, failed downloads …) with the phone model, then cleared */
+        @JavascriptInterface public String takeNotes() {
+            java.io.File f = new java.io.File(getFilesDir(), "notes.txt");
+            if (!f.exists()) return "";
+            String v = "";
+            try { v = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { }
+            try {
+                byte[] b = new byte[(int) Math.min(f.length(), 8000)];
+                java.io.FileInputStream in = new java.io.FileInputStream(f);
+                int n;
+                try { n = in.read(b); } finally { in.close(); }
+                f.delete();
+                return n > 0 ? "Ses Defteri " + v + ", Android " + Build.VERSION.RELEASE + " (" + Build.VERSION.SDK_INT + "), " + Build.MANUFACTURER + " " + Build.MODEL + "\n" + new String(b, 0, n, "UTF-8") : "";
+            } catch (Exception e) { return ""; }
+        }
         @JavascriptInterface public String lastCrash() {
             java.io.File f = new java.io.File(getFilesDir(), "crash.txt");
             if (!f.exists()) return "";
@@ -581,7 +634,7 @@ public class MainActivity extends Activity implements Player.Listener {
             Str.prefs(MainActivity.this).edit().putString("theme", mode).apply();
             ui(new Runnable() {
                 @Override public void run() {
-                    web.setBackgroundColor(MainActivity.this.isDark() ? 0xFF0F1412 : 0xFFEDF1EE);
+                    if (web != null) web.setBackgroundColor(MainActivity.this.isDark() ? 0xFF0F1412 : 0xFFEDF1EE);
                     applyBars(barMode);
                 }
             });
@@ -842,9 +895,9 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public void plLoop(final double a, final double b) { ui(new Runnable() { @Override public void run() { Player.I.setLoop((long) a, (long) b); } }); }
         @JavascriptInterface public void plSkips(final String id, final String json) { ui(new Runnable() { @Override public void run() { Player.I.setSkips(id, json); } }); }
         @JavascriptInterface public void plSleep(final double ms, final boolean end) { ui(new Runnable() { @Override public void run() { Player.I.setSleep((long) ms, end); } }); }
-        @JavascriptInterface public String tlPlay(String json, double sec) { try { Timeline.play(json, sec); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
+        @JavascriptInterface public String tlPlay(String json, double sec) { try { Player.I.timelineFocus(); Timeline.play(json, sec); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
         /** 2.9: from may be negative (count-in), and play at least until minSec even without clips (metronome) */
-        @JavascriptInterface public String tlPlayFrom(String json, double sec, double minSec) { try { Timeline.fixedClicks = null; Timeline.play(json, sec, Math.round(minSec * Timeline.RATE)); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
+        @JavascriptInterface public String tlPlayFrom(String json, double sec, double minSec) { try { Player.I.timelineFocus(); Timeline.fixedClicks = null; Timeline.play(json, sec, Math.round(minSec * Timeline.RATE)); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
         @JavascriptInterface public void tlUpdate(String json) { try { Timeline.update(json); } catch (Exception ignored) { } }
         @JavascriptInterface public void tlStop() { Timeline.stop(); }
         @JavascriptInterface public double tlPos() { return Timeline.pos(); }

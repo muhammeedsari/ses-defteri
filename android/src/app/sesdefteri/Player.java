@@ -20,6 +20,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
 
+import app.sesdefteri.dsp.Wav;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -69,6 +71,10 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     private int npos = -1;
     private boolean fading;
     private long fadeStart, fadeLen;
+    private long lastCur = -1, stillSince;    // stall watchdog: the position must move while playing
+    private int stalls;                          // restarts of the current track after a stall
+    private boolean noFx;                        // effects off for this track (after a stall)
+    private boolean focusPaused;                 // paused by a short focus loss: resume when focus returns
     private final java.util.IdentityHashMap<MediaPlayer, Object[]> fx = new java.util.IdentityHashMap<>();   // keeps EQ / enhancer alive
 
     private double gainOf(JSONObject it) {
@@ -83,6 +89,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     private void attachFx(MediaPlayer p, JSONObject it) {
         detachFx(p);
         Object[] o = new Object[2];
+        if (noFx && p == mp) { fx.put(p, o); return; }
         try {
             if (eqDb != null) {
                 android.media.audiofx.Equalizer e = new android.media.audiofx.Equalizer(1000, p.getAudioSessionId());   // high priority: the phone's sound packs must not take it over
@@ -152,28 +159,52 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         return p;
     }
 
-    /** prepares the following track (synchronously; local files are quick) */
+    private MediaPlayer preparing;     // the next track while it is being prepared
+    private int preparingPos = -1;
+
+    /** prepares the following track in the background (3.4.6: it was prepared on the main thread, and a slow file froze
+     *  the whole app while repeat / A-B / skipping were being switched) */
     private void prepareNext() {
-        if (nmp != null || mp == null) return;
+        if (nmp != null || preparing != null || mp == null || sleepEnd) return;
         int np = nextPos();
         if (np < 0 || np == pos) return;
-        JSONObject it = queue.optJSONObject(order.get(np));
+        final JSONObject it = queue.optJSONObject(order.get(np));
         if (it == null) return;
         try {
-            MediaPlayer p = newPlayer(it);
-            p.setOnPreparedListener(null);
-            p.prepare();
-            attachFx(p, it);
-            setVol(p, it, xfadeMs > 0 ? 0 : 1);
-            nmp = p; npos = np;
-            if (xfadeMs == 0 && gapless) { try { mp.setNextMediaPlayer(p); } catch (Exception e) { dropNext(); } }
+            final MediaPlayer p = newPlayer(it);
+            p.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+                @Override public void onPrepared(MediaPlayer x) {
+                    synchronized (Player.this) {
+                        if (x != preparing) { try { x.release(); } catch (Exception ignored) { } return; }
+                        preparing = null;
+                        if (mp == null) { try { x.release(); } catch (Exception ignored) { } return; }
+                        attachFx(x, it);
+                        setVol(x, it, xfadeMs > 0 ? 0 : 1);
+                        nmp = x; npos = preparingPos;
+                        if (xfadeMs == 0 && gapless) { try { mp.setNextMediaPlayer(x); } catch (Exception e) { dropNext(); } }
+                    }
+                }
+            });
+            p.setOnErrorListener(new MediaPlayer.OnErrorListener() {
+                @Override public boolean onError(MediaPlayer x, int what, int extra) {
+                    synchronized (Player.this) {
+                        if (x == preparing) preparing = null;
+                        if (x == nmp) { nmp = null; npos = -1; try { if (mp != null) mp.setNextMediaPlayer(null); } catch (Exception ignored) { } }
+                        if (x != mp) { try { x.release(); } catch (Exception ignored) { } return true; }
+                    }
+                    return Player.this.onError(x, what, extra);
+                }
+            });
+            preparing = p; preparingPos = np;
+            p.prepareAsync();
         } catch (Exception e) {
-            nmp = null; npos = -1;
+            preparing = null; nmp = null; npos = -1;
         }
     }
 
     private void dropNext() {
         fading = false;
+        if (preparing != null) { try { preparing.release(); } catch (Exception ignored) { } preparing = null; }
         if (mp != null) try { mp.setNextMediaPlayer(null); } catch (Exception ignored) { }
         if (nmp != null) { detachFx(nmp); try { nmp.release(); } catch (Exception ignored) { } }
         nmp = null; npos = -1;
@@ -184,6 +215,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         MediaPlayer old = mp;
         mp = nmp; pos = npos; nmp = null; npos = -1; fading = false;
         mp.setOnPreparedListener(this);
+        mp.setOnErrorListener(this);
         prepared = true; playing = true; wantPlay = true;
         loopA = loopB = -1;
         setVol(mp, current(), 1);
@@ -203,6 +235,20 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
                 if (!playing || mp == null || !prepared) return;
                 long cur, dur;
                 try { cur = mp.getCurrentPosition(); dur = mp.getDuration(); } catch (Exception e) { return; }
+                // watchdog: "playing" but the position stands still (seen on the phone: the wave trembled, no sound).
+                // Start the track again at that spot without effects; if that does not help, report it.
+                long up = SystemClock.uptimeMillis();
+                if (cur != lastCur || fading || up < seekWait) { lastCur = cur; stillSince = up; }
+                else if (up - stillSince > 2500 && (dur <= 0 || cur < dur - 600)) {
+                    lastCur = -1;
+                    JSONObject it0 = current();
+                    if (stalls++ < 1) {
+                        MainActivity.saveNote(app, "player stalled at " + cur + "/" + dur + " ms, " + describe(it0) + " — restarted without effects");
+                        noFx = true; load(cur, true); return;
+                    }
+                    MainActivity.saveNote(app, "player stalled again at " + cur + "/" + dur + " ms, " + describe(it0));
+                    fallback(it0, cur); return;
+                }
                 // a seek takes a moment and the position still reads the old place meanwhile: seeking again then made the
                 // same seconds repeat and stutter (A-B loop, skipping silence)
                 long now = SystemClock.uptimeMillis();
@@ -267,6 +313,8 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     synchronized void setSleep(long ms, boolean end) {
         sleepAt = ms > 0 ? System.currentTimeMillis() + ms : 0;
         sleepEnd = end;
+        if (end) dropNext();   // the next track must not start by itself (gapless hand-off) when this one should be the last
+        else if (playing && xfadeMs == 0 && gapless) prepareNext();
         if (playing) startPoll(); else if (sleepAt > 0) main.postDelayed(poll, ms + 50);
         emit();
     }
@@ -281,9 +329,33 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     private final AudioManager.OnAudioFocusChangeListener focus = new AudioManager.OnAudioFocusChangeListener() {
         @Override
         public void onAudioFocusChange(int change) {
-            if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) pause();
+            synchronized (Player.this) {
+                if (change == AudioManager.AUDIOFOCUS_LOSS) { focusPaused = false; pause(); abandonFocus(); }
+                else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) { boolean was = playing; pause(); focusPaused = was; }
+                else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) { if (mp != null) try { float v = lin(Math.min(0, gainOf(current()))) * 0.25f; mp.setVolume(v, v); } catch (Exception ignored) { } }
+                else if (change == AudioManager.AUDIOFOCUS_GAIN) {
+                    if (mp != null) setVol(mp, current(), 1);
+                    if (focusPaused) { focusPaused = false; play(); }
+                }
+            }
         }
     };
+
+    private String loadedId = "";
+
+    /** short, file-name-free description for the note */
+    private static String describe(JSONObject it) {
+        if (it == null) return "-";
+        JSONObject src = it.optJSONObject("src");
+        String u = src == null ? "" : src.optString("uri", src.has("path") ? "file:" : "");
+        int c = u.indexOf(':');
+        String name = it.optString("name", it.optString("title", ""));
+        int dot = name.lastIndexOf('.');
+        return (c > 0 ? u.substring(0, c) : "?") + ", " + it.optString("mime", "") + (dot >= 0 ? " " + name.substring(dot) : "")
+            + ", " + it.optLong("dur", 0) + " ms listed, fx " + (eqOn() ? "eq " : "") + "gain " + it.optDouble("gain", 0);
+    }
+
+    private static boolean eqOn() { return I.eqDb != null; }
 
     private Player() { }
 
@@ -347,6 +419,9 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     private void load(long startMs, boolean autoplay) {
         releasePlayer();
         JSONObject it = current();
+        String key = it != null ? it.optString("id") : "";
+        if (!key.equals(loadedId)) { loadedId = key; stalls = 0; noFx = false; }
+        lastCur = -1;
         if (it == null) { emit(); return; }
         prepared = false;
         wantPlay = autoplay;
@@ -403,12 +478,81 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     public boolean onError(MediaPlayer p, int what, int extra) {
         synchronized (this) {
             if (p != mp) return true;
-            error = "play";
-            playing = false;
-            releasePlayer();
-            PlayerService.update(app, false);
-            emit("error");
+            JSONObject it = current();
+            MainActivity.saveNote(app, "player error " + what + "/" + extra + ", " + describe(it));
+            long at = 0;
+            try { at = prepared ? mp.getCurrentPosition() : Math.max(0, pendingSeek); } catch (Exception ignored) { }
+            fallback(it, at);
         }
+        return true;
+    }
+
+    /**
+     * The phone's player could not play this file (error, or it stood still twice): decode it ourselves into a plain
+     * 16-bit stereo WAV in the cache and play that instead. Gives up with an error only when even that fails.
+     */
+    private void fallback(final JSONObject it, final long at) {
+        releasePlayer();
+        if (it == null || it.optBoolean("pcm") || app == null) {
+            error = "play"; playing = false; wantPlay = false;
+            PlayerService.update(app, false); emit("error");
+            return;
+        }
+        playing = false; wantPlay = true; error = "";
+        emit();
+        final JSONObject src = it.optJSONObject("src");
+        new Thread(new Runnable() {
+            @Override public void run() {
+                File out = new File(app.getCacheDir(), "play-" + Math.abs(it.optString("id").hashCode()) + ".wav");
+                boolean ok = false;
+                try { ok = toWav(src, out); } catch (Throwable e) { MainActivity.saveNote(app, "player fallback failed: " + e); }
+                final boolean done = ok;
+                final File f = out;
+                main.post(new Runnable() {
+                    @Override public void run() {
+                        synchronized (Player.this) {
+                            if (current() != it) return;
+                            if (!done) { error = "play"; playing = false; wantPlay = false; PlayerService.update(app, false); emit("error"); return; }
+                            try {
+                                JSONObject s2 = new JSONObject(); s2.put("path", f.getAbsolutePath());
+                                it.put("src", s2); it.put("pcm", true);
+                            } catch (Exception ignored) { }
+                            stalls = 0; noFx = false;
+                            load(at, true);
+                        }
+                    }
+                });
+            }
+        }, "sd-play-wav").start();
+    }
+
+    /** whole file → 16-bit stereo WAV at its own rate */
+    private boolean toWav(JSONObject src, File out) throws Exception {
+        File[] old = app.getCacheDir().listFiles();
+        if (old != null) for (File o : old) if (o.getName().startsWith("play-") && o.getName().endsWith(".wav")) o.delete();
+        final java.io.RandomAccessFile raf = new java.io.RandomAccessFile(out, "rw");
+        final long[] frames = { 0 };
+        final int[] rateOut = { 0 };
+        try {
+            raf.setLength(0);
+            raf.write(new byte[44]);
+            AudioTools.decode(app, src, new AudioTools.PcmSink() {
+                byte[] b = new byte[0];
+                @Override public void pcm(short[] x, int n, int ch, int rate) throws java.io.IOException {
+                    if (rateOut[0] == 0) rateOut[0] = rate;
+                    int fr = n / ch;
+                    if (b.length < fr * 4) b = new byte[fr * 4];
+                    for (int i = 0; i < fr; i++) {
+                        short l = x[i * ch], r = ch > 1 ? x[i * ch + 1] : l;
+                        b[i * 4] = (byte) l; b[i * 4 + 1] = (byte) (l >> 8); b[i * 4 + 2] = (byte) r; b[i * 4 + 3] = (byte) (r >> 8);
+                    }
+                    raf.write(b, 0, fr * 4);
+                    frames[0] += fr;
+                }
+            }, null, null);
+            if (frames[0] == 0) return false;
+            raf.seek(0); raf.write(Wav.header(2, rateOut[0], false, frames[0]));
+        } finally { raf.close(); }
         return true;
     }
 
@@ -443,6 +587,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
 
     synchronized void pause() {
         wantPlay = false;
+        focusPaused = false;
         if (fading) dropNext();
         if (mp != null && prepared && playing) {
             try { mp.pause(); } catch (Exception ignored) { }
@@ -704,6 +849,29 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
             r = am.requestAudioFocus(focus, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
         }
         return r != AudioManager.AUDIOFOCUS_REQUEST_FAILED;
+    }
+
+    /* 3.4.6: the editor's and Clean's previews (Timeline) also give way when another app starts playing */
+    private AudioFocusRequest tlReq;
+    private final AudioManager.OnAudioFocusChangeListener tlFocus = new AudioManager.OnAudioFocusChangeListener() {
+        @Override public void onAudioFocusChange(int change) {
+            if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) Timeline.stop();
+        }
+    };
+
+    void timelineFocus() {
+        if (app == null) return;
+        AudioManager am = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
+        if (am == null) return;
+        try {
+            if (Build.VERSION.SDK_INT >= 26) {
+                if (tlReq == null) tlReq = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                    .setOnAudioFocusChangeListener(tlFocus).build();
+                am.requestAudioFocus(tlReq);
+            } else am.requestAudioFocus(tlFocus, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+        } catch (Exception ignored) { }
     }
 
     private void abandonFocus() {

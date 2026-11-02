@@ -208,6 +208,7 @@
 <script src="i18n24.js"></script>
 <script src="i18n25.js"></script>
 <script src="i18n26.js"></script>
+<script src="i18n27.js"></script>
 <script>
 (() => {
 'use strict';
@@ -218,7 +219,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.4.5';
+const VERSION = '3.4.6';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -484,7 +485,7 @@ window.__sdPerm = (kind, ok, blocked) => {
   if (kind === 'media') { S.media = !!ok; S.mediaBlocked = !!blocked; }
   const f = PERM[kind]; PERM[kind] = null; if (f) f(!!ok);
 };
-window.__sdBusy = msg => toast(msg, 0);
+window.__sdBusy = msg => toast(typeof msg === 'number' ? (msg > 1 ? t('adding', { n: msg }) : t('addingOne')) : msg, 0);
 
 /** The phone's own player behind the same small surface the page uses for an <audio> element. */
 class NativeAudio extends EventTarget {
@@ -494,12 +495,16 @@ class NativeAudio extends EventTarget {
     this.at = performance.now(); this.src = ''; this._rate = 1; this.poll = 0;
   }
   get paused() { return !(this.st.playing || this.st.want); }
+  // 3.4.6: run the clock on only while the phone reports the position moving, and never step back by a hair:
+  // the wave trembled when the player said "playing" but the sound had not started yet
   get currentTime() {
     let p = this.st.pos / 1000;
-    if (this.st.playing) p += (performance.now() - this.at) / 1000 * (this.st.rate || 1);
+    if (this.st.playing && this.moving) p += Math.min(1, (performance.now() - this.at) / 1000) * (this.st.rate || 1);
+    if (this.shown != null && p < this.shown && this.shown - p < 0.8) p = this.shown;
+    this.shown = p;
     const d = this.duration; return d ? Math.min(p, d) : p;
   }
-  set currentTime(v) { const ms = Math.max(0, v * 1000); this.st.pos = ms; this.at = performance.now(); try { AND.plSeek(ms); } catch (e) {} }
+  set currentTime(v) { const ms = Math.max(0, v * 1000); this.st.pos = ms; this.at = performance.now(); this.shown = null; this.moving = false; try { AND.plSeek(ms); } catch (e) {} }
   get duration() { return (this.st.dur || 0) / 1000; }
   get playbackRate() { return this._rate; }
   set playbackRate(r) { this._rate = r; this.st.rate = r; try { AND.plRate(r); } catch (e) {} this.emit('ratechange'); }
@@ -518,6 +523,7 @@ class NativeAudio extends EventTarget {
   queue(items, index, startSec, autoplay) {
     const it = items[index] || {};
     this.src = it.id || '';
+    this.shown = null; this.moving = false;
     try { AND.plQueue(JSON.stringify(items), index, (startSec || 0) * 1000, !!autoplay); } catch (e) {}
     try { AND.plRate(this._rate); } catch (e) {}
     const was = this.st.playing || this.st.want;
@@ -530,7 +536,9 @@ class NativeAudio extends EventTarget {
   emit(type) { this.dispatchEvent(new Event(type)); }
   apply(st, kind) {
     if (!st) return;
-    const wasOn = this.st.playing || this.st.want, prevId = this.st.id, prevDur = this.st.dur;
+    const wasOn = this.st.playing || this.st.want, prevId = this.st.id, prevDur = this.st.dur, prevPos = this.st.pos;
+    this.moving = !!st.playing && st.id === prevId && st.pos > prevPos && st.pos - prevPos < 3000;
+    if (st.id !== prevId || kind === 'seeked' || !st.playing) this.shown = null;
     this.st = st; this.at = performance.now();
     if (st.rate) this._rate = st.rate;
     this.src = st.id || '';
@@ -909,7 +917,7 @@ function openSettings() {
       <div><button class="btn sm" type="button" id="openTrash">${esc(t('trash'))} (${trashItems().length})</button></div></div>` : ''}
     <p class="about">Ses Defteri ${VERSION}</p>
     <p class="about">${esc(t('licenses'))}</p>
-    <div class="about-btns"><button class="btn sm" type="button" id="setPriv">${esc(t('privacy'))}</button><button class="btn sm" type="button" id="setFeed">${esc(t('feedback'))}</button></div>
+    <div class="about-btns"><button class="btn sm" type="button" id="setPriv">${esc(t('privacy'))}</button><button class="btn sm" type="button" id="setFeed">${esc(t('feedback'))}</button>${NATIVE ? `<button class="btn sm" type="button" id="setNote">${esc(t('probNote'))}</button>` : ''}</div>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" id="setDone">${esc(t('ok'))}</button></div>`);
   card.querySelector('#setDone').onclick = closeModal;
   card.addEventListener('click', e => {
@@ -956,6 +964,12 @@ function openSettings() {
   const ms = card.querySelector('#setMinSong'); if (ms) ms.onchange = () => { S.minSong = +ms.value; ls.set('minSong', S.minSong); render(); };
   const pin = card.querySelector('#setPin'); if (pin) pin.onclick = () => { let ok = false; try { ok = AND.pinRecShortcut(t('recShort')); } catch (e) {} if (!ok) toast(t('setPinNo'), 4500); };
   card.querySelector('#setPriv').onclick = openPrivacy; card.querySelector('#setFeed').onclick = openFeedback;
+  // 3.4.6: what went wrong without a crash (player stalls, failed downloads): the user sends it when they want to
+  if (card.querySelector('#setNote')) card.querySelector('#setNote').onclick = () => {
+    let n = ''; try { n = AND.takeNotes ? AND.takeNotes() : ''; } catch (e) {}
+    if (!n) { toast(t('probNoteNone'), 3000); return; }
+    try { AND.shareText('ses-defteri-not.txt', n, 'text/plain'); } catch (e) {}
+  };
   bind('#setQ', 'recQuality'); bind('#setMic', 'micSrc'); bind('#setCall', 'callPause'); bind('#setAuto', 'autoClean'); bind('#setFmt', 'fmt'); bind('#setRecFmt', 'recFmt');
   const st = card.querySelector('#setStr'); if (st) st.onchange = () => { CL.strength = +st.value; ls.set('clStrength', CL.strength); };
   const tr = card.querySelector('#setTrash'); if (tr) tr.onchange = () => { S.trashDays = +tr.value; ls.set('trashDays', S.trashDays); purgeTrash().then(() => render(), () => {}); };
@@ -1399,6 +1413,7 @@ async function loadAudio(r, autoplay) {
   if (NATIVE && r.src) {
     const start = r.pos && r.duration && r.pos < r.duration - 5 ? r.pos : 0;
     audio.queue([qItem(r)], 0, start, !!autoplay);
+    levelMatch(r); sendSkips(r); abReset();
     return true;
   }
   audio.pause();
@@ -1418,6 +1433,7 @@ audio.addEventListener('loadedmetadata', () => {
   updateTimes(); drawPlayer();
 });
 audio.addEventListener('durationchange', () => {
+  { const r = curRec(), d = audio.duration; if (r && !fixing && isFinite(d) && d > 0 && !(r.duration > 0)) { r.duration = d; if (kindOf(r) === 'rec') saveRec(r); } }
   if (fixing && isFinite(audio.duration)) {
     fixing = false; audio.currentTime = 0;
     const r = curRec(); if (r && Math.abs((r.duration || 0) - audio.duration) > 0.5) { r.duration = audio.duration; saveRec(r); }
@@ -1432,6 +1448,7 @@ audio.addEventListener('ratechange', () => { $('#plSpeed').innerHTML = `<span cl
 audio.addEventListener('trackchange', () => {
   setCur(audio.src);
   const r = curRec();
+  if (r) { levelMatch(r); sendSkips(r); abReset(); }
   if (r && plOpen()) { fillPlayer(r); ensurePeaksUI(r); }
   updateMini(); renderCollRows(); if (S.tab !== 'music') renderList();
 });
@@ -1749,7 +1766,14 @@ function sendSkips(r) {
   if (!NATIVE || !r) return;
   const pk = S.peaks.get(r.id);
   let arr = [];
-  if (S.skipSil && isComplete(pk)) for (const [a, b] of findSilences(pk, r.duration || 0, -45, 0.8)) arr.push(Math.round(a * 1000), Math.round(b * 1000));
+  if (S.skipSil && isComplete(pk)) {
+    // 3.4.6: silence = near the recording's own quiet floor (a fixed −45 dB missed every pause with room noise)
+    const v = Array.from(pk.data).filter(x => x > 0).sort((a, b) => a - b);
+    const floor = v.length ? v[Math.floor(v.length * 0.1)] / 255 : 0, lin = floor * floor;
+    const thr = clamp(20 * Math.log10(Math.max(1e-5, lin * 2.2)), -50, -28);
+    const d = r.duration || curDur();
+    for (const [a, b] of findSilences(pk, d, thr, 0.8)) arr.push(Math.round(a * 1000), Math.round(b * 1000));
+  }
   try { AND.plSkips(r.id, JSON.stringify(arr)); } catch (e) {}
 }
 const AB = { a: null, on: false };
@@ -1772,14 +1796,14 @@ $('#plSkip').addEventListener('click', () => {
 let sleepAt = 0, sleepEnd = false;
 function sleepLabel() {
   const b = $('#plSleep'); if (!b) return;
-  const left = sleepAt ? Math.max(0, Math.ceil((sleepAt - Date.now()) / 60000)) : 0;
+  const left = sleepAt ? Math.max(0, Math.ceil((sleepAt - Date.now()) / 1000)) : 0;
   if (sleepAt && left <= 0) sleepAt = 0;
-  b.innerHTML = ic('moon') + esc(sleepEnd ? t('sleepEndOn') : sleepAt ? t('sleepLeft', { n: left }) : t('sleep'));
+  b.innerHTML = ic('moon') + esc(sleepEnd ? t('sleepEndOn') : sleepAt ? t('sleepIn', { t: fmt(left) }) : t('sleep'));
   b.setAttribute('aria-pressed', !!(sleepAt || sleepEnd));
 }
-setInterval(sleepLabel, 20000);
+setInterval(() => { if (sleepAt && plOpen()) sleepLabel(); }, 1000);
 $('#plSleep').addEventListener('click', async () => {
-  const v = await chooseBox(t('sleep'), t('sleepD'), [['0', 'off'], ['15', 'sleep15'], ['30', 'sleep30'], ['45', 'sleep45'], ['60', 'sleep60'], ['end', 'sleepEnd']].map(([x, k]) => ({ value: x, label: t(k, { n: x }), desc: '' })));
+  const v = await chooseBox(t('sleep'), t('sleepD'), [['0', 'off'], ['5', 'sleep5'], ['15', 'sleep15'], ['30', 'sleep30'], ['45', 'sleep45'], ['60', 'sleep60'], ['end', 'sleepEnd']].map(([x, k]) => ({ value: x, label: t(k, { n: x }), desc: '' })));
   if (v == null) return;
   sleepEnd = v === 'end';
   const ms = sleepEnd || v === '0' ? 0 : +v * 60000;
