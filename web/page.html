@@ -816,7 +816,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.5';
+const VERSION = '3.5.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -2988,7 +2988,7 @@ function tlXfOk(c) {
   for (const d of o) {
     const da = d.at, db = da + tlLen(d);
     if (!((da < a && db < b) || (da > a && db > b))) return false;
-    if (Math.min(b, db) - Math.max(a, da) > Math.min(tlLen(c), tlLen(d)) / 2) return false;
+    if (Math.min(b, db) - Math.max(a, da) > Math.min(3, tlLen(c) / 2, tlLen(d) / 2)) return false;   // 3.5.1: a longer overlap is a mistake, not a crossfade
   }
   if (o.length === 2) { const [p, q] = o[0].at < o[1].at ? o : [o[1], o[0]]; if (p.at + tlLen(p) > q.at + 0.001) return false; }
   return true;
