@@ -53,6 +53,7 @@
 </div>
 
 <div class="dock">
+  <div class="mini selbar" id="selBar" hidden></div>
   <div class="mini" id="mini" hidden>
     <span class="art" id="miniArt" hidden></span>
     <button class="icon-btn play-s" id="miniPlay" type="button" data-ta="play"></button>
@@ -221,7 +222,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.4.7';
+const VERSION = '3.5';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -442,13 +443,13 @@ const recItems = () => visibleItems().filter(it => kindOf(it) === 'rec');
 const musicItems = () => visibleItems().filter(it => kindOf(it) === 'music' && !(S.minSong && it.duration > 0 && it.duration < S.minSong));
 const META_KEYS = ['id', 'title', 'userTitle', 'created', 'duration', 'mime', 'size', 'categoryId', 'notes', 'bookmarks', 'fav', 'peaks',
   'source', 'mode', 'sample', 'fileName', 'kind', 'pos', 'src',
-  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose', 'trashed', 'lufs'];
+  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose', 'trashed', 'lufs', 'cats', 'cover', 'uArtist'];
 function metaOf(it) { const o = {}; for (const k of META_KEYS) if (it[k] !== undefined) o[k] = it[k]; return o; }
 const saveRec = r => db.put('recordings', metaOf(r)).catch(() => toast(t('saveFail')));
 function fromNative(n, meta) {
   const it = Object.assign({}, meta || {});
   it.id = n.id; it.src = n.src; it.mediaId = n.mediaId;
-  it.artist = n.artist || ''; it.album = n.album || ''; it.albumId = n.albumId != null ? n.albumId : -1;
+  it.artist = it.uArtist || n.artist || ''; it.album = n.album || ''; it.albumId = n.albumId != null ? n.albumId : -1;
   it.folder = n.folder || ''; it.name = n.name || ''; it.music = !!n.music; it.rec = !!n.rec; it.own = !!n.own;
   it.mime = n.mime || it.mime || ''; it.size = n.size || it.size || 0;
   if (!(meta && meta.userTitle)) it.title = n.title || n.name || 'Ses';
@@ -780,16 +781,17 @@ const hideToast = () => { $('#toast').hidden = true; };
 
 /* ---------- overlays + back button ---------- */
 const stack = [];
+let SEL = null;
 let armed = false, pendingBack = false;
 function arm() { if (IN_FRAME || armed || pendingBack) return; try { history.pushState({ sd: 1 }, ''); armed = true; } catch (e) {} }
 function disarm() { if (IN_FRAME || !armed) return; armed = false; pendingBack = true; try { history.back(); } catch (e) { pendingBack = false; } }
 addEventListener('popstate', () => {
-  if (pendingBack) { pendingBack = false; if (stack.length) arm(); return; }
+  if (pendingBack) { pendingBack = false; if (stack.length || SEL) arm(); return; }
   if (!armed) return;
   armed = false;
   const top = stack[stack.length - 1];
-  if (top) closeOverlay(top, true);
-  if (stack.length) arm();
+  if (top) closeOverlay(top, true); else if (SEL) selEnd(true);
+  if (stack.length || SEL) arm();
 });
 const elOf = n => ({ rec: $('#recSheet'), player: $('#player'), modal: $('#modal'), coll: $('#coll') })[n];
 function openOverlay(n) {
@@ -816,7 +818,7 @@ function closeOverlay(n, fromPop) {
   if (n === 'modal') { const f = modalOnClose; modalOnClose = null; if (f) f(); }
   if (n === 'player') onPlayerClosed();
   if (!stack.length) document.body.classList.remove('locked');
-  if (!fromPop && !stack.length) disarm();
+  if (!fromPop && !stack.length && !SEL) disarm();
   updateMini();
   return true;
 }
@@ -1006,8 +1008,8 @@ function matchRec(r, q) {
 function visibleRecs() {
   let r = recItems();
   if (S.filter === 'fav') r = r.filter(x => x.fav);
-  else if (S.filter === 'none') r = r.filter(x => !catById(x.categoryId));
-  else if (S.filter !== 'all') r = r.filter(x => x.categoryId === S.filter);
+  else if (S.filter === 'none') r = r.filter(x => !catsOf(x).length);
+  else if (S.filter !== 'all') r = r.filter(x => inCat(x, S.filter));
   const q = norm(S.q.trim());
   r.forEach(x => { x._hit = null; });
   if (q) r = r.filter(x => (x._hit = matchRec(x, q)));
@@ -1060,11 +1062,12 @@ function rowHTML(r) {
   if (r.enh) sub += `<span class="enh-dot" title="${esc(t('enhAuto'))}">${ic('spark', 1.6)}</span>`;
   const bz = BUSY.get(r.id);
   if (bz) sub += `<span class="busy-pill" data-busy="${esc(r.id)}">${esc(busyLabel(bz))}</span>`;
-  return `<article class="rec${S.cur === r.id && !audio.paused ? ' playing' : ''}">
+  return `<article class="rec${S.cur === r.id && !audio.paused ? ' playing' : ''}${SEL && SEL.has(r.id) ? ' picked' : ''}">
     <button class="rec-open" type="button" data-open="${esc(r.id)}">
       <span class="rec-top"><span class="rec-title">${esc(r.title)}</span>${r.sample ? `<span class="pill">${esc(t('sample'))}</span>` : ''}${r.cleaned ? `<span class="pill">${esc(t('clTag'))}</span>` : ''}</span>
       <span class="rec-sub">${sub}</span>${hitLine(r)}${miniWave(r)}
     </button>
+    <button class="rec-more" type="button" data-rmenu="${esc(r.id)}" aria-label="${esc(t('more'))}">${ic('dots')}</button>
     <button class="fav-btn${r.fav ? ' on' : ''}" type="button" data-fav="${esc(r.id)}" aria-pressed="${!!r.fav}" aria-label="${esc(t('fav'))}">${ic(r.fav ? 'starFill' : 'star')}</button>
   </article>`;
 }
@@ -1110,11 +1113,11 @@ function renderChips() {
   }
   const all = recItems();
   const count = f => all.filter(f).length;
-  const none = count(r => !catById(r.categoryId));
+  const none = count(r => !catsOf(r).length);
   const items = [
     { id: 'all', name: t('all'), n: all.length },
     { id: 'fav', name: t('favs'), n: count(r => r.fav), icon: 'star' },
-    ...S.cats.map(c => ({ id: c.id, name: c.name, n: count(r => r.categoryId === c.id), color: c.color }))
+    ...S.cats.map(c => ({ id: c.id, name: c.name, n: count(r => inCat(r, c.id)), color: c.color }))
   ];
   if (S.cats.length && none) items.push({ id: 'none', name: t('uncategorized'), n: none });
   if (!items.some(i => i.id === S.filter)) S.filter = 'all';
@@ -1148,7 +1151,7 @@ function render() { renderTabs(); renderChips(); renderList(); renderSummary(); 
 $('#tabs').addEventListener('click', e => {
   const b = e.target.closest('[data-tab]'); if (!b) return;
   if (b.dataset.tab !== 'edit') tlStop();
-  S.tab = b.dataset.tab; ls.set('tab', S.tab); listLimit = 120; musicLimit = 150; render(); scrollTo(0, 0);
+  selEnd(); S.tab = b.dataset.tab; ls.set('tab', S.tab); listLimit = 120; musicLimit = 150; render(); scrollTo(0, 0);
 });
 $('#chips').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
@@ -1175,11 +1178,11 @@ function hue(s) { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCode
 function artEl(s, id) {
   // the letter sits under the cover; the cover removes itself when the phone has none
   const letter = esc(((s.album || s.title || '?').trim()[0] || '?').toLocaleUpperCase(LOC));
-  const img = NATIVE && s.albumId >= 0 ? `<img src="/__art/${s.albumId}" alt="" loading="lazy" onerror="this.remove()">` : '';
+  const img = s.cover ? `<img src="${s.cover}" alt="">` : NATIVE && s.albumId >= 0 ? `<img src="/__art/${s.albumId}" alt="" loading="lazy" onerror="this.remove()">` : '';
   return `<span class="art"${id ? ` id="${id}"` : ''} style="background:hsl(${hue(s.album || s.title)} 30% 50% / .22)">${letter}${img}</span>`;
 }
 function songRow(s, i, listKey) {
-  return `<button class="song${S.cur === s.id ? ' on' : ''}" type="button" data-song="${i}" data-list="${listKey}">${artEl(s)}
+  return `<button class="song${S.cur === s.id ? ' on' : ''}${SEL && SEL.has(s.id) ? ' picked' : ''}" type="button" data-song="${i}" data-list="${listKey}">${artEl(s)}
     <span class="song-txt"><b>${esc(s.title)}</b><span>${esc(artistOf(s))}${s.album ? ' · ' + esc(s.album) : ''}</span></span>
     <span class="dur tc">${fmt(s.duration)}</span><span class="song-more" role="button" tabindex="0" data-smenu="${i}" data-list="${listKey}" aria-label="${esc(t('more'))}">${ic('dots')}</span></button>`;
 }
@@ -2003,36 +2006,7 @@ async function forgetItem(id) {
   await db.del('recordings', id).catch(() => {}); await db.del('blobs', id).catch(() => {}); await db.del('peaks', id).catch(() => {});
   await db.del('texts', id).catch(() => {}); await db.del('beats', id).catch(() => {});
 }
-$('#plDelete').addEventListener('click', async () => {
-  const r = curRec(); if (!r) return;
-  const other = NATIVE && r.src && !r.own;
-  const soft = NATIVE && r.src && r.own && S.trashDays > 0 && kindOf(r) === 'rec';
-  const ok = await confirmBox({ title: t('delQ'), text: soft ? t('delTrash', { title: r.title, n: S.trashDays }) : t(other ? 'delOther' : 'delOwn', { title: r.title }) + (r.origId ? ' ' + t('delAlsoOrig') : ''), ok: t('delete'), danger: true });
-  if (!ok) return;
-  if (soft) {
-    if (!audio.paused) audio.pause();
-    r.trashed = Date.now(); await saveRec(r);
-    S.cur = null; S.miniOn = false;
-    closeOverlay('player'); render(); toast(t('toTrash'), 3500);
-    return;
-  }
-  if (NATIVE && r.src) {
-    audio.removeAttribute('src');
-    let res = null;
-    try { res = await nativeCall(() => AND.deleteMedia(JSON.stringify(r.src))); } catch (e) { res = e.result || null; }
-    if (!res || !res.deleted) { toast(t(res && res.reason === 'denied' ? 'delDenied' : 'delFail')); return; }
-  } else {
-    audio.pause(); audio.removeAttribute('src'); try { audio.load(); } catch (e) {}
-    if (curURL) { URL.revokeObjectURL(curURL); curURL = null; }
-  }
-  await forgetItem(r.id);
-  if (NATIVE && r.origId && r.origSrc) {
-    try { await nativeCall(() => AND.deleteMedia(JSON.stringify(r.origSrc))); } catch (e) {}
-    await forgetItem(r.origId);
-  }
-  S.cur = null; S.miniOn = false;
-  closeOverlay('player'); render(); toast(t('deleted'));
-});
+$('#plDelete').addEventListener('click', async () => { const r = curRec(); if (r && await delItems([r])) closeOverlay('player'); });
 
 /* ---------- studio: automatic enhancement, speech-to-text, tempo, speed/pitch, music, export ---------- */
 const BUSY = new Map();                 // item id → { kind, p }
@@ -2374,9 +2348,10 @@ function tlUndo(redo) {
   tlChanged();
 }
 function tlClean() {
-  const keep = new Set(TL.p.clips.map(c => c.path)), cb = tlClip();
+  const keep = new Set(), cb = tlClip(), add = c => { keep.add(c.path); if (c.prev) keep.add(c.prev); };
+  TL.p.clips.forEach(add);
   if (cb) keep.add(cb.path);
-  for (const s of TL.undo.concat(TL.redo)) try { for (const c of JSON.parse(s).clips) keep.add(c.path); } catch (e) {}
+  for (const s of TL.undo.concat(TL.redo)) try { JSON.parse(s).clips.forEach(add); } catch (e) {}
   try { runJob('tlClean', { keep: [...keep], since: Date.now() - 60000 }).catch(() => {}); } catch (e) {}
 }
 /** what the native mixer plays: one entry per audible clip */
@@ -2677,9 +2652,12 @@ async function tlEffect(c, op, extra) {
     if (op === 'speed') { const f = nd / c.dur; c.in *= f; c.out = Math.min(nd, c.out * f); c.fi *= f; c.fo *= f; if (c.env) c.env = c.env.map(([x, d]) => [x * f, d]); }
     else { c.in = 0; c.out = nd; delete c.env; }
   }
-  Object.assign(c, { path: res.path, dur: nd, ch: res.ch });
+  const old = c.path, same = Math.abs(nd - c.dur) < 0.01;
+  Object.assign(c, { path: res.path, dur: nd, ch: res.ch, prev: old });
+  delete c.chg;
   c.out = Math.min(c.out, nd); c.in = Math.min(c.in, c.out - 0.05);
   c.fx = (c.fx || []).concat([{ op, r: wsReport(op, res) || '' }]);
+  if (same) tlDiff(c.id, old, res.path);
   if (op === 'eq' && S.learnVoice && res.report && res.report.tone) addVoiceProfile(res.report.tone);
   tlCommit(before);
   toast(wsReport(op, res) || t('wsDone'), 3500);
@@ -2837,13 +2815,15 @@ function renderTlBar() {
   const c = tlSel(), dis = TL.busy ? ' disabled' : '';
   const b = (k, icn, lab, extra) => `<button class="tool" type="button" data-tl="${k}"${dis}${extra || ''}>${ic(icn)}${esc(lab)}</button>`;
   if (c && TL.env) {
+    bar.classList.remove('two');
     bar.innerHTML = b('envDone', 'check', t('tlDone')) + ((c.env || []).length ? b('envReset', 'trash', t('envReset')) : '') + `<span class="hint">${esc(t('envHint'))}</span>`;
     tlFxList(); return;
   }
   TL.env = false;
+  bar.classList.toggle('two', !TL.rec);
   bar.innerHTML = c
-    ? b('done', 'check', t('tlDone')) + b('split', 'scissors', t('tlSplit')) + b('env', 'envl', t('tlEnv')) + b('clarify', 'spark', t('op_clarify')) + b('spec', 'spec', t('tlSpec')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
-      b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('bass', 'wave', t('tlBass')) + b('treble', 'spark', t('tlTreble')) + b('sep', 'mixer', t('tlSep')) + b('spk', 'people', t('tlSpk')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack')) + b('del', 'trash', t('tlDelete'))
+    ? b('done', 'check', t('tlDone')) + b('del', 'trash', t('tlDelete')) + b('split', 'scissors', t('tlSplit')) + (c.prev ? b('ab', 'ear', t('tlAB')) : '') + b('env', 'envl', t('tlEnv')) + b('clarify', 'spark', t('op_clarify')) + b('spec', 'spec', t('tlSpec')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
+      b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('bass', 'wave', t('tlBass')) + b('treble', 'spark', t('tlTreble')) + b('sep', 'mixer', t('tlSep')) + b('spk', 'people', t('tlSpk')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack'))
     : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + b('sfx', 'bell', t('tlSfx')) + b('tts', 'speak', t('tlTts')) + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('metro', 'beat', t('tlClick')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
   tlFxList();
   if (TL.rec) bar.innerHTML = `<button class="btn danger-fill" type="button" data-tl="rec">${ic('pause')} ${esc(t('tlRecStop'))} <span class="tc" id="tlRecT"></span></button><span class="hint">${esc(t('tlRecHint'))}</span>`;
@@ -2910,6 +2890,11 @@ function drawTl() {
     for (let x = a; x < z; x += 3) {
       const s = k.in + (x - x0) / pps, v = pk ? level(pk, s, s + 3 / pps) : 0, bh = Math.max(1, v * amp * 2);
       ctx.fillRect(x, mid - bh / 2, 2, bh);
+    }
+    if (k.chg && k.chg.length) {
+      ctx.fillStyle = COL.rec;
+      for (const [p0, p1] of k.chg) { const u = Math.max(x0 + (p0 - k.in) * pps, x0 + 2), v = Math.min(x0 + (p1 - k.in) * pps, x1 - 2); if (v > u) ctx.fillRect(u, y + hh - 4, Math.max(2, v - u), 3); }
+      ctx.fillStyle = COL.accent;
     }
     if (k.beats && k.beats.length) {
       ctx.fillStyle = COL.ink; ctx.globalAlpha = (tr.mute ? 0.35 : 1) * 0.55;
@@ -3179,6 +3164,7 @@ $('#editTab').addEventListener('click', e => {
   else if (k === 'speed') tlSpeed();
   else if (k === 'clarify') tlClarify();
   else if (k === 'spec') tlSpec();
+  else if (k === 'ab') tlAB();
   else if (k === 'track') tlTrack();
   else if (k === 'sep') tlSep();
   else if (k === 'spk') tlSpk();
@@ -3607,7 +3593,7 @@ async function tlSpec() {
   const L = Math.min(tlLen(c), 20), SP = { boxes: [], mode: ls.get('spMode', 'blend'), img: null, w0: 0, w1: 0, fmax: 20000, rows: 160, drag: null, raf: 0 };
   const setWin = s => { SP.w0 = clamp(s, c.in, Math.max(c.in, c.out - L)); SP.w1 = SP.w0 + L; };
   setWin(c.in + (TL.pos - c.at) - L / 2);
-  const card = openModal(`<h3>${esc(t('tlSpec'))}</h3><p class="mtext">${esc(t('specHint'))}</p>
+  const card = openModal(`<h3>${esc(t('tlSpec'))}</h3><p class="mtext">${esc(t('specHint'))}</p><p class="mtext" style="font-size:12.5px">${esc(t('specRead'))}</p>
     <canvas class="sp-cv" id="spCv"></canvas>
     <div class="sp-nav"><button class="icon-btn" type="button" data-sp="prev" aria-label="${esc(t('specPrev'))}">${ic('prev')}</button><span class="tc" id="spT"></span><button class="icon-btn" type="button" data-sp="next" aria-label="${esc(t('specNext'))}">${ic('next')}</button></div>
     <div class="seg2" role="radiogroup">${['blend', 'mute'].map(v => `<button type="button" role="radio" data-spm="${v}" aria-checked="${SP.mode === v}">${esc(t('spm_' + v))}</button>`).join('')}</div>
@@ -4733,7 +4719,7 @@ function playlistsHTML() {
 async function plCreate(firstId) {
   const name = await promptBox(t('plNew'), t('plDefault', { n: S.playlists.length + 1 }));
   if (!name) return null;
-  const pl = { id: uid(), name, ids: firstId ? [firstId] : [] };
+  const pl = { id: uid(), name, ids: firstId ? [].concat(firstId) : [] };
   S.playlists.push(pl); plSave();
   if (S.tab === 'music') renderMusic();
   if (firstId) toast(t('plAdded', { x: name }));
@@ -4752,12 +4738,13 @@ async function plDelete(id) {
   closeOverlay('coll'); renderMusic();
 }
 async function plAdd(s) {
+  const list = [].concat(s);
   const v = await chooseBox(t('plAddTo'), '', S.playlists.map(pl => ({ value: pl.id, label: pl.name, desc: t('nSongs', { n: pl.ids.length }) }))
     .concat([{ value: '+', label: '+ ' + t('plNew'), desc: '' }]));
   if (!v) return;
-  if (v === '+') { await plCreate(s.id); return; }
+  if (v === '+') { await plCreate(list.map(x => x.id)); return; }
   const pl = S.playlists.find(x => x.id === v); if (!pl) return;
-  if (!pl.ids.includes(s.id)) pl.ids.push(s.id);
+  for (const x of list) if (!pl.ids.includes(x.id)) pl.ids.push(x.id);
   plSave(); toast(t('plAdded', { x: pl.name }));
 }
 /** "play next" / "add to queue" go to the native queue; with nothing loaded the song simply starts */
@@ -4767,16 +4754,7 @@ function enqueue(s, next) {
   audio.st.count++;
   toast(t(next ? 'qNextDone' : 'qAddDone'));
 }
-async function songMenu(s) {
-  if (!s) return;
-  const inPl = stack.includes('coll') && collState && collState.type === 'pl' ? S.playlists.find(x => x.id === collState.key) : null;
-  const opts = [{ value: 'next', label: t('qNext'), desc: '' }, { value: 'add', label: t('qAdd'), desc: '' }, { value: 'pl', label: t('plAddTo'), desc: '' }];
-  if (inPl) opts.push({ value: 'rm', label: t('plRemove'), desc: inPl.name });
-  const v = await chooseBox(s.title, artistOf(s), opts);
-  if (v === 'next' || v === 'add') enqueue(s, v === 'next');
-  else if (v === 'pl') plAdd(s);
-  else if (v === 'rm' && inPl) { inPl.ids = inPl.ids.filter(id => id !== s.id); plSave(); renderColl(); }
-}
+const songMenu = s => itemMenu(s);
 
 /* after a recording: long silences (over 2 s) shrink, the original is replaced */
 async function silenceCut(it) {
@@ -4812,6 +4790,217 @@ function openPrivacy() {
 function openFeedback() {
   if (AND && AND.openUrl) { try { AND.openUrl(FEEDBACK_URL); return; } catch (e) {} }
   try { window.open(FEEDBACK_URL, '_blank', 'noopener'); } catch (e) {}
+}
+
+/* ---------- 3.5: long-press / ⋮ menu on recordings and songs, selecting several, before/after in the editor ---------- */
+const catsOf = r => [r.categoryId].concat(r.cats || []).filter(id => catById(id));
+const inCat = (r, id) => r.categoryId === id || (r.cats || []).includes(id);
+/** the recording or song a row stands for */
+function rowItem(el) {
+  if (el.dataset.open || el.dataset.rmenu) return S.items.get(el.dataset.open || el.dataset.rmenu);
+  const i = el.dataset.song != null ? el.dataset.song : el.dataset.smenu;
+  return i != null ? (LISTS[el.dataset.list] || [])[+i] : null;
+}
+async function itemMenu(r) {
+  if (!r) return;
+  const music = kindOf(r) === 'music', nat = NATIVE && r.src;
+  const inPl = stack.includes('coll') && collState && collState.type === 'pl' ? S.playlists.find(x => x.id === collState.key) : null;
+  const o = (value, key, desc) => ({ value, label: t(key), desc: desc || '' }), opts = [];
+  if (music && NATIVE) opts.push(o('next', 'qNext'), o('add', 'qAdd'));
+  opts.push(o('sel', 'imSelect', t('imSelectD')), o('ren', 'imRename'));
+  if (!music) opts.push(o('cat', 'imCats', catsOf(r).map(id => catById(id).name).join(', ')));
+  opts.push(o('pl', 'plAddTo'));
+  if (inPl) opts.push(o('rm', 'plRemove', inPl.name));
+  if (nat) opts.push(o('share', 'share'), o('copy', 'imCopy', t('imCopyD')), o('saveas', 'imSaveAs', t('imSaveAsD')));
+  opts.push(o('move', music ? 'imToRec' : 'imToMusic'));
+  if (music) { opts.push(o('artist', 'imArtist', artistOf(r)), o('cover', 'imCover')); if (r.cover) opts.push(o('coverX', 'imCoverX')); }
+  opts.push(o('del', 'delete'));
+  const v = await chooseBox(r.title, music ? artistOf(r) : `${dfTime.format(r.created)} · ${fmt(r.duration)}`, opts);
+  if (!v) return;
+  const redraw = () => { render(); if (stack.includes('coll')) renderColl(); };
+  if (v === 'next' || v === 'add') enqueue(r, v === 'next');
+  else if (v === 'sel') selStart(r.id);
+  else if (v === 'ren') { const n = await promptBox(t('imRename'), r.title); if (n) { r.title = n; r.userTitle = true; await saveRec(r); redraw(); } }
+  else if (v === 'cat') setCats([r]);
+  else if (v === 'pl') plAdd(r);
+  else if (v === 'rm' && inPl) { inPl.ids = inPl.ids.filter(id => id !== r.id); plSave(); renderColl(); }
+  else if (v === 'share') shareItems([r]);
+  else if (v === 'copy') copyItem(r, null);
+  else if (v === 'saveas') {
+    const f = await chooseBox(t('exFmt'), t('imSaveAsD'), FMTS().map(x => ({ value: x, label: fmtLabel(x), desc: t('exq_' + x) })));
+    if (f) copyItem(r, f);
+  }
+  else if (v === 'move') { r.kind = music ? 'rec' : 'music'; await saveRec(r); redraw(); toast(t(music ? 'imMovedRec' : 'imMovedMusic')); }
+  else if (v === 'artist') { const n = await promptBox(t('imArtist'), r.uArtist || r.artist || ''); if (n) { r.uArtist = r.artist = n; await saveRec(r); redraw(); } }
+  else if (v === 'cover') pickCover(r);
+  else if (v === 'coverX') { delete r.cover; await saveRec(r); redraw(); }
+  else if (v === 'del') delItems([r]);
+}
+/** categories: a recording can be in several; the first one stays its main category */
+function pickCats(cur) {
+  return new Promise(res => {
+    let done = false; const fin = v => { if (!done) { done = true; res(v); } };
+    const card = openModal(`<h3>${esc(t('imCats'))}</h3><p class="mtext">${esc(t('imCatsD'))}</p>
+      <div class="modal-body">${S.cats.map(c => `<label class="chk"><input type="checkbox" value="${esc(c.id)}"${cur.includes(c.id) ? ' checked' : ''}><i style="background:${c.color}"></i>${esc(c.name)}</label>`).join('')}</div>
+      <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`, () => fin(null));
+    card.querySelector('[data-ok]').onclick = () => {
+      const on = [...card.querySelectorAll('input:checked')].map(x => x.value);
+      fin(cur.filter(id => on.includes(id)).concat(on.filter(id => !cur.includes(id)))); closeModal();
+    };
+    card.querySelector('[data-x]').onclick = () => closeModal();
+  });
+}
+async function setCats(list) {
+  if (!S.cats.length) { toast(t('imNoCats'), 3500); openCategories(); return; }
+  const ids = await pickCats(list.length === 1 ? catsOf(list[0]) : []); if (!ids) return;
+  for (const r of list) { r.categoryId = ids[0] || null; if (ids.length > 1) r.cats = ids.slice(1); else delete r.cats; await saveRec(r); }
+  render();
+}
+function shareItems(list) {
+  const l = list.filter(r => NATIVE && r.src); if (!l.length) return;
+  try { AND.share(JSON.stringify(l.length === 1 ? l[0].src : l.map(r => r.src)), l[0].title, l.length === 1 ? (l[0].mime || '').split(';')[0] : 'audio/*'); } catch (e) { toast(t('shareFail')); }
+}
+/** a copy (same format as the default export) or "save as" another format: a new recording next to the original */
+async function copyItem(r, f) {
+  const name = await promptBox(t(f ? 'imSaveAs' : 'imCopy'), f ? r.title : r.title + ' (2)'); if (!name) return;
+  toast(t('imWorking'), 2500);
+  try {
+    const w = await runJob('wsInit', { src: r.src });
+    const sv = await runJob('wsSave', Object.assign({ path: w.path, name: safeName(name) }, fmtArgs(f)));
+    const meta = metaOf(r); ['id', 'peaks', 'size', 'src', 'trashed', 'origId', 'origSrc', 'pos'].forEach(k => delete meta[k]);
+    Object.assign(meta, { title: name, userTitle: true, created: Date.now(), kind: kindOf(r) });
+    const it = fromNative(sv.item, meta); S.items.set(it.id, it); await saveRec(it);
+    render(); toast(t('imCopied', { t: name }), 3500);
+  } catch (e) { toast(errText(e), 4000); }
+  finally { runJob('wsClean', { keep: [] }).catch(() => {}); }
+}
+function pickCover(r) {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    try {
+      const bm = await createImageBitmap(f), s = Math.min(bm.width, bm.height), cv = document.createElement('canvas'); cv.width = cv.height = 300;
+      cv.getContext('2d').drawImage(bm, (bm.width - s) / 2, (bm.height - s) / 2, s, s, 0, 0, 300, 300);
+      r.cover = cv.toDataURL('image/jpeg', 0.82); await saveRec(r);
+      render(); if (stack.includes('coll')) renderColl();
+      const m = $('#miniArt'); if (m) m.dataset.for = '';
+    } catch (e) { toast(t('imCoverFail')); }
+  };
+  inp.click();
+}
+/** delete one or several: own recordings go to the trash (if it is on), the rest is deleted for good */
+async function delItems(list) {
+  list = list.filter(Boolean); if (!list.length) return false;
+  const soft = r => NATIVE && r.src && r.own && S.trashDays > 0 && kindOf(r) === 'rec', one = list.length === 1 ? list[0] : null;
+  const text = !one ? t('imDelMany', { n: list.length }) : soft(one) ? t('delTrash', { title: one.title, n: S.trashDays })
+    : t(NATIVE && one.src && !one.own ? 'delOther' : 'delOwn', { title: one.title }) + (one.origId ? ' ' + t('delAlsoOrig') : '');
+  if (!(await confirmBox({ title: t('delQ'), text, ok: t('delete'), danger: true }))) return false;
+  let fail = 0, tr = 0;
+  for (const r of list) {
+    if (S.cur === r.id) {
+      if (!audio.paused) audio.pause();
+      if (!soft(r)) { audio.removeAttribute('src'); if (!NATIVE) { try { audio.load(); } catch (e) {} if (curURL) { URL.revokeObjectURL(curURL); curURL = null; } } }
+      S.cur = null; S.miniOn = false;
+    }
+    if (soft(r)) { r.trashed = Date.now(); await saveRec(r); tr++; continue; }
+    if (!(await hardDelete(r))) { fail++; continue; }
+    if (NATIVE && r.origId && r.origSrc) { try { await nativeCall(() => AND.deleteMedia(JSON.stringify(r.origSrc))); } catch (e) {} await forgetItem(r.origId); }
+  }
+  render(); if (stack.includes('coll')) renderColl();
+  toast(t(fail ? 'delFail' : tr === list.length ? 'toTrash' : 'deleted'), 3500);
+  return fail < list.length;
+}
+/* selecting several: a bar at the bottom replaces the mini player */
+function selStart(id) { SEL = new Set(id ? [id] : []); document.body.classList.add('selecting'); arm(); selMark(); }
+function selEnd(fromPop) {
+  if (!SEL) return;
+  SEL = null; document.body.classList.remove('selecting'); $('#selBar').hidden = true;
+  if (!fromPop && !stack.length) disarm();
+  selMark();
+}
+function selToggle(id) { if (SEL.has(id)) SEL.delete(id); else SEL.add(id); selMark(); }
+function selPool() { return stack.includes('coll') ? LISTS.coll : S.tab === 'music' && NATIVE ? LISTS.all : visibleRecs(); }
+function selMark() {
+  document.querySelectorAll('#list [data-open]').forEach(el => el.closest('.rec').classList.toggle('picked', !!SEL && SEL.has(el.dataset.open)));
+  document.querySelectorAll('#music [data-song], #coll [data-song]').forEach(el => { const s = rowItem(el); el.classList.toggle('picked', !!SEL && !!s && SEL.has(s.id)); });
+  const bar = $('#selBar'); bar.hidden = !SEL; if (!SEL) return;
+  const n = SEL.size, b = (k, icn, lab) => `<button class="icon-btn" type="button" data-sb="${k}" aria-label="${esc(t(lab))}" title="${esc(t(lab))}"${n ? '' : ' disabled'}>${ic(icn)}</button>`;
+  bar.innerHTML = `<button class="icon-btn" type="button" data-sb="x" aria-label="${esc(t('cancel'))}">${ic('close')}</button><b class="sel-n tc">${esc(t('imNSel', { n }))}</b>
+    <button class="btn sm" type="button" data-sb="all">${esc(t('imAll'))}</button><span class="spacer"></span>`
+    + b('share', 'share', 'share') + (S.tab === 'music' ? '' : b('cat', 'folder', 'imCats')) + b('pl', 'list', 'plAddTo') + b('del', 'trash', 'delete');
+}
+$('#selBar').addEventListener('click', async e => {
+  const b = e.target.closest('[data-sb]'); if (!b || !SEL) return;
+  const k = b.dataset.sb, list = [...SEL].map(id => S.items.get(id)).filter(Boolean);
+  if (k === 'x') return selEnd();
+  if (k === 'all') { const p = selPool(), all = p.length && p.every(r => SEL.has(r.id)); p.forEach(r => all ? SEL.delete(r.id) : SEL.add(r.id)); selMark(); return; }
+  if (!list.length) return;
+  if (k === 'share') shareItems(list);
+  else if (k === 'cat') { await setCats(list); selEnd(); }
+  else if (k === 'pl') { await plAdd(list); selEnd(); }
+  else if (k === 'del') { if (await delItems(list)) selEnd(); }
+});
+/* long press opens the menu (or picks while selecting); a tap while selecting picks */
+const LP = { t: 0, fired: false, x: 0, y: 0 };
+function lpDown(e) {
+  const el = e.target.closest('[data-open],[data-song]'); LP.fired = false; clearTimeout(LP.t);
+  if (!el || e.button > 0) return;
+  LP.x = e.clientX; LP.y = e.clientY;
+  LP.t = setTimeout(() => { const r = rowItem(el); if (!r) return; LP.fired = true; try { AND.vibrate(15); } catch (x) {} if (SEL) selToggle(r.id); else itemMenu(r); }, 500);
+}
+function lpCancel(e) { if (e.type !== 'pointermove' || Math.hypot(e.clientX - LP.x, e.clientY - LP.y) > 10) clearTimeout(LP.t); }
+function lpClick(e) {
+  if (LP.fired) { LP.fired = false; e.stopPropagation(); e.preventDefault(); return; }
+  const m = e.target.closest('[data-rmenu]');
+  if (m && !SEL) { e.stopPropagation(); itemMenu(rowItem(m)); return; }
+  if (!SEL) return;
+  const el = e.target.closest('[data-open],[data-song],[data-rmenu],[data-smenu]'); if (!el) return;
+  e.stopPropagation(); e.preventDefault();
+  const r = rowItem(el); if (r) selToggle(r.id);
+}
+for (const id of ['#list', '#music', '#coll']) {
+  const el = $(id);
+  el.addEventListener('pointerdown', lpDown);
+  el.addEventListener('pointermove', lpCancel, { passive: true });
+  el.addEventListener('pointerup', lpCancel); el.addEventListener('pointercancel', lpCancel);
+  el.addEventListener('click', lpClick, true);
+  el.addEventListener('contextmenu', e => { if (e.target.closest('[data-open],[data-song]')) e.preventDefault(); });
+}
+/* editor: listen to a clip before and after its last effect; the places that changed are marked under the wave */
+async function tlDiff(id, a, b) {
+  try {
+    const c0 = TL.p.clips.find(x => x.id === id); if (!c0) return;
+    const pa = await ensurePeaks(tlItem({ path: a, dur: c0.dur, name: '' }), {}), pb = await ensurePeaks(tlItem(c0), {});
+    const c = TL.p.clips.find(x => x.id === id); if (!c || c.path !== b || !isComplete(pa) || !isComplete(pb)) return;
+    const st = 0.1, out = []; let s0 = -1;
+    for (let x = 0; x < c.dur; x += st) {
+      const u = level(pa, x, x + st), v = level(pb, x, x + st), d = Math.abs(u - v) > 0.03 + 0.12 * Math.max(u, v);
+      if (d && s0 < 0) s0 = x; else if (!d && s0 >= 0) { if (out.length && s0 - out[out.length - 1][1] < 0.3) out[out.length - 1][1] = x; else out.push([s0, x]); s0 = -1; }
+    }
+    if (s0 >= 0) out.push([s0, c.dur]);
+    c.chg = out.map(([p, q]) => [Math.round(p * 10) / 10, Math.round(q * 10) / 10]);
+    ls.set('proj', TL.p); drawTl();
+  } catch (e) {}
+}
+function tlAB() {
+  const c = tlSel(); if (!c || !c.prev) return;
+  tlStop();
+  const tr = TL.p.tracks[c.tr] || {}, g = Math.pow(10, ((c.gain || 0) + (tr.vol || 0)) / 20);
+  const from = clamp(TL.pos, c.at, c.at + tlLen(c) - 0.1);
+  const card = openModal(`<h3>${esc(t('tlAB'))}</h3><p class="mtext">${esc(t('tlABD'))}</p>
+    <div class="seg2" role="radiogroup">${['prev', 'path'].map(k => `<button type="button" role="radio" data-ab="${k}" aria-checked="false">${ic('play')}${esc(t(k === 'prev' ? 'cl_before' : 'cl_after'))}</button>`).join('')}</div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`, () => tlStop());
+  card.onclick = e => {
+    if (e.target.closest('[data-x]')) { closeModal(); return; }
+    const b = e.target.closest('[data-ab]'); if (!b) return;
+    const on = b.getAttribute('aria-checked') === 'true';
+    if (TL.play) tlStop();
+    card.querySelectorAll('[data-ab]').forEach(x => x.setAttribute('aria-checked', 'false'));
+    if (on) return;
+    const pos = TL.pos >= c.at && TL.pos < c.at + tlLen(c) - 0.1 ? TL.pos : from;
+    tlPlay([{ path: c[b.dataset.ab], at: c.at, in: c.in, len: tlLen(c), g, fi: 0, fo: 0 }], pos);
+    b.setAttribute('aria-checked', 'true');
+  };
 }
 
 /* ---------- boot ---------- */

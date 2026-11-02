@@ -156,7 +156,8 @@ public class MainActivity extends Activity implements Player.Listener {
                 fileCallback = callback;
                 Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
                 pick.addCategory(Intent.CATEGORY_OPENABLE);
-                pick.setType("audio/*");
+                String[] acc = params != null ? params.getAcceptTypes() : null;
+                pick.setType(acc != null && acc.length > 0 && acc[0].startsWith("image") ? "image/*" : "audio/*");
                 if (params != null && params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) pick.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                 try {
                     startActivityForResult(Intent.createChooser(pick, Str.get(MainActivity.this, "pick")), REQ_FILE);
@@ -757,35 +758,46 @@ public class MainActivity extends Activity implements Player.Listener {
             return a.toString();
         }
 
+        /** Shares one file, or several when srcJson is an array (3.5: selecting several). */
         @JavascriptInterface public void share(final String srcJson, final String title, final String mime) {
             ui(new Runnable() {
                 @Override public void run() {
                     try {
-                        JSONObject src = new JSONObject(srcJson);
-                        Uri uri = MediaLib.srcUri(src);
-                        if (uri == null) {
-                            File f = MediaLib.srcFile(src);
-                            if (f == null) return;
-                            File dir = new File(getCacheDir(), "share");
-                            dir.mkdirs();
-                            File copy = new File(dir, f.getName());
-                            java.io.FileInputStream in = new java.io.FileInputStream(f);
-                            FileOutputStream out = new FileOutputStream(copy);
-                            byte[] b = new byte[65536]; int n;
-                            while ((n = in.read(b)) > 0) out.write(b, 0, n);
-                            in.close(); out.close();
-                            uri = new Uri.Builder().scheme("content").authority(ShareProvider.AUTHORITY).appendPath(copy.getName()).build();
-                        }
-                        Intent send = new Intent(Intent.ACTION_SEND);
+                        ArrayList<Uri> uris = new ArrayList<>();
+                        if (srcJson.trim().startsWith("[")) {
+                            JSONArray a = new JSONArray(srcJson);
+                            for (int i = 0; i < a.length(); i++) { Uri u = shareUri(a.getJSONObject(i)); if (u != null) uris.add(u); }
+                        } else { Uri u = shareUri(new JSONObject(srcJson)); if (u != null) uris.add(u); }
+                        if (uris.isEmpty()) return;
+                        Intent send;
+                        if (uris.size() == 1) { send = new Intent(Intent.ACTION_SEND); send.putExtra(Intent.EXTRA_STREAM, uris.get(0)); }
+                        else { send = new Intent(Intent.ACTION_SEND_MULTIPLE); send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris); }
                         send.setType(mime == null || mime.isEmpty() ? "audio/*" : mime);
-                        send.putExtra(Intent.EXTRA_STREAM, uri);
                         send.putExtra(Intent.EXTRA_TITLE, title);
-                        send.setClipData(ClipData.newRawUri(title, uri));
+                        ClipData cd = ClipData.newRawUri(title, uris.get(0));
+                        for (int i = 1; i < uris.size(); i++) cd.addItem(new ClipData.Item(uris.get(i)));
+                        send.setClipData(cd);
                         send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         startActivity(Intent.createChooser(send, Str.get(MainActivity.this, "share")));
                     } catch (Exception ignored) { }
                 }
             });
+        }
+
+        private Uri shareUri(JSONObject src) throws Exception {
+            Uri uri = MediaLib.srcUri(src);
+            if (uri != null) return uri;
+            File f = MediaLib.srcFile(src);
+            if (f == null) return null;
+            File dir = new File(getCacheDir(), "share");
+            dir.mkdirs();
+            File copy = new File(dir, f.getName());
+            java.io.FileInputStream in = new java.io.FileInputStream(f);
+            FileOutputStream out = new FileOutputStream(copy);
+            byte[] b = new byte[65536]; int n;
+            while ((n = in.read(b)) > 0) out.write(b, 0, n);
+            in.close(); out.close();
+            return new Uri.Builder().scheme("content").authority(ShareProvider.AUTHORITY).appendPath(copy.getName()).build();
         }
 
         /** Shares a small text file (subtitles, transcript). */

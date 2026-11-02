@@ -15,6 +15,22 @@
 :root[data-accent="amber"][data-theme="dark"]{--accent:#F0A45A;--accent-ink:#1F1206;--accent-soft:#3A2814}
 :root[data-accent="rose"][data-theme="dark"]{--accent:#F08AAE;--accent-ink:#24060F;--accent-soft:#3D1A28}
 
+/* 3.5: the whole page takes the colour (backgrounds, lines, grey text), not only the buttons */
+:root[data-accent="blue"]{--bg:#EDEFF1;--surface-2:#E2E4E8;--ink:#161A20;--muted:#565C64;--line:#D2D5DA;--wave:#B3B9C1;--stage:#11151C;--stage-2:#1A1F27;--stage-muted:#8E96A1;--stage-line:#2A303A}
+:root[data-accent="violet"]{--bg:#EFEDF1;--surface-2:#E4E2E8;--ink:#1A1620;--muted:#5C5664;--line:#D5D2DA;--wave:#B9B3C1;--stage:#16111C;--stage-2:#1F1A27;--stage-muted:#968EA1;--stage-line:#312A3A}
+:root[data-accent="amber"]{--bg:#F1EFED;--surface-2:#E8E5E2;--ink:#201B16;--muted:#645D56;--line:#DAD6D2;--wave:#C1BAB3;--stage:#1C1611;--stage-2:#27201A;--stage-muted:#A1988E;--stage-line:#3A322A}
+:root[data-accent="rose"]{--bg:#F1EDEE;--surface-2:#E8E2E4;--ink:#20161A;--muted:#64565B;--line:#DAD2D5;--wave:#C1B3B8;--stage:#1C1115;--stage-2:#271A1F;--stage-muted:#A18E95;--stage-line:#3A2A30}
+@media (prefers-color-scheme: dark){
+  :root[data-accent="blue"]:not([data-theme="light"]){--bg:#0F1114;--surface:#171A1E;--surface-2:#21252A;--ink:#E4E7EB;--muted:#9399A3;--line:#2A2E35;--wave:#3A4048;--stage:#0A0C10;--stage-2:#14171C}
+  :root[data-accent="violet"]:not([data-theme="light"]){--bg:#110F14;--surface:#1A171E;--surface-2:#25212A;--ink:#E7E4EB;--muted:#9A93A3;--line:#2F2A35;--wave:#403A48;--stage:#0C0A10;--stage-2:#17141C}
+  :root[data-accent="amber"]:not([data-theme="light"]){--bg:#14120F;--surface:#1E1A17;--surface-2:#2A2621;--ink:#EBE8E4;--muted:#A39B93;--line:#35302A;--wave:#48413A;--stage:#100D0A;--stage-2:#1C1814}
+  :root[data-accent="rose"]:not([data-theme="light"]){--bg:#140F11;--surface:#1E171A;--surface-2:#2A2124;--ink:#EBE4E7;--muted:#A39399;--line:#352A2E;--wave:#483A3F;--stage:#100A0C;--stage-2:#1C1417}
+}
+:root[data-accent="blue"][data-theme="dark"]{--bg:#0F1114;--surface:#171A1E;--surface-2:#21252A;--ink:#E4E7EB;--muted:#9399A3;--line:#2A2E35;--wave:#3A4048;--stage:#0A0C10;--stage-2:#14171C}
+:root[data-accent="violet"][data-theme="dark"]{--bg:#110F14;--surface:#1A171E;--surface-2:#25212A;--ink:#E7E4EB;--muted:#9A93A3;--line:#2F2A35;--wave:#403A48;--stage:#0C0A10;--stage-2:#17141C}
+:root[data-accent="amber"][data-theme="dark"]{--bg:#14120F;--surface:#1E1A17;--surface-2:#2A2621;--ink:#EBE8E4;--muted:#A39B93;--line:#35302A;--wave:#48413A;--stage:#100D0A;--stage-2:#1C1814}
+:root[data-accent="rose"][data-theme="dark"]{--bg:#140F11;--surface:#1E171A;--surface-2:#2A2124;--ink:#EBE4E7;--muted:#A39399;--line:#352A2E;--wave:#483A3F;--stage:#100A0C;--stage-2:#1C1417}
+
 /* waveform progress sits in a corner so the growing waveform stays visible */
 .wave-status{position:absolute;left:max(16px, env(safe-area-inset-left, 0px));right:auto;top:6px;transform:none;text-align:start;font-size:12px;color:var(--muted);pointer-events:none;background:var(--bg);padding:2px 8px;border-radius:8px;font-family:var(--f-mono)}
 
@@ -215,3 +231,14 @@ html{overflow-x:hidden;overscroll-behavior:none}body{overflow-x:clip;max-width:1
 #recLufs{color:var(--stage-ink)}
 /* 3.4: text to speech */
 .tts-text{width:100%;box-sizing:border-box;min-height:120px;resize:vertical;font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);margin:4px 0 10px}
+/* 3.5: menus, selecting several, two-row editor tools */
+.rec-more{width:36px;display:grid;place-items:center;color:var(--muted);flex:none}
+.rec.picked,.song.picked{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.selecting #mini,.selecting #recBtn{display:none!important}
+.selbar .sel-n{flex:none;padding:0 6px;font-size:14px}
+.selbar .icon-btn:disabled{opacity:.4}
+.chk{display:flex;align-items:center;gap:10px;padding:10px 4px;font-size:15px}
+.chk input{width:20px;height:20px;accent-color:var(--accent)}
+.chk i{width:10px;height:10px;border-radius:50%;flex:none}
+.tl-bar.two{display:grid;grid-auto-flow:column;grid-template-rows:auto auto;justify-content:start}
+.rec-open,.song{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
