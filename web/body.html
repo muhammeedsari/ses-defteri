@@ -14,6 +14,7 @@
     <button class="icon-btn" id="setBtn" type="button" data-ta="settings"></button>
   </header>
 
+  <div class="qa" id="qa" hidden></div>
   <div class="tabs" id="tabs" role="tablist" hidden>
     <button type="button" role="tab" data-tab="rec" aria-selected="true"><span id="tabRecIc"></span><span data-t="tabRec"></span></button>
     <button type="button" role="tab" data-tab="music" aria-selected="false"><span id="tabMusicIc"></span><span data-t="tabMusic"></span></button>
@@ -214,6 +215,7 @@
 <script src="i18n29.js"></script>
 <script src="i18n30.js"></script>
 <script src="i18n31.js"></script>
+<script src="i18n32.js"></script>
 <script>
 (() => {
 'use strict';
@@ -224,7 +226,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.9';
+const VERSION = '4.0';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -891,6 +893,7 @@ function openSettings() {
       <label class="switch"><input type="checkbox" id="setTlXf"${S.tlXf ? ' checked' : ''}><span>${esc(t('setTlXf'))}<small>${esc(t('setTlXfD'))}</small></span></label></div>
     <div class="set-sec"><h4>${esc(t('setGeneral'))}</h4>
       <div class="set-sub"><span>${esc(t('setStartTab'))}</span><select id="setStartTab" class="sel-full">${['last', 'rec', 'music', 'edit'].map(v => `<option value="${v}"${S.startTab === v ? ' selected' : ''}>${esc(t(v === 'last' ? 'stLast' : v === 'rec' ? 'tabRec' : v === 'music' ? 'tabMusic' : 'tabEdit'))}</option>`).join('')}</select></div>
+      ${NATIVE ? `<label class="switch"><input type="checkbox" id="setQa"${ls.get('qaOn', true) ? ' checked' : ''}><span>${esc(t('setQa'))}<small>${esc(t('setQaD'))}</small></span></label>` : ''}
       ${NATIVE ? `<div class="set-sub"><span>${esc(t('setPin'))}</span><button class="btn sm" type="button" id="setPin">${ic('mic')}${esc(t('setPinB'))}</button><small class="hint">${esc(t('setPinD'))}</small></div>` : ''}</div>
     <div class="set-sec"><label class="switch"><input type="checkbox" id="setPre"${S.precompute ? ' checked' : ''}><span>${esc(t('precompute'))}<small>${esc(t('precomputeDesc'))}</small></span></label></div>
     <div class="set-sec"><h4>${esc(t('setRec'))}</h4>
@@ -924,7 +927,7 @@ function openSettings() {
       <div><button class="btn sm" type="button" id="openTrash">${esc(t('trash'))} (${trashItems().length})</button></div></div>` : ''}
     <p class="about">Ses Defteri ${VERSION}</p>
     <p class="about">${esc(t('licenses'))}</p>
-    <div class="about-btns"><button class="btn sm" type="button" id="setPriv">${esc(t('privacy'))}</button><button class="btn sm" type="button" id="setFeed">${esc(t('feedback'))}</button>${NATIVE ? `<button class="btn sm" type="button" id="setNote">${esc(t('probNote'))}</button>` : ''}</div>
+    <div class="about-btns"><button class="btn sm" type="button" id="setPriv">${esc(t('privacy'))}</button><button class="btn sm" type="button" id="setFeed">${esc(t('feedback'))}</button>${NATIVE ? `<button class="btn sm" type="button" id="setNews">${esc(t('newsBtn'))}</button><button class="btn sm" type="button" id="setIntro">${esc(t('introBtn'))}</button><button class="btn sm" type="button" id="setCoach">${esc(t('coReset'))}</button>` : ''}${NATIVE ? `<button class="btn sm" type="button" id="setNote">${esc(t('probNote'))}</button>` : ''}</div>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" id="setDone">${esc(t('ok'))}</button></div>`);
   card.querySelector('#setDone').onclick = closeModal;
   card.addEventListener('click', e => {
@@ -971,6 +974,12 @@ function openSettings() {
   const ms = card.querySelector('#setMinSong'); if (ms) ms.onchange = () => { S.minSong = +ms.value; ls.set('minSong', S.minSong); render(); };
   const pin = card.querySelector('#setPin'); if (pin) pin.onclick = () => { let ok = false; try { ok = AND.pinRecShortcut(t('recShort')); } catch (e) {} if (!ok) toast(t('setPinNo'), 4500); };
   card.querySelector('#setPriv').onclick = openPrivacy; card.querySelector('#setFeed').onclick = openFeedback;
+  // 4.0: the intro, what's new and the screen tips can be seen again
+  const on = (q, f) => { const el = card.querySelector(q); if (el) el.onclick = f; };
+  on('#setNews', () => { closeModal(); showNews(); });
+  on('#setIntro', () => { closeModal(); showIntro(true); });
+  on('#setCoach', () => { ls.set('coach', {}); ls.set('coachOff', false); toast(t('coResetDone'), 3000); });
+  const qa = card.querySelector('#setQa'); if (qa) qa.onchange = () => { ls.set('qaOn', qa.checked); renderQa(); };
   // 3.4.6: what went wrong without a crash (player stalls, failed downloads): the user sends it when they want to
   if (card.querySelector('#setNote')) card.querySelector('#setNote').onclick = () => {
     let n = ''; try { n = AND.takeNotes ? AND.takeNotes() : ''; } catch (e) {}
@@ -1181,7 +1190,7 @@ function renderTabs() {
   if (edit) { $('#empty').hidden = true; renderEdit(); }
   $('#q').placeholder = t(music ? 'searchMusic' : 'searchRec');
   $('#libNote').hidden = music || S.media || ls.get('libNoteX', false);
-  tlQBar();
+  tlQBar(); renderQa(); if (booted) coachMaybe();
 }
 function render() { renderTabs(); renderChips(); renderList(); renderSummary(); updateMini(); }
 
@@ -5382,6 +5391,116 @@ function tlAB() {
   };
 }
 
+/* ---------- 4.0: first-run intro, "what's new" once after an update, one-time screen tips, home cards ---------- */
+P.lock = '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2"/>';
+const INTRO = ['rec', 'clean', 'studio', 'music', 'private'];
+const hiWord = s => esc(s).replace(/\*(.+?)\*/, '<em>$1</em>');   // the *word* in a title is coloured
+function introVis(k) {
+  const bars = (n, cls) => `<div class="iv-bars${cls ? ' ' + cls : ''}">${Array.from({ length: n }, (_, i) => `<i style="--i:${i};--h:${((Math.sin(i * 1.7) + Math.sin(i * .6)) / 4 + .5).toFixed(2)}"></i>`).join('')}</div>`;
+  const hand = (x, y) => `<span class="iv-hand" style="left:${x}%;top:${y}%"></span>`;
+  if (k === 'rec') return `<div class="iv-time">00:12</div>${bars(16)}<div class="iv-rec"><span></span></div>` + hand(50, 66);
+  if (k === 'clean') return bars(16, 'noisy') + `<div class="iv-chip">${ic('spark')}</div>` + bars(16, 'calm') + hand(50, 50);
+  if (k === 'studio') return `<div class="iv-tracks"><b style="left:4%;width:56%"></b><b style="left:34%;width:60%"></b><b style="left:14%;width:42%"></b></div>` + hand(44, 34);
+  if (k === 'music') return bars(10, 'eq') + `<div class="iv-play">${ic('play')}</div>` + hand(50, 80);
+  return `<div class="iv-lock">${ic('lock', 1.6)}</div><div class="iv-off">${esc(t('inOffline'))}</div>`;
+}
+function showIntro(again) {
+  let i = 0, x0 = null, auto = true, tm = 0;
+  const d = document.createElement('div'); d.className = 'intro'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true');
+  const rtl = document.documentElement.dir === 'rtl', n = INTRO.length;
+  const draw = () => {
+    clearTimeout(tm);
+    const k = INTRO[i], last = i === n - 1;
+    d.innerHTML = `<div class="in-top"><div class="in-prog">${INTRO.map((_, j) => `<i class="${j < i ? 'done' : j === i ? (auto ? 'now' : 'done') : ''}"></i>`).join('')}</div>
+        <button type="button" class="in-skip" data-in="skip">${esc(t('inSkip'))}</button></div>
+      <div class="in-phone" aria-hidden="true"><div class="in-screen in-${k}">${introVis(k)}</div></div>
+      <div class="in-text"><h2>${hiWord(t('inT_' + k))}</h2><p>${esc(t('inD_' + k))}</p></div>
+      <div class="in-nav">${i ? `<button type="button" class="btn" data-in="back">${esc(t('inBack'))}</button>` : '<span></span>'}
+        <button type="button" class="btn primary" data-in="${last ? 'go' : 'next'}">${esc(t(last ? (again ? 'inDone' : 'inFirst') : 'inNext'))}</button></div>`;
+    if (auto && !last) tm = setTimeout(() => { i++; draw(); }, 6000);   // stories move on by themselves until touched
+  };
+  const end = rec => { clearTimeout(tm); d.remove(); ls.set('introDone', true); if (rec && MIC_OK) openRecorder(); else coachMaybe(); };
+  const go = to => { auto = false; if (to >= 0 && to < n) { i = to; draw(); } };
+  d.onclick = e => {
+    const b = e.target.closest('[data-in]'); if (!b) return;
+    const a = b.dataset.in;
+    if (a === 'skip') end(false); else if (a === 'back') go(i - 1); else if (a === 'next') go(i + 1); else end(!again);
+  };
+  d.addEventListener('pointerdown', e => { x0 = e.clientX; });
+  d.addEventListener('pointerup', e => {
+    if (x0 == null) return; const dx = e.clientX - x0; x0 = null;
+    if (Math.abs(dx) > 50) go(i + ((dx < 0) !== rtl ? 1 : -1));
+  });
+  document.body.appendChild(d); draw();
+}
+const NEWS = ['sel', 'sort', 'export', 'recq', 'eq', 'voice', 'studio', 'home'];
+function showNews() {
+  const card = openModal(`<h3>${esc(t('newsT', { v: VERSION }))}</h3><ul class="news">${NEWS.map(k => `<li>${esc(t('news_' + k))}</li>`).join('')}</ul>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('newsOk'))}</button></div>`, () => setTimeout(coachMaybe, 300));
+  card.onclick = e => { if (e.target.closest('[data-x]')) closeModal(); };
+}
+function welcome() {
+  if (stack.length) return;   // a shortcut opened the recorder: try again next start
+  const last = ls.get('lastVer', '');
+  ls.set('lastVer', VERSION);
+  if (!ls.get('introDone', false) && !last && !S.items.size) { showIntro(false); return; }
+  ls.set('introDone', true);
+  if (last !== VERSION) showNews(); else coachMaybe();
+}
+/* tips: the screen dims around one control with a short line; each screen once, all can be switched off */
+const COACH = {
+  rec: [['#qa', 'co_qa'], ['#recBtn', 'co_rec'], ['#list .rec-open', 'co_long'], ['#sortBtn', 'co_sort']],
+  music: [['#music .song[data-song]', 'co_song'], ['#music [data-msort]', 'co_sort']],
+  edit: [['.tl-recb', 'co_tlrec'], ['#editTab [data-tl="add"]', 'co_tladd'], ['#tl', 'co_tl'], ['#editTab [data-tl="export"]', 'co_tlexp']]
+};
+function coachMaybe() {
+  if (!NATIVE || ls.get('coachOff', false) || !ls.get('introDone', false)) return;
+  clearTimeout(coachMaybe.tm);
+  coachMaybe.tm = setTimeout(() => {
+    const k = S.tab, seen = ls.get('coach', {});
+    if (seen[k] || !COACH[k] || stack.length || SEL || document.querySelector('.coach,.intro,.lang-first')) return;
+    const steps = COACH[k].filter(([q]) => { const el = document.querySelector(q); if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+    if (!steps.length) return;
+    seen[k] = 1; ls.set('coach', seen);
+    coachRun(steps);
+  }, 800);
+}
+function coachRun(steps) {
+  let i = 0;
+  const o = document.createElement('div'); o.className = 'coach';
+  const draw = () => {
+    const [q, key] = steps[i], el = document.querySelector(q);
+    if (!el) return next();
+    const r0 = el.getBoundingClientRect();
+    if (r0.top < 60 || r0.bottom > innerHeight - 60) el.scrollIntoView({ block: 'center' });
+    const r = el.getBoundingClientRect(), pad = 6, below = r.top + r.height / 2 < innerHeight / 2;
+    const ax = clamp(r.left + r.width / 2, 28, innerWidth - 28);
+    o.innerHTML = `<div class="co-hole" style="left:${r.left - pad}px;top:${r.top - pad}px;width:${r.width + 2 * pad}px;height:${r.height + 2 * pad}px"></div>
+      <div class="co-tip ${below ? 'below' : 'above'}" role="dialog" style="${below ? `top:${Math.min(r.bottom + pad + 14, innerHeight - 150)}px` : `bottom:${Math.min(innerHeight - r.top + pad + 14, innerHeight - 150)}px`};--ax:${ax}px">
+        <p>${esc(t(key))}</p><div class="co-btns"><button type="button" class="btn sm" data-co="off">${esc(t('coOff'))}</button><span class="spacer"></span><span class="co-n">${i + 1}/${steps.length}</span>
+        <button type="button" class="btn sm primary" data-co="next">${esc(t(i === steps.length - 1 ? 'coDone' : 'inNext'))}</button></div></div>`;
+  };
+  const next = () => { i++; if (i >= steps.length) o.remove(); else draw(); };
+  o.onclick = e => { const b = e.target.closest('[data-co]'); if (!b) return; if (b.dataset.co === 'off') { ls.set('coachOff', true); o.remove(); } else next(); };
+  document.body.appendChild(o); draw();
+}
+/* home: big coloured shortcuts above the tabs */
+const QA = [['rec', 'mic', 'qaRec'], ['open', 'import', 'qaOpen'], ['edit', 'scissors', 'qaEdit'], ['video', 'film', 'qaVideo'], ['music', 'note', 'qaMusic']];
+function renderQa() {
+  const q = $('#qa'); if (!q) return;
+  const on = NATIVE && S.tab === 'rec' && ls.get('qaOn', true);
+  q.hidden = !on;
+  if (on && !q.childElementCount) q.innerHTML = QA.map(([k, i, l]) => `<button type="button" class="qa-${k}" data-qa="${k}">${ic(i, 2)}<b>${esc(t(l))}</b>${k === 'rec' ? `<small>${esc(t('qaRecD'))}</small>` : ''}</button>`).join('');
+}
+$('#qa').addEventListener('click', e => {
+  const b = e.target.closest('[data-qa]'); if (!b) return;
+  const k = b.dataset.qa;
+  if (k === 'rec') $('#recBtn').click();
+  else if (k === 'open') { try { AND.pickAudio(); } catch (x) {} }
+  else if (k === 'video') { try { AND.pickVideo(t('videoBusy')); } catch (x) {} }
+  else { const tb = $(`#tabs [data-tab="${k}"]`); if (tb) tb.click(); }
+});
+
 /* ---------- boot ---------- */
 let booted = false;
 /* first start: pick the app language (English preselected); speech-to-text uses the same language */
@@ -5473,6 +5592,7 @@ async function boot() {
     if (CAPS.asr) asrRefresh();
     if (!S.media && !ls.get('askedMedia', false)) { ls.set('askedMedia', true); requestLibrary(); }
     window.__sdQuickRec();
+    setTimeout(welcome, 700);
   }
 }
 boot();
