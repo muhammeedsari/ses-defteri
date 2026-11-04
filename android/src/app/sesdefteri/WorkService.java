@@ -103,6 +103,11 @@ public class WorkService extends Service {
         return START_NOT_STICKY;
     }
 
+    /** Android 14/15 limit "data sync" services (6 h a day); stop quietly instead of being killed */
+    public void onTimeout(int startId) { stopSelf(); }
+
+    public void onTimeout(int startId, int type) { stopSelf(); }
+
     @Override
     public void onDestroy() {
         synchronized (WorkService.class) { fg = false; requested = false; }

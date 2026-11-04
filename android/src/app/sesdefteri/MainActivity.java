@@ -90,8 +90,24 @@ public class MainActivity extends Activity implements Player.Listener {
         Player.I.init(this, this);
         web = new WebView(this);
         web.setBackgroundColor(isDark() ? 0xFF0F1412 : 0xFFEDF1EE);
-        setContentView(web);
+        // 3.6 (target API 36): Android 15+ always draws edge to edge, so the page sits inside the system bars and the keyboard
+        root = new android.widget.FrameLayout(this);
+        root.addView(web, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        setContentView(root);
+        if (Build.VERSION.SDK_INT >= 30) root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override
+            public android.view.WindowInsets onApplyWindowInsets(View v, android.view.WindowInsets in) {
+                if (Build.VERSION.SDK_INT < 35) return v.onApplyWindowInsets(in);
+                android.graphics.Insets i = in.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout() | android.view.WindowInsets.Type.ime());
+                v.setPadding(i.left, i.top, i.right, i.bottom);
+                return android.view.WindowInsets.CONSUMED;
+            }
+        });
         applyBars("page");
+        if (Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0, new android.window.OnBackInvokedCallback() {
+            @Override
+            public void onBackInvoked() { goBack(); }
+        });
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -452,6 +468,8 @@ public class MainActivity extends Activity implements Player.Listener {
         return systemDark();
     }
 
+    private android.widget.FrameLayout root;
+
     private void applyBars(String mode) {
         boolean dark = isDark();
         boolean stage = "stage".equals(mode);
@@ -460,6 +478,12 @@ public class MainActivity extends Activity implements Player.Listener {
         Window w = getWindow();
         w.setStatusBarColor(color);
         w.setNavigationBarColor(color);
+        if (root != null) root.setBackgroundColor(color);
+        if (Build.VERSION.SDK_INT >= 30 && w.getInsetsController() != null) {
+            int m = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+            w.getInsetsController().setSystemBarsAppearance(lightIcons ? 0 : m, m);
+            return;
+        }
         View d = w.getDecorView();
         int flags = d.getSystemUiVisibility();
         if (lightIcons) {
@@ -505,6 +529,10 @@ public class MainActivity extends Activity implements Player.Listener {
 
     @Override
     public void onBackPressed() {
+        goBack();
+    }
+
+    private void goBack() {
         if (web != null && web.canGoBack()) web.goBack();
         else moveTaskToBack(true);
     }

@@ -1,3 +1,4 @@
+<div class="seltop" id="selTop" hidden></div>
 <div class="wrap" id="app">
   <header class="top">
     <div class="brand">
@@ -36,12 +37,7 @@
     <label class="search"><span id="searchIc"></span><input id="q" type="search" data-tp="searchRec" autocomplete="off" enterkeyhint="search"><button class="icon-btn" id="qClear" type="button" data-ta="clearSearch" hidden></button></label>
     <div class="chips" id="chips" role="toolbar" data-ta="categories"></div>
     <div class="listbar" id="listbar"><span id="count"></span><button class="tool" id="batchBtn" type="button" hidden></button>
-      <select class="sort" id="sort" data-ta="sort">
-        <option value="new" data-t="sortNew"></option>
-        <option value="old" data-t="sortOld"></option>
-        <option value="long" data-t="sortLong"></option>
-        <option value="name" data-t="sortName"></option>
-      </select>
+      <button class="sort-btn" id="sortBtn" type="button" data-ta="sort"></button>
     </div>
   </div>
 
@@ -53,7 +49,7 @@
 </div>
 
 <div class="dock">
-  <div class="mini selbar" id="selBar" hidden></div>
+  <div class="selbar" id="selBar" hidden></div>
   <div class="mini" id="mini" hidden>
     <span class="art" id="miniArt" hidden></span>
     <button class="icon-btn play-s" id="miniPlay" type="button" data-ta="play"></button>
@@ -212,6 +208,7 @@
 <script src="i18n25.js"></script>
 <script src="i18n26.js"></script>
 <script src="i18n27.js"></script>
+<script src="i18n28.js"></script>
 <script>
 (() => {
 'use strict';
@@ -222,7 +219,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.5.1';
+const VERSION = '3.6';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -322,6 +319,7 @@ const P = {
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
   phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
   b10: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 3.8v3.4h3.4"/><text x="12" y="15.2" text-anchor="middle" fill="currentColor" stroke="none" style="font:600 7px var(--f-mono)">10</text>',
+  sortic: '<path d="M7 4v16m0 0l-3-3m3 3l3-3M13 6h8M13 11h6M13 16h4"/>',
   f10: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 3.8v3.4h-3.4"/><text x="12" y="15.2" text-anchor="middle" fill="currentColor" stroke="none" style="font:600 7px var(--f-mono)">10</text>'
 };
 const ic = (n, sw) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="${sw || 1.8}" stroke-linecap="round" stroke-linejoin="round">${P[n]}</svg>`;
@@ -1013,13 +1011,46 @@ function visibleRecs() {
   const q = norm(S.q.trim());
   r.forEach(x => { x._hit = null; });
   if (q) r = r.filter(x => (x._hit = matchRec(x, q)));
-  const by = {
-    new: (a, b) => b.created - a.created,
-    old: (a, b) => a.created - b.created,
-    long: (a, b) => (b.duration || 0) - (a.duration || 0),
-    name: (a, b) => a.title.localeCompare(b.title, LOC)
-  }[S.sort] || ((a, b) => b.created - a.created);
-  return r.sort(by);
+  return r.sort(sortCmp('rec'));
+}
+/* 3.6: sorting in a bottom sheet: what by (date, name, length, size; songs also artist, album) and which way, remembered per list */
+const SORTF = { rec: ['date', 'name', 'dur', 'size'], music: ['name', 'artist', 'album', 'date', 'dur', 'size'] };
+const sortDir0 = f => ['date', 'dur', 'size'].includes(f) ? 'd' : 'a';
+function sortGet(m) {
+  const v = ls.get(m === 'music' ? 'msort2' : 'sort2', null);
+  if (v && SORTF[m].includes(v[0])) return v;
+  if (m === 'music') return ['name', 'a'];
+  return { old: ['date', 'a'], long: ['dur', 'd'], name: ['name', 'a'] }[S.sort] || ['date', 'd'];
+}
+function sortCmp(m) {
+  const [f, dir] = sortGet(m), k = dir === 'd' ? -1 : 1, byT = (a, b) => (a.title || '').localeCompare(b.title || '', LOC);
+  const num = { date: x => x.created || 0, dur: x => x.duration || 0, size: x => x.size || 0 }[f];
+  if (num) return (a, b) => k * (num(a) - num(b)) || byT(a, b);
+  const str = { name: x => x.title || '', artist: artistOf, album: x => x.album || '' }[f];
+  return (a, b) => k * str(a).localeCompare(str(b), LOC) || byT(a, b);
+}
+const sortBtnHTML = m => `${ic('sortic')}<span>${esc(t('sf_' + sortGet(m)[0]))}</span>`;
+function openSort(m) {
+  let [f, dir] = sortGet(m);
+  const card = openModal(`<h3>${esc(t('sortT'))}</h3><div id="sortBody"></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`);
+  const radio = (k, v, on, lab) => `<button type="button" role="radio" data-${k}="${v}" aria-checked="${on}"><i></i>${esc(lab)}</button>`;
+  const draw = () => {
+    const ds = sortDir0(f) === 'd' ? ['d', 'a'] : ['a', 'd'];
+    card.querySelector('#sortBody').innerHTML = `<p class="sort-lab">${esc(t('sortBy'))}</p><div class="sort-opts" role="radiogroup">${SORTF[m].map(x => radio('sf', x, x === f, t('sf_' + x))).join('')}</div>
+      <p class="sort-lab">${esc(t('sortOrder'))}</p><div class="sort-opts" role="radiogroup">${ds.map(d => radio('sd', d, d === dir, t('sd_' + (f === 'artist' || f === 'album' ? 'name' : f) + '_' + d))).join('')}</div>`;
+  };
+  draw();
+  card.onclick = e => {
+    const a = e.target.closest('[data-sf]'), b = e.target.closest('[data-sd]');
+    if (a) { f = a.dataset.sf; dir = sortDir0(f); draw(); return; }
+    if (b) { dir = b.dataset.sd; draw(); return; }
+    if (e.target.closest('[data-x]')) { closeModal(); return; }
+    if (e.target.closest('[data-ok]')) {
+      ls.set(m === 'music' ? 'msort2' : 'sort2', [f, dir]); closeModal();
+      $('#sortBtn').innerHTML = sortBtnHTML('rec'); listLimit = 120; musicLimit = 150; renderList();
+    }
+  };
 }
 function miniWave(r) {
   const pk = r.peaks && r.peaks.length ? downsample(r.peaks, 64) : null;
@@ -1091,7 +1122,7 @@ function renderList() {
   empty.hidden = true;
   const shown = recs.slice(0, listLimit);
   let html = '';
-  if (S.sort === 'new' || S.sort === 'old') {
+  if (sortGet('rec')[0] === 'date') {
     let curDay = null, buf = '';
     for (const r of shown) {
       const d = dayStart(r.created);
@@ -1169,8 +1200,7 @@ $('#list').addEventListener('click', e => {
 let qT = 0;
 $('#q').addEventListener('input', e => { S.q = e.target.value; $('#qClear').hidden = !S.q; clearTimeout(qT); qT = setTimeout(() => { listLimit = 120; musicLimit = 150; renderList(); }, 120); });
 $('#qClear').addEventListener('click', () => { S.q = ''; $('#q').value = ''; $('#qClear').hidden = true; renderList(); $('#q').focus(); });
-$('#sort').value = S.sort;
-$('#sort').addEventListener('change', e => { S.sort = e.target.value; ls.set('sort', S.sort); renderList(); });
+$('#sortBtn').addEventListener('click', () => openSort('rec'));
 
 /* ---------- music library ---------- */
 const artistOf = s => (s.artist || '').trim() || t('unknownArtist');
@@ -1191,7 +1221,7 @@ function songsFiltered() {
   const q = norm(S.q.trim());
   let songs = musicItems();
   if (q) songs = songs.filter(s => norm(s.title).includes(q) || norm(s.artist).includes(q) || norm(s.album).includes(q) || norm(s.folder).includes(q));
-  return songs.sort((a, b) => a.title.localeCompare(b.title, LOC));
+  return songs.sort(sortCmp('music'));
 }
 function groupBy(songs, keyFn) {
   const m = new Map();
@@ -1219,7 +1249,7 @@ function renderMusic() {
     const shown = songs.slice(0, musicLimit);
     box.innerHTML = `<div class="music-actions"><button class="btn sm primary" type="button" data-playall="all">${ic('play')}${esc(t('playAll'))}</button>
       <button class="btn sm" type="button" data-shuffle="all">${ic('shuffle')}${esc(t('shuffle'))}</button><span class="spacer"></span>
-      <span class="tc" style="color:var(--muted);font-size:13px">${esc(t('nSongs', { n: songs.length }))}</span></div>
+      <span class="tc" style="color:var(--muted);font-size:13px">${esc(t('nSongs', { n: songs.length }))}</span><button class="sort-btn" type="button" data-msort aria-label="${esc(t('sortT'))}">${sortBtnHTML('music')}</button></div>
       <div class="songs">${shown.map((s, i) => songRow(s, i, 'all')).join('')}</div>
       ${songs.length > shown.length ? `<button class="btn more" type="button" data-mmore>${esc(t('moreSongs', { n: songs.length - shown.length }))}</button>` : ''}`;
   } else if (S.mview === 'albums') {
@@ -1251,6 +1281,7 @@ function playList(list, index, shuffle) {
 function handleMusicClick(e) {
   const sm = e.target.closest('[data-smenu]');
   if (sm) { e.stopPropagation(); songMenu((LISTS[sm.dataset.list] || [])[+sm.dataset.smenu]); return; }
+  if (e.target.closest('[data-msort]')) { openSort('music'); return; }
   if (e.target.closest('[data-plnew]')) { plCreate(); return; }
   const pr = e.target.closest('[data-plren]'); if (pr) { plRename(pr.dataset.plren); return; }
   const pd = e.target.closest('[data-pldel]'); if (pd) { plDelete(pd.dataset.pldel); return; }
@@ -2751,36 +2782,68 @@ function tlFit() {
   const cv = $('#tl'), e = tlEnd(); if (!cv || !e) return;
   TL.pps = clamp((cv.clientWidth - 40) / e, 2, 400); TL.pos = e / 2; drawTl();
 }
+/* 3.6: one simple export sheet: format, quality, file name; save to Recordings or share; extras: only the selected clip, ringtone, put on a video */
+const EXQ = { mp3: [128, 192, 320], m4a: [96, 160, 256], ogg: [64, 96, 160] };
 async function tlExport() {
   if (!TL.p.clips.length || TL.busy) return;
-  // 3.4.6: first what to do (save / share / put on a video), then every format with how good it sounds
-  const how0 = await chooseBox(t('tlExport'), t('tlExportD'), [{ value: 'save', label: t('exSave'), desc: t('exSaveD') }, { value: 'share', label: t('exShare'), desc: t('exShareD') }, { value: 'video', label: t('tlVideo'), desc: t('exVideoD') }]);
-  if (!how0) return;
-  if (how0 === 'video') { tlVideo(); return; }
-  const fs = FMTS().filter(f => !f.startsWith('mp3') || CAPS.mp3);
-  const v0 = await chooseBox(t('exFmt'), t('exFmtD'), fs.map(f => ({ value: f, label: fmtLabel(f) + (f === S.fmt ? ' ✓' : ''), desc: t('exq_' + f) })));
-  if (!v0) return;
-  const v = how0 + ':' + v0;
-  tlStop();
-  const [how, fsel] = v.split(':'), fa = fmtArgs(fsel);
-  // 3.4.6: the new recording gets its own name (it came out under the same name and was hard to find)
-  let name = t('edited', { t: TL.p.name || t('tabEdit') });
-  if (how === 'save') { const nm = await promptBox(t('saveName'), name); if (!nm) return; name = nm; }
-  const file = how === 'save' ? safeName(name) : fileName(TL.p.name || t('tabEdit'), 'edit');
-  try {
-    const mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips: tlMix() });
-    if (how === 'share') {
-      const res = await tlRunJob(t('tlExport'), 'wsExport', Object.assign({ path: mix.path, name: file }, fa, metaArgs(name)));
-      AND.share(JSON.stringify(res.src), res.name, res.mime);
-    } else {
-      const res = await tlRunJob(t('op_save'), 'wsSave', Object.assign({ path: mix.path, name: file }, fa, metaArgs(name)));
-      const it = fromNative(res.item, null);
-      Object.assign(it, { title: name, userTitle: true, created: Date.now(), notes: '', categoryId: defaultCat(), kind: 'rec', source: 'edit', fav: false, bookmarks: [] });
-      S.items.set(it.id, it); await saveRec(it); render();
-      toast(t('tlSavedAs', { t: name }), 3500);
-    }
-  } catch (e) { toast(errText(e), 5000); }
-  try { runJob('wsClean', { keep: [] }).catch(() => {}); } catch (e) {}
+  const fs = ['mp3', 'm4a', 'wav', 'flac', 'ogg'].filter(x => (x !== 'mp3' || CAPS.mp3) && (x !== 'ogg' || CAPS.opus));
+  let f = ls.get('exF', ''), q = clamp(+ls.get('exQ', 1) || 0, 0, 2);
+  if (!fs.includes(f)) { const d = (S.fmt || '').split('_')[0]; f = fs.includes(d) ? d : 'm4a'; }
+  const sel = tlSel(), name0 = t('edited', { t: TL.p.name || t('tabEdit') });
+  const card = openModal(`<h3>${esc(t('tlExport'))}</h3>
+    <div class="modal-body">
+      <div><p class="sort-lab">${esc(t('exName'))}</p><input class="sel-full" type="text" id="exN" maxlength="80" value="${esc(name0)}"></div>
+      <div><p class="sort-lab">${esc(t('infFmt'))}</p><div class="ex-chips">${fs.map(x => `<button class="chip" type="button" data-ef="${x}">${x.toUpperCase()}</button>`).join('')}</div></div>
+      <div id="exQrow"><p class="sort-lab">${esc(t('exQual'))}</p><div class="seg2" role="radiogroup">${[0, 1, 2].map(i => `<button type="button" role="radio" data-eq="${i}">${esc(t('exQ' + i))}</button>`).join('')}</div></div>
+      <p class="mtext" id="exInfo" style="margin:0"></p>
+      ${sel ? `<label class="switch"><input type="checkbox" id="exOnly"><span>${esc(t('exOnly'))}<small>${esc(t('exOnlyD'))}</small></span></label>` : ''}
+      <div class="ex-more"><button class="btn sm" type="button" data-ex="ring">${ic('bell')}${esc(t('exRing'))}</button><button class="btn sm" type="button" data-ex="video">${ic('film')}${esc(t('tlVideo'))}</button></div>
+    </div>
+    <div class="modal-actions ex-acts"><button class="btn" type="button" data-ex="share">${ic('share')}${esc(t('share'))}</button><button class="btn primary" type="button" data-ex="save">${ic('check')}${esc(t('exSaveRec'))}</button></div>`);
+  const only = () => { const c = card.querySelector('#exOnly'); return !!(c && c.checked && sel); };
+  const upd = () => {
+    card.querySelectorAll('[data-ef]').forEach(b => b.setAttribute('aria-pressed', b.dataset.ef === f));
+    card.querySelectorAll('[data-eq]').forEach(b => b.setAttribute('aria-checked', +b.dataset.eq === q));
+    card.querySelector('#exQrow').hidden = !EXQ[f];
+    const d = only() ? tlLen(sel) : tlEnd(), by = EXQ[f] ? EXQ[f][q] * 125 * d : 192000 * d * (f === 'flac' ? 0.6 : 1);
+    card.querySelector('#exInfo').textContent = `${f.toUpperCase()} · ${EXQ[f] ? EXQ[f][q] + ' kbps' : t('exLossless')} · ${fmt(d)} · ≈ ${fmtSize(by)}`;
+  };
+  upd();
+  card.onchange = upd;
+  card.onclick = async e => {
+    const ef = e.target.closest('[data-ef]'), eq = e.target.closest('[data-eq]');
+    if (ef) { f = ef.dataset.ef; upd(); return; }
+    if (eq) { q = +eq.dataset.eq; upd(); return; }
+    const a = e.target.closest('[data-ex]'); if (!a) return;
+    const how = a.dataset.ex, name = card.querySelector('#exN').value.trim() || name0, solo = only();
+    ls.set('exF', f); ls.set('exQ', q);
+    card.onclick = card.onchange = null; closeModal();
+    if (how === 'video') { tlVideo(); return; }
+    tlStop();
+    const fa = { format: f }; if (EXQ[f]) fa.kbps = EXQ[f][q];
+    if (S.chans === 'mono' || S.chans === 'stereo') fa.chans = S.chans;
+    let clips = tlMix();
+    if (solo) clips = clips.filter(m => m.path === sel.path && m.at === sel.at).map(m => Object.assign(m, { at: 0, xi: 0, xo: 0, duck: 0 }));
+    if (!clips.length) { toast(t('exMuted'), 3500); return; }
+    try {
+      const mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips });
+      if (how === 'ring') {
+        const len = Math.min(40000, Math.round(mix.dur));
+        await tlRunJob(t('exRing'), 'ringtone', { src: { path: mix.path }, startMs: 0, lenMs: len, name: safeName(name) });
+        if (await confirmBox({ title: t('ringSaved'), text: t('ringSavedD') + (mix.dur > 40500 ? ' ' + t('exRing40') : ''), ok: t('ringOpen'), cancel: t('ok') })) { try { AND.openSoundSettings(); } catch (x) {} }
+      } else if (how === 'share') {
+        const res = await tlRunJob(t('tlExport'), 'wsExport', Object.assign({ path: mix.path, name: safeName(name) }, fa, metaArgs(name)));
+        AND.share(JSON.stringify(res.src), res.name, res.mime);
+      } else {
+        const res = await tlRunJob(t('op_save'), 'wsSave', Object.assign({ path: mix.path, name: safeName(name) }, fa, metaArgs(name)));
+        const it = fromNative(res.item, null);
+        Object.assign(it, { title: name, userTitle: true, created: Date.now(), notes: '', categoryId: defaultCat(), kind: 'rec', source: 'edit', fav: false, bookmarks: [] });
+        S.items.set(it.id, it); await saveRec(it); render();
+        toast(t('tlSavedAs', { t: name }), 3500);
+      }
+    } catch (x) { toast(errText(x), 5000); }
+    try { runJob('wsClean', { keep: [] }).catch(() => {}); } catch (x) {}
+  };
 }
 
 /* ----- screen ----- */
@@ -4861,17 +4924,18 @@ function shareItems(list) {
   try { AND.share(JSON.stringify(l.length === 1 ? l[0].src : l.map(r => r.src)), l[0].title, l.length === 1 ? (l[0].mime || '').split(';')[0] : 'audio/*'); } catch (e) { toast(t('shareFail')); }
 }
 /** a copy (same format as the default export) or "save as" another format: a new recording next to the original */
-async function copyItem(r, f) {
-  const name = await promptBox(t(f ? 'imSaveAs' : 'imCopy'), f ? r.title : r.title + ' (2)'); if (!name) return;
-  toast(t('imWorking'), 2500);
+async function copyItem(r, f, nameIn) {
+  const name = nameIn || await promptBox(t(f ? 'imSaveAs' : 'imCopy'), f ? r.title : r.title + ' (2)'); if (!name) return;
+  if (!nameIn) toast(t('imWorking'), 2500);
   try {
     const w = await runJob('wsInit', { src: r.src });
     const sv = await runJob('wsSave', Object.assign({ path: w.path, name: safeName(name) }, fmtArgs(f)));
     const meta = metaOf(r); ['id', 'peaks', 'size', 'src', 'trashed', 'origId', 'origSrc', 'pos'].forEach(k => delete meta[k]);
     Object.assign(meta, { title: name, userTitle: true, created: Date.now(), kind: kindOf(r) });
     const it = fromNative(sv.item, meta); S.items.set(it.id, it); await saveRec(it);
-    render(); toast(t('imCopied', { t: name }), 3500);
-  } catch (e) { toast(errText(e), 4000); }
+    render(); if (!nameIn) toast(t('imCopied', { t: name }), 3500);
+    return true;
+  } catch (e) { toast(errText(e), 4000); return false; }
   finally { runJob('wsClean', { keep: [] }).catch(() => {}); }
 }
 function pickCover(r) {
@@ -4920,33 +4984,78 @@ function selEnd(fromPop) {
 }
 function selToggle(id) { if (SEL.has(id)) SEL.delete(id); else SEL.add(id); selMark(); }
 function selPool() { return stack.includes('coll') ? LISTS.coll : S.tab === 'music' && NATIVE ? LISTS.all : visibleRecs(); }
+const selMusic = () => { const f = SEL && S.items.get([...SEL][0]); return f ? kindOf(f) === 'music' : S.tab === 'music'; };
+/* 3.6: selecting like a phone's own recorder: "N selected" + select all on top, labelled actions in a bar at the bottom */
 function selMark() {
   document.querySelectorAll('#list [data-open]').forEach(el => el.closest('.rec').classList.toggle('picked', !!SEL && SEL.has(el.dataset.open)));
   document.querySelectorAll('#music [data-song], #coll [data-song]').forEach(el => { const s = rowItem(el); el.classList.toggle('picked', !!SEL && !!s && SEL.has(s.id)); });
-  const bar = $('#selBar'); bar.hidden = !SEL; if (!SEL) return;
-  const n = SEL.size, b = (k, icn, lab) => `<button class="icon-btn" type="button" data-sb="${k}" aria-label="${esc(t(lab))}" title="${esc(t(lab))}"${n ? '' : ' disabled'}>${ic(icn)}</button>`;
-  bar.innerHTML = `<button class="icon-btn" type="button" data-sb="x" aria-label="${esc(t('cancel'))}">${ic('close')}</button><b class="sel-n tc">${esc(t('imNSel', { n }))}</b>
-    <button class="btn sm" type="button" data-sb="all">${esc(t('imAll'))}</button><span class="spacer"></span>`
-    + b('share', 'share', 'share') + (S.tab === 'music' ? '' : b('cat', 'folder', 'imCats')) + b('pl', 'list', 'plAddTo') + b('del', 'trash', 'delete');
+  const bar = $('#selBar'), top = $('#selTop'); bar.hidden = top.hidden = !SEL; if (!SEL) return;
+  const n = SEL.size, pool = selPool(), all = !!pool.length && pool.every(r => SEL.has(r.id)), mu = selMusic();
+  top.innerHTML = `<button class="icon-btn" type="button" data-sb="x" aria-label="${esc(t('cancel'))}">${ic('close')}</button><b class="sel-n">${esc(n ? t('imNSel', { n }) : t('selNone'))}</b><span class="spacer"></span>
+    <button class="sel-all" type="button" data-sb="all" aria-pressed="${all}"><span>${esc(t('selAll'))}</span><i>${all ? ic('check', 2.4) : ''}</i></button>`;
+  const b = (k, icn, lab) => `<button type="button" data-sb="${k}"${n ? '' : ' disabled'}>${ic(icn)}<span>${esc(t(lab))}</span></button>`;
+  bar.innerHTML = b('del', 'trash', 'delete') + b('share', 'share', 'share') + b('pl', 'list', 'selPl') + b('move', mu ? 'mic' : 'note', mu ? 'selToRec' : 'selToMusic') + b('more', 'dots', 'selMore');
 }
-$('#selBar').addEventListener('click', async e => {
+async function selAct(e) {
   const b = e.target.closest('[data-sb]'); if (!b || !SEL) return;
-  const k = b.dataset.sb, list = [...SEL].map(id => S.items.get(id)).filter(Boolean);
+  const k = b.dataset.sb, list = [...SEL].map(id => S.items.get(id)).filter(Boolean), one = list.length === 1 ? list[0] : null, mu = selMusic();
   if (k === 'x') return selEnd();
   if (k === 'all') { const p = selPool(), all = p.length && p.every(r => SEL.has(r.id)); p.forEach(r => all ? SEL.delete(r.id) : SEL.add(r.id)); selMark(); return; }
   if (!list.length) return;
+  const redraw = () => { render(); if (stack.includes('coll')) renderColl(); };
   if (k === 'share') shareItems(list);
-  else if (k === 'cat') { await setCats(list); selEnd(); }
   else if (k === 'pl') { await plAdd(list); selEnd(); }
   else if (k === 'del') { if (await delItems(list)) selEnd(); }
-});
+  else if (k === 'move') {
+    for (const r of list) { r.kind = mu ? 'rec' : 'music'; await saveRec(r); }
+    selEnd(); redraw(); toast(t(mu ? 'imMovedRec' : 'imMovedMusic'));
+  } else if (k === 'more') {
+    const o = (value, key, desc) => ({ value, label: t(key), desc: desc || '' }), opts = [];
+    const nat = list.every(r => NATIVE && r.src);
+    if (one) opts.push(o('ren', 'imRename'));
+    if (nat) opts.push(o('saveas', 'imSaveAs', t(one ? 'imSaveAsD' : 'selSaveAsD', { n: list.length })));
+    if (one && nat) opts.push(o('copy', 'imCopy', t('imCopyD')));
+    if (!mu) opts.push(o('cat', 'imCats'));
+    if (one && mu) opts.push(o('artist', 'imArtist', artistOf(one)), o('cover', 'imCover'));
+    if (one) opts.push(o('info', 'selInfo'));
+    const v = await chooseBox(one ? one.title : t('imNSel', { n: list.length }), '', opts);
+    if (!v) return;
+    if (v === 'ren') { const nm = await promptBox(t('imRename'), one.title); if (nm) { one.title = nm; one.userTitle = true; await saveRec(one); selEnd(); redraw(); } }
+    else if (v === 'copy') { selEnd(); copyItem(one, null); }
+    else if (v === 'cat') { await setCats(list); selEnd(); }
+    else if (v === 'artist') { const nm = await promptBox(t('imArtist'), one.uArtist || one.artist || ''); if (nm) { one.uArtist = one.artist = nm; await saveRec(one); selEnd(); redraw(); } }
+    else if (v === 'cover') { selEnd(); pickCover(one); }
+    else if (v === 'info') itemInfo(one);
+    else if (v === 'saveas') {
+      const f = await chooseBox(t('exFmt'), t(one ? 'imSaveAsD' : 'selSaveAsD', { n: list.length }), FMTS().filter(x => !x.startsWith('mp3') || CAPS.mp3).map(x => ({ value: x, label: fmtLabel(x), desc: t('exq_' + x) })));
+      if (!f) return;
+      selEnd();
+      if (one) { copyItem(one, f); return; }
+      let ok = 0;
+      for (let i = 0; i < list.length; i++) { toast(t('selSaving', { i: i + 1, n: list.length }), 60000); if (await copyItem(list[i], f, list[i].title)) ok++; }
+      toast(t('selSaved', { n: ok }), 3500);
+    }
+  }
+}
+$('#selBar').addEventListener('click', selAct);
+$('#selTop').addEventListener('click', selAct);
+/** what the file is: name, length, size, format, date, folder */
+function itemInfo(r) {
+  const mime = (r.mime || '').split(';')[0], ext = ((r.name || '').match(/\.([a-z0-9]+)$/i) || [])[1];
+  const rows = [['infName', r.name || r.title], ['infDur', fmt(r.duration || 0)], ['infSize', fmtSize(r.size) || '—'], ['infFmt', (ext || mime.split('/')[1] || '—').toUpperCase()],
+    ['infDate', dfDay.format(r.created) + ' ' + dfTime.format(r.created)], ['infFolder', NATIVE && r.src ? folderOf(r) : '—']];
+  if (kindOf(r) === 'music') rows.push(['infArtist', artistOf(r)], ['infAlbum', r.album || '—']);
+  const card = openModal(`<h3>${esc(r.title)}</h3><dl class="info-dl">${rows.map(([k, v]) => `<dt>${esc(t(k))}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
+  card.querySelector('[data-x]').onclick = () => closeModal();
+}
 /* long press opens the menu (or picks while selecting); a tap while selecting picks */
 const LP = { t: 0, fired: false, x: 0, y: 0 };
 function lpDown(e) {
   const el = e.target.closest('[data-open],[data-song]'); LP.fired = false; clearTimeout(LP.t);
   if (!el || e.button > 0) return;
   LP.x = e.clientX; LP.y = e.clientY;
-  LP.t = setTimeout(() => { const r = rowItem(el); if (!r) return; LP.fired = true; try { AND.vibrate(15); } catch (x) {} if (SEL) selToggle(r.id); else itemMenu(r); }, 500);
+  LP.t = setTimeout(() => { const r = rowItem(el); if (!r) return; LP.fired = true; try { AND.vibrate(15); } catch (x) {} if (SEL) selToggle(r.id); else selStart(r.id); }, 450);
 }
 function lpCancel(e) { if (e.type !== 'pointermove' || Math.hypot(e.clientX - LP.x, e.clientY - LP.y) > 10) clearTimeout(LP.t); }
 function lpClick(e) {
@@ -5033,7 +5142,7 @@ function showLangPick() {
 async function boot() {
   if (needLang()) { showLangPick(); return; }
   applyStatic();
-  $('#importIc').innerHTML = ic('import'); $('#searchIc').innerHTML = ic('search'); $('#setBtn').innerHTML = ic('gear');
+  $('#importIc').innerHTML = ic('import'); $('#sortBtn').innerHTML = sortBtnHTML('rec'); $('#searchIc').innerHTML = ic('search'); $('#setBtn').innerHTML = ic('gear');
   $('#qClear').innerHTML = ic('close'); $('#micNoteX').innerHTML = ic('close'); $('#libNoteX').innerHTML = ic('close');
   $('#tabRecIc').innerHTML = ic('mic'); $('#tabMusicIc').innerHTML = ic('note'); $('#tabEditIc').innerHTML = ic('scissors');
   $('#recClose').innerHTML = ic('close'); $('#recMarkIc').innerHTML = ic('flag'); $('#recDoneIc').innerHTML = ic('check', 2.2);

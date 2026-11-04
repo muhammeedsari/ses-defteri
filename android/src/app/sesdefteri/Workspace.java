@@ -1364,7 +1364,7 @@ final class Workspace {
             java.io.FileOutputStream os = new java.io.FileOutputStream(out);
             try { byte[] b = new byte[1 << 16]; int n; while ((n = is.read(b)) > 0) os.write(b, 0, n); } finally { is.close(); os.close(); }
         } else {
-            encode(in, inf, out, fmt, p, new double[] { 0, 1 }, cancel);
+            encode(in, inf, out, fmt, p, new double[] { 0, 1 }, cancel, a.optInt("kbps", 0));
         }
         JSONObject res = new JSONObject();
         JSONObject src = new JSONObject();
@@ -1389,9 +1389,15 @@ final class Workspace {
 
     /** m4a (AAC), flac or ogg (Opus at 48 kHz) from a 16-bit WAV */
     static void encode(File in, Info inf, File out, String fmt, AudioTools.Progress p, double[] range, AtomicBoolean cancel) throws Exception {
+        encode(in, inf, out, fmt, p, range, cancel, 0);
+    }
+
+    /** kbps: 3.6 quality choice (stereo bit rate; mono gets 60 %), 0 = default */
+    static void encode(File in, Info inf, File out, String fmt, AudioTools.Progress p, double[] range, AtomicBoolean cancel, int kbps) throws Exception {
         if ("flac".equals(fmt)) { wav(in, inf, p, range, cancel).run(new Studio.FlacNode(out, inf.rate)); return; }
         boolean op = "ogg".equals(fmt);
-        Studio.EncNode e = new Studio.EncNode(out, op ? 48000 : inf.rate, inf.ch > 1 ? (op ? 128000 : 192000) : (op ? 64000 : 128000));
+        int br = kbps > 0 ? (inf.ch > 1 ? kbps * 1000 : kbps * 600) : inf.ch > 1 ? (op ? 128000 : 192000) : (op ? 64000 : 128000);
+        Studio.EncNode e = new Studio.EncNode(out, op ? 48000 : inf.rate, br);
         e.enc.opus = op;
         Node head = e;
         if (op && inf.rate != 48000) { Resampler r = new Resampler(inf.ch, (double) inf.rate, 48000.0); r.to(e); head = r; }
@@ -1495,7 +1501,7 @@ final class Workspace {
         } else {
             File out = new File(dir(c), "e" + System.nanoTime() + "." + fmt);
             try {
-                encode(in, inf, out, fmt, p, new double[] { 0, 0.95 }, cancel);
+                encode(in, inf, out, fmt, p, new double[] { 0, 0.95 }, cancel, a.optInt("kbps", 0));
                 MediaLib.Target tg = MediaLib.create(c, name + "." + fmt, mime(fmt));
                 item = MediaLib.copyInTarget(c, tg, out);
                 if (item == null) { MediaLib.discard(c, tg); throw new IllegalStateException("publish"); }
