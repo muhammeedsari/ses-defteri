@@ -56,10 +56,27 @@ final class Separator {
         Workspace.Info inf = Workspace.info(in);
         p.on(0.01);
         File vm = model(c, "vocals.fp16.onnx"), am = model(c, "accompaniment.fp16.onnx");
-        File[] out = run(in, inf, vm, am, p, cancel);
+        boolean four = a.optBoolean("four", false);
+        File[] out = run(in, inf, vm, am, four ? Workspace.part(p, 0, 0.75) : p, cancel);
         JSONObject res = new JSONObject();
         res.put("voc", clip(out[0]));
-        res.put("acc", clip(out[1]));
+        if (!four) { res.put("acc", clip(out[1])); return res; }
+        // 3.8: four parts: the music is split further into drums, bass and the rest (dsp/Stems)
+        File dir = in.getParentFile();
+        File[] f = { new File(dir, "d" + System.nanoTime() + ".wav"), new File(dir, "b" + System.nanoTime() + ".wav"), new File(dir, "o" + System.nanoTime() + ".wav") };
+        try {
+            Workspace.Info ai = Workspace.info(out[1]);
+            app.sesdefteri.dsp.Stems st = new app.sesdefteri.dsp.Stems(ai.ch, ai.rate, new Studio.WavNode(f[0], ai.rate), new Studio.WavNode(f[1], ai.rate), new Studio.WavNode(f[2], ai.rate));
+            Workspace.wav(out[1], ai, Workspace.part(p, 0.75, 1), new double[] { 0, 1 }, cancel).run(st);
+        } catch (Exception x) {
+            for (File g : f) g.delete();
+            throw x;
+        } finally {
+            out[1].delete();
+        }
+        res.put("drums", clip(f[0]));
+        res.put("bass", clip(f[1]));
+        res.put("other", clip(f[2]));
         return res;
     }
 

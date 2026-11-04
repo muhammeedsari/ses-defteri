@@ -211,6 +211,7 @@
 <script src="i18n27.js"></script>
 <script src="i18n28.js"></script>
 <script src="i18n29.js"></script>
+<script src="i18n30.js"></script>
 <script>
 (() => {
 'use strict';
@@ -221,7 +222,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.7';
+const VERSION = '3.8';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -911,7 +912,7 @@ function openSettings() {
       <label class="switch"><input type="checkbox" id="setNorm"${S.normalize ? ' checked' : ''}><span>${esc(t('setNorm'))}<small>${esc(t('setNormD'))}</small></span></label>
       <div class="set-sub"><span>${esc(t('setXfade'))}</span><select id="setXf" class="sel-full">${[0, 2000, 5000, 8000].map(v => `<option value="${v}"${S.xfade === v ? ' selected' : ''}>${esc(v ? t('xfadeN', { n: v / 1000 }) : t('off'))}</option>`).join('')}</select></div>
       <label class="switch"><input type="checkbox" id="setGap"${S.gapless ? ' checked' : ''}><span>${esc(t('setGapless'))}<small>${esc(t('setGaplessD'))}</small></span></label>
-      <div class="set-sub"><span>${esc(t('setPlayEq'))}</span><select id="setPEq" class="sel-full">${EQ_PRESETS.map(([k]) => `<option value="${k}"${S.playEq === k ? ' selected' : ''}>${esc(t(k === 'flat' ? 'off' : 'eq_' + k))}</option>`).join('')}</select></div></div>
+      <div class="set-sub"><span>${esc(t('eqT'))}</span><button class="btn sm" type="button" id="setEqB">${ic('mixer')}${esc(eqState().on ? eqPreName(eqState().pre) : t('off'))}</button></div></div>
     <div class="set-sec"><h4>${esc(t('setMeta'))}</h4>
       <div class="set-sub"><span>${esc(t('setArtist'))}</span><input id="setArtist" class="sel-full" type="text" value="${esc(S.artist)}" placeholder="${esc(t('setArtistP'))}"></div>
       <div class="cover-row"><img id="coverImg" alt=""${ls.get('cover', '') ? ` src="data:image/jpeg;base64,${ls.get('cover', '')}"` : ' hidden'}><button class="btn sm" type="button" id="coverPick">${esc(t('coverPick'))}</button><button class="btn sm" type="button" id="coverClear"${ls.get('cover', '') ? '' : ' hidden'}>${esc(t('coverClear'))}</button><input type="file" id="coverIn" accept="image/*" hidden></div>
@@ -954,7 +955,7 @@ function openSettings() {
   bind('#setTextLang', 'textLang'); bind('#setLearn', 'learnVoice'); bind('#setAutoText', 'autoText');
   asrModelUi(card);
   const at = card.querySelector('#setAutoText'); if (at) at.addEventListener('change', () => { if (S.autoText) scheduleBackground(1500); });
-  bind('#setNorm', 'normalize'); bind('#setGap', 'gapless'); bind('#setRoom', 'roomLearn'); bind('#setArtist', 'artist'); bind('#setPEq', 'playEq');
+  bind('#setNorm', 'normalize'); bind('#setGap', 'gapless'); bind('#setRoom', 'roomLearn'); bind('#setArtist', 'artist'); { const q = card.querySelector('#setEqB'); if (q) q.onclick = () => openEq(); }
   const xf = card.querySelector('#setXf'); if (xf) xf.onchange = () => { S.xfade = +xf.value; ls.set('xfade', S.xfade); applyPlayerPrefs(); };
   ['#setGap', '#setPEq', '#setNorm'].forEach(id => { const el = card.querySelector(id); if (el) el.addEventListener('change', applyPlayerPrefs); });
   const cp = card.querySelector('#coverPick'), ci = card.querySelector('#coverIn'), cc = card.querySelector('#coverClear'), cimg = card.querySelector('#coverImg');
@@ -1834,16 +1835,87 @@ $('#plSkip').addEventListener('click', () => {
 /* 3.4.6: playback EQ and crossfade can be changed while listening (they were only in Settings) */
 function plPrefLabels() {
   const eq = $('#plEqB'), xf = $('#plXfB'); if (!eq || !xf) return;
-  eq.innerHTML = ic('mixer') + esc(t('setPlayEq') + ' · ' + t(S.playEq === 'flat' ? 'off' : 'eq_' + S.playEq));
-  eq.setAttribute('aria-pressed', S.playEq !== 'flat');
+  const e = eqState();
+  eq.innerHTML = ic('mixer') + esc(t('eqT') + ' · ' + (e.on ? eqPreName(e.pre) : t('off')));
+  eq.setAttribute('aria-pressed', !!e.on);
   xf.innerHTML = ic('shuffle') + esc(t('setXfade') + ' · ' + (S.xfade ? t('xfadeN', { n: S.xfade / 1000 }) : S.gapless ? t('gapOn') : t('off')));
   xf.setAttribute('aria-pressed', !!S.xfade);
 }
-$('#plEqB').addEventListener('click', async () => {
-  const v = await chooseBox(t('setPlayEq'), t('plEqD'), EQ_PRESETS.map(([k, g]) => ({ value: k, label: t(k === 'flat' ? 'off' : 'eq_' + k) + (S.playEq === k ? ' ✓' : ''), desc: k === 'flat' ? '' : g.map((x, i) => `${EQ_BANDS[i]} ${x > 0 ? '+' : ''}${x}`).join(' · ') })));
-  if (v == null) return;
-  S.playEq = v; ls.set('playEq', v); applyPlayerPrefs(); plPrefLabels();
-});
+$('#plEqB').addEventListener('click', () => openEq());
+/* ---------- 3.8: equalizer: on/off, presets, 10 bands ±15 dB on a curve, own presets, bass booster, virtual surround ---------- */
+const EQ10 = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+const EQ10_PRE = [['normal', [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], ['rock', [5, 4, 3, 1, -1, -1, 1, 3, 4, 5]], ['pop', [-1, 1, 3, 4, 3, 0, -1, -1, 1, 2]],
+  ['classical', [5, 4, 3, 2, -1, -1, 0, 2, 3, 4]], ['dance', [6, 5, 3, 0, 0, -2, -2, 0, 3, 4]], ['electronic', [5, 4, 1, 0, -2, 2, 1, 2, 4, 5]],
+  ['bassboost', [8, 7, 5, 3, 1, 0, 0, 0, 0, 0]], ['vocal', [-3, -2, -1, 1, 3, 4, 4, 2, 0, -1]], ['jazz', [4, 3, 1, 2, -2, -2, 0, 1, 3, 4]],
+  ['hiphop', [5, 4, 1, 3, -1, -1, 1, -1, 2, 3]], ['treble', [0, 0, 0, 0, 0, 1, 3, 5, 7, 8]]];
+const eqFrom5 = (g5, f) => { const fc = [100, 300, 1000, 3000, 8000]; if (f <= fc[0]) return g5[0]; if (f >= fc[4]) return g5[4];
+  let k = 0; while (k < 3 && f > fc[k + 1]) k++; const u = Math.log(f / fc[k]) / Math.log(fc[k + 1] / fc[k]); return Math.round(g5[k] + (g5[k + 1] - g5[k]) * u); };
+function eqState() {
+  const e = ls.get('eq2', null); if (e && e.g && e.g.length === 10) return e;
+  const old = (EQ_PRESETS.find(x => x[0] === S.playEq) || EQ_PRESETS[0])[1];   // the 3.4.7 presets carry over
+  return { on: S.playEq !== 'flat', pre: S.playEq === 'flat' ? 'normal' : 'custom', g: EQ10.map(f => eqFrom5(old, f)), bass: 0, virt: 0 };
+}
+const eqPreName = k => k.startsWith('u:') ? k.slice(2) : t('eqp_' + k);
+function eqSend() {
+  const e = eqState();
+  return e.on && (e.g.some(v => v) || e.bass || e.virt) ? JSON.stringify({ g: e.g, fc: EQ10, bass: e.bass * 10, virt: e.virt * 10 }) : '';
+}
+function openEq() {
+  const e = eqState(), r = S.items.get(S.cur), KN = [0, 30, 60, 100];
+  let drag = -1, applyT = 0;
+  const card = openModal(`<div class="eq-head"><h3>${esc(t('eqT'))}</h3><label class="switch"><input type="checkbox" id="eqOn"${e.on ? ' checked' : ''} aria-label="${esc(t('eqT'))}"><span></span></label>
+      <span class="spacer"></span><button class="btn sm" type="button" data-eqsave>${esc(t('save'))}</button></div>
+    ${r ? `<div class="eq-now">${artEl(r)}<div><b>${esc(r.title)}</b><span>${esc(kindOf(r) === 'music' ? artistOf(r) : fmt(r.duration))}</span></div></div>` : ''}
+    <div class="eq-body"><div class="ex-chips eq-chips" id="eqChips"></div>
+    <canvas class="eq-cv" id="eqCv"></canvas>
+    <div class="eq-knobs">${['bass', 'virt'].map(k => `<button type="button" class="eq-knob" data-knob="${k}"><i></i><b>${esc(t(k === 'bass' ? 'eqBass' : 'eqVirt'))}</b></button>`).join('')}</div></div>
+    <div class="modal-actions"><button class="btn" type="button" data-eqreset>${esc(t('eqReset'))}</button><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
+  const cv = card.querySelector('#eqCv');
+  const commit = () => { ls.set('eq2', e); clearTimeout(applyT); applyT = setTimeout(() => { applyPlayerPrefs(); plPrefLabels(); }, 90); };
+  const chips = () => {
+    const u = ls.get('eqUser', []);
+    card.querySelector('#eqChips').innerHTML = EQ10_PRE.map(([k]) => [k, eqPreName(k)]).concat(u.map(x => ['u:' + x.name, x.name])).concat(e.pre === 'custom' ? [['custom', t('eqp_custom')]] : [])
+      .map(([k, n]) => `<button class="chip" type="button" data-eqp="${esc(k)}" aria-pressed="${e.pre === k}">${esc(n)}</button>`).join('');
+    card.querySelectorAll('[data-knob]').forEach(b => { const v = e[b.dataset.knob]; b.style.setProperty('--p', v + '%'); b.setAttribute('aria-pressed', v > 0); b.querySelector('i').textContent = v ? v + '%' : t('off'); });
+    card.classList.toggle('eq-off', !e.on);
+  };
+  const geo = () => { const w = cv.clientWidth, h = cv.clientHeight, top = 22, bot = 24; return { w, h, cw: w / 10, y: g => top + (15 - g) / 30 * (h - top - bot), g: py => clamp(Math.round(15 - (py - top) / (h - top - bot) * 30), -15, 15) }; };
+  const draw = () => {
+    const c = sizeCanvas(cv); if (!c) return; const { ctx } = c, G = geo(), x = i => G.cw * (i + 0.5);
+    ctx.strokeStyle = COL.line; ctx.lineWidth = 1; ctx.fillStyle = COL.muted; ctx.font = `10px ${MONO}`; ctx.textAlign = 'center';
+    for (const g of [15, 0, -15]) { ctx.globalAlpha = g ? 0.5 : 1; ctx.beginPath(); ctx.moveTo(0, G.y(g) + 0.5); ctx.lineTo(G.w, G.y(g) + 0.5); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 10; i++) { ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.moveTo(x(i) + 0.5, G.y(15)); ctx.lineTo(x(i) + 0.5, G.y(-15)); ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.fillText(EQ10[i] >= 1000 ? EQ10[i] / 1000 + 'k' : EQ10[i], x(i), G.h - 6); }
+    const pts = e.g.map((g, i) => [x(i), G.y(g)]);
+    const path = () => { ctx.moveTo(0, pts[0][1]); ctx.lineTo(pts[0][0], pts[0][1]); for (let i = 1; i < 10; i++) { const [a, b] = pts[i - 1], [p, q] = pts[i]; ctx.bezierCurveTo((a + p) / 2, b, (a + p) / 2, q, p, q); } ctx.lineTo(G.w, pts[9][1]); };
+    ctx.beginPath(); path(); ctx.lineTo(G.w, G.y(0)); ctx.lineTo(0, G.y(0)); ctx.closePath(); ctx.fillStyle = COL.accent; ctx.globalAlpha = e.on ? 0.18 : 0.08; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.beginPath(); path(); ctx.strokeStyle = e.on ? COL.accent : COL.muted; ctx.lineWidth = 2.5; ctx.stroke();
+    for (let i = 0; i < 10; i++) { ctx.beginPath(); ctx.arc(pts[i][0], pts[i][1], drag === i ? 9 : 6.5, 0, 7); ctx.fillStyle = COL.surface; ctx.fill(); ctx.lineWidth = 2.5; ctx.stroke();
+      if (drag === i || e.g[i]) { ctx.fillStyle = drag === i ? COL.ink : COL.muted; ctx.fillText((e.g[i] > 0 ? '+' : '') + e.g[i], pts[i][0], Math.max(11, pts[i][1] - 12)); } }
+  };
+  const setBand = ev => { const b = cv.getBoundingClientRect(), G = geo(); if (drag < 0) drag = clamp(Math.floor((ev.clientX - b.left) / G.cw), 0, 9);
+    const g = G.g(ev.clientY - b.top); if (g !== e.g[drag] || e.pre !== 'custom') { e.g[drag] = g; e.pre = 'custom'; e.on = true; card.querySelector('#eqOn').checked = true; chips(); commit(); } draw(); };
+  cv.addEventListener('pointerdown', ev => { cv.setPointerCapture(ev.pointerId); drag = -1; setBand(ev); });
+  cv.addEventListener('pointermove', ev => { if (drag >= 0) setBand(ev); });
+  const up = () => { drag = -1; draw(); }; cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+  card.onchange = ev => { if (ev.target.id === 'eqOn') { e.on = ev.target.checked; chips(); draw(); commit(); } };
+  card.onclick = async ev => {
+    const p = ev.target.closest('[data-eqp]'), k = ev.target.closest('[data-knob]');
+    if (p) { const v = p.dataset.eqp; if (v === 'custom') return; e.pre = v; e.g = (v.startsWith('u:') ? (ls.get('eqUser', []).find(x => 'u:' + x.name === v) || {}).g : (EQ10_PRE.find(x => x[0] === v) || [])[1] || []).slice(); if (e.g.length !== 10) e.g = Array(10).fill(0); e.on = true; card.querySelector('#eqOn').checked = true; chips(); draw(); commit(); return; }
+    if (k) { const n = k.dataset.knob; e[n] = KN[(KN.indexOf(e[n]) + 1) % KN.length] || 0; if (e[n]) { e.on = true; card.querySelector('#eqOn').checked = true; } chips(); commit(); return; }
+    if (ev.target.closest('[data-eqreset]')) { Object.assign(e, { pre: 'normal', g: Array(10).fill(0), bass: 0, virt: 0 }); chips(); draw(); commit(); return; }
+    if (ev.target.closest('[data-x]')) { closeModal(); return; }
+    if (ev.target.closest('[data-eqsave]')) {
+      const nm = await promptBox(t('eqSaveQ'), e.pre.startsWith('u:') ? e.pre.slice(2) : ''); if (nm) {
+        const u = ls.get('eqUser', []).filter(x => x.name !== nm); u.push({ name: nm, g: e.g.slice() }); ls.set('eqUser', u.slice(-12));
+        e.pre = 'u:' + nm; e.on = true; ls.set('eq2', e); toast(t('eqSaved', { n: nm }));
+      }
+      openEq();
+    }
+  };
+  chips(); requestAnimationFrame(draw);
+}
 $('#plXfB').addEventListener('click', async () => {
   const v = await chooseBox(t('setXfade'), t('plXfD'), [['0', t('off'), ''], ['gap', t('setGapless') + (S.gapless && !S.xfade ? ' ✓' : ''), t('setGaplessD')], ...[2000, 5000, 8000].map(x => [String(x), t('xfadeN', { n: x / 1000 }) + (S.xfade === x ? ' ✓' : ''), ''])].map(([value, label, desc]) => ({ value, label, desc })));
   if (v == null) return;
@@ -2887,7 +2959,7 @@ function renderTlBar() {
   TL.env = false;
   bar.classList.toggle('two', !TL.rec);
   bar.innerHTML = c
-    ? b('done', 'check', t('tlDone')) + b('del', 'trash', t('tlDelete')) + b('split', 'scissors', t('tlSplit')) + (c.prev ? b('ab', 'ear', t('tlAB')) : '') + b('env', 'envl', t('tlEnv')) + b('clarify', 'spark', t('op_clarify')) + b('spec', 'spec', t('tlSpec')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
+    ? b('done', 'check', t('tlDone')) + b('del', 'trash', t('tlDelete')) + b('split', 'scissors', t('tlSplit')) + (c.prev ? b('ab', 'ear', t('tlAB')) : '') + b('env', 'envl', t('tlEnv')) + b('clarify', 'spark', t('op_clarify')) + b('vchg', 'speak', t('vcT')) + b('spec', 'spec', t('tlSpec')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
       b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('bass', 'wave', t('tlBass')) + b('treble', 'spark', t('tlTreble')) + b('sep', 'mixer', t('tlSep')) + b('spk', 'people', t('tlSpk')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack'))
     : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + b('sfx', 'bell', t('tlSfx')) + b('tts', 'speak', t('tlTts')) + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('metro', 'beat', t('tlClick')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
   tlFxList();
@@ -3232,6 +3304,7 @@ $('#editTab').addEventListener('click', e => {
   else if (k === 'ab') tlAB();
   else if (k === 'track') tlTrack();
   else if (k === 'sep') tlSep();
+  else if (k === 'vchg') tlVoice();
   else if (k === 'spk') tlSpk();
   else if (k === 'merge') tlMerge();
   else if (k === 'eq5') tlEq();
@@ -3245,29 +3318,100 @@ $('#editTab').addEventListener('click', e => {
 });
 
 /* ----- voice separation, beats, recording onto the timeline ----- */
+/* 3.8: split into voice + music, or four parts (voice, drums, bass, the rest); then a small mixer for the parts */
 async function tlSep() {
   const c = tlSel(); if (!c || TL.busy) return;
   if (!CAPS.sep) { toast(t('sepNo'), 4000); return; }
-  const how = await chooseBox(t('tlSep'), t('sepD'), [{ value: 'voc', label: t('sepKeep'), desc: t('sepKeepD') },
-    { value: 'acc', label: t('sepRemove'), desc: t('sepRemoveD') }, { value: 'both', label: t('sepBoth'), desc: t('sepBothD') }]);
+  const how = await chooseBox(t('tlSep'), t('sepD'), [{ value: 'two', label: t('sep2'), desc: t('sep2D') }, { value: 'four', label: t('sep4'), desc: t('sep4D') }]);
   if (!how) return;
   tlStop();
   let res;
-  try { res = await tlRunJob(t('tlSep'), 'tlSep', { path: c.path }); } catch (e) { toast(errText(e), 5000); return; }
-  const before = tlSnap();
+  try { res = await tlRunJob(t('tlSep'), 'tlSep', { path: c.path, four: how === 'four' }); } catch (e) { toast(errText(e), 5000); return; }
+  const before = tlSnap(), base = c.name || '', ids = [];
   const fit = (k, o) => { const nd = o.dur / 1000, f = nd / k.dur; Object.assign(k, { path: o.path, ch: o.ch, dur: nd }); k.in = Math.min(k.in * f, nd - 0.05); k.out = Math.min(k.out * f, nd); };
-  const base = c.name || '';
-  if (how === 'both') {
-    const d = Object.assign({}, c, { id: uid(), name: base + ' · ' + t('sepMusic') });
-    fit(d, res.acc);
-    d.tr = tlFreeTrack(d.at, d.at + tlLen(d), null, c.tr + 1); tlEnsureTrack(d.tr);
-    TL.p.clips.push(d);
-  }
-  fit(c, how === 'acc' ? res.acc : res.voc);
-  c.name = base + ' · ' + t(how === 'acc' ? 'sepMusic' : 'sepVoice');
-  c.beats = null;
+  const parts = how === 'four' ? [['voc', 'sepVoice'], ['drums', 'sepDrums'], ['bass', 'sepBass'], ['other', 'sepOther']] : [['voc', 'sepVoice'], ['acc', 'sepMusic']];
+  const src = Object.assign({}, c);
+  parts.forEach(([k, lab], i) => {
+    const d = i ? Object.assign({}, src, { id: uid() }) : c;
+    fit(d, res[k]); d.name = base + ' · ' + t(lab); d.beats = null; delete d.prev; delete d.chg;
+    if (i) { d.tr = tlFreeTrack(d.at, d.at + tlLen(d), null, c.tr + i); tlEnsureTrack(d.tr); TL.p.clips.push(d); }
+    ids.push([d.id, lab]);
+  });
   tlCommit(before);
   toast(t('sepDone'), 3000);
+  stemMixer(ids);
+}
+function stemMixer(ids) {
+  const before = tlSnap(), get = id => TL.p.clips.find(x => x.id === id), four = ids.length > 2;
+  const pct = c => c.gain <= -59 ? 0 : Math.round(Math.pow(10, (c.gain || 0) / 20) * 100);
+  const QUICK = [['all', [1, 1, 1, 1]], ['karaoke', [0, 1, 1, 1]], ['vocals', [1, 0, 0, 0]]].concat(four ? [['nodrums', [1, 0, 1, 1]], ['nobass', [1, 1, 0, 1]]] : []);
+  const card = openModal(`<h3>${esc(t('mixT'))}</h3><p class="mtext">${esc(t('mixD'))}</p>
+    <div class="ex-chips">${QUICK.map(([k]) => `<button class="chip" type="button" data-mq="${k}">${esc(t('mq_' + k))}</button>`).join('')}</div>
+    <div class="modal-body" id="mixRows"></div>
+    <div class="modal-actions"><button class="btn" type="button" data-mplay>${ic('play')}${esc(t('ringListen'))}</button><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`,
+    () => { tlStop(); tlCommit(before); });
+  const rows = () => { card.querySelector('#mixRows').innerHTML = ids.map(([id, lab]) => { const c = get(id); return c ? `<div class="slider"><span>${esc(t(lab))}</span><input type="range" data-mx="${id}" min="0" max="150" step="5" value="${pct(c)}"><span class="tc">${pct(c)}%</span></div>` : ''; }).join(''); };
+  const replay = () => { if (TL.play) { tlStop(); tlPlay(tlMix(), TL.pos); } };
+  const setG = (c, v) => { c.gain = v <= 0 ? -60 : Math.round(20 * Math.log10(v / 100) * 10) / 10; };
+  rows();
+  card.oninput = e => { const el = e.target.closest('[data-mx]'); if (!el) return; const c = get(el.dataset.mx); if (!c) return; setG(c, +el.value); el.nextElementSibling.textContent = el.value + '%'; ls.set('proj', TL.p); drawTl(); };
+  card.onchange = () => replay();
+  card.onclick = e => {
+    const q = e.target.closest('[data-mq]');
+    if (q) { const g = QUICK.find(x => x[0] === q.dataset.mq)[1]; ids.forEach(([id], i) => { const c = get(id); if (c) setG(c, g[i] * 100); }); rows(); ls.set('proj', TL.p); drawTl(); replay(); return; }
+    if (e.target.closest('[data-mplay]')) { if (TL.play) tlStop(); else tlPlay(tlMix(), TL.pos); return; }
+    if (e.target.closest('[data-x]')) closeModal();
+  };
+}
+/* 3.8: change the voice: pitch (semitones + octave), a voice changer with characters, room presets; each with a short preview */
+const VC_PRE = { female: { vst: 4, tempo: 1, speed: 1 }, male: { vst: -4, tempo: 1, speed: 1 }, robot: { vst: 0, tempo: 1, speed: 1, fx: 'robot' }, cartoon: { vst: 7, tempo: 1.1, speed: 1 }, girl: { vst: 6, tempo: 1.05, speed: 1 }, oldman: { vst: -3, tempo: 0.9, speed: 1 } };
+const REV_PRE = { warm: { mix: 30, soft: 70, room: 35, gain: 1 }, wide: { mix: 45, soft: 40, room: 80, gain: 0 }, compact: { mix: 20, soft: 50, room: 15, gain: 1 }, fantasy: { mix: 70, soft: 20, room: 100, gain: -1 }, ambient: { mix: 55, soft: 60, room: 65, gain: 0 } };
+function tlVoice(c0) {
+  const c = c0 || tlSel(); if (!c || TL.busy) return;
+  let tab = ls.get('vcTab', 'pitch'), prevKey = '', prevBusy = false;
+  const k0 = clamp(TL.pos - c.at, 0, Math.max(0, tlLen(c) - 1));   // previews start here (the play line, or the clip start)
+  const v = Object.assign({ st: 0, oct: 0, pre: '', vst: 0, tempo: 1, speed: 1, fx: '', rpre: 'warm' }, REV_PRE.warm);
+  const sl = (k, mn, mx, step, f) => `<div class="slider"><span>${esc(t('vc_' + k))}</span><input type="range" data-vk="${k}" min="${mn}" max="${mx}" step="${step}" value="${v[k]}"><span class="tc">${f(v[k])}</span></div>`;
+  const sgn = x => (x > 0 ? '+' : x < 0 ? '−' : '') + nf2.format(Math.abs(x)), pc = x => Math.round(x) + '%', FMT = { st: sgn, oct: sgn, vst: sgn, tempo: speedLabel, speed: speedLabel, mix: pc, soft: pc, room: pc, gain: x => sgn(x) + ' dB' };
+  const card = openModal(`<h3>${esc(t('vcT'))}</h3><div class="seg2" role="radiogroup">${['pitch', 'changer', 'room'].map(k => `<button type="button" role="radio" data-vt="${k}">${esc(t('vt_' + k))}</button>`).join('')}</div>
+    <div class="modal-body" id="vcBody"></div>
+    <div class="modal-actions"><button class="btn" type="button" data-vprev>${ic('play')}<span>${esc(t('vcPrev'))}</span></button><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('vcOk'))}</button></div>`, () => tlStop());
+  const draw = () => {
+    card.querySelectorAll('[data-vt]').forEach(b => b.setAttribute('aria-checked', b.dataset.vt === tab));
+    const chips = (map, cur, key) => `<div class="ex-chips">${Object.keys(map).map(k => `<button class="chip" type="button" data-${key}="${k}" aria-pressed="${cur === k}">${esc(t(key + '_' + k))}</button>`).join('')}</div>`;
+    card.querySelector('#vcBody').innerHTML = tab === 'pitch' ? `<p class="mtext">${esc(t('vcPitchD'))}</p>` + sl('st', -12, 12, 1, FMT.st) + sl('oct', -2, 2, 1, FMT.oct)
+      : tab === 'changer' ? chips(VC_PRE, v.pre, 'vp') + sl('vst', -12, 12, 1, FMT.vst) + sl('tempo', 0.5, 2, 0.05, FMT.tempo) + sl('speed', 0.5, 2, 0.05, FMT.speed)
+      : chips(REV_PRE, v.rpre, 'rp') + sl('mix', 0, 100, 5, FMT.mix) + sl('soft', 0, 100, 5, FMT.soft) + sl('room', 0, 100, 5, FMT.room) + sl('gain', -12, 12, 1, FMT.gain);
+  };
+  const args = () => tab === 'pitch' ? { semitones: v.st + 12 * v.oct, formant: true }
+    : tab === 'changer' ? Object.assign({ semitones: v.vst + 12 * Math.log2(v.speed), speed: v.tempo * v.speed, formant: false }, v.fx ? { preset: v.fx } : {})
+    : { rev: { room: v.room / 100, mix: v.mix / 100, soft: v.soft / 100 }, gain: v.gain };
+  const noop = a => !a.rev && !a.preset && Math.abs(a.semitones || 0) < 0.01 && Math.abs((a.speed || 1) - 1) < 0.01;
+  draw();
+  card.oninput = e => { const el = e.target.closest('[data-vk]'); if (!el) return; v[el.dataset.vk] = +el.value; el.nextElementSibling.textContent = FMT[el.dataset.vk](+el.value); if (tab === 'changer') v.pre = ''; if (tab === 'room') v.rpre = ''; };
+  card.onclick = async e => {
+    const tb = e.target.closest('[data-vt]'), vp = e.target.closest('[data-vp]'), rp = e.target.closest('[data-rp]');
+    if (tb) { tab = tb.dataset.vt; ls.set('vcTab', tab); tlStop(); draw(); return; }
+    if (vp) { v.pre = vp.dataset.vp; Object.assign(v, { fx: '' }, VC_PRE[v.pre]); draw(); return; }
+    if (rp) { v.rpre = rp.dataset.rp; Object.assign(v, REV_PRE[v.rpre]); draw(); return; }
+    if (e.target.closest('[data-x]')) { closeModal(); return; }
+    if (e.target.closest('[data-ok]')) { const a = args(); if (noop(a)) { closeModal(); return; } closeModal(); tlEffect(c, 'vchange', a); return; }
+    const pv = e.target.closest('[data-vprev]');
+    if (pv) {
+      if (TL.play) { tlStop(); return; }
+      const a = args(); if (noop(a) || prevBusy) return;
+      // eight seconds from the play line (or the clip start), processed alone and played
+      const t0 = c.in + k0, t1 = Math.min(c.out, t0 + 8);
+      prevBusy = true; const lab = pv.querySelector('span'); lab.textContent = t('vcPrevBusy');
+      try {
+        const key = c.path + t0;
+        if (prevKey !== key) { const cut = await runJob('wsOp', { path: c.path, op: 'cut', keep: [[Math.round(t0 * 1000), Math.round(t1 * 1000)]] }); prevKey = key; card._cut = cut.path; }
+        const r = await runJob('wsOp', Object.assign({ path: card._cut, op: 'vchange' }, a));
+        if (stack.includes('modal')) tlPlay([{ path: r.path, at: c.at + k0, in: 0, len: r.dur / 1000, g: 1, fi: 0, fo: 0 }], c.at + k0, c.at + k0 + r.dur / 1000);
+      } catch (x) { toast(errText(x), 4000); }
+      prevBusy = false; lab.textContent = t('vcPrev');
+    }
+  };
 }
 /* ----- 3.3: pitch correction and ready-made sounds ----- */
 const keyName = (k, sc) => t('notes').split(',')[k] + (sc === 'chromatic' ? ' · ' + t('scChrom') : ' ' + t(sc === 'minor' ? 'scMinor' : 'scMajor'));
@@ -3830,8 +3974,7 @@ function applyPlayerPrefs() {
   if (!NATIVE) return;
   try {
     AND.plXfade(S.xfade || 0, !!S.gapless);
-    const eq = (EQ_PRESETS.find(x => x[0] === S.playEq) || EQ_PRESETS[0])[1];
-    AND.plEq(eq.some(v => v) ? JSON.stringify(eq) : '');
+    AND.plEq(eqSend());
     const r = S.items.get(S.cur); if (r) AND.plGain(r.id, levelGain(r));
   } catch (e) {}
 }

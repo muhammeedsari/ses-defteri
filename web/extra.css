@@ -295,3 +295,22 @@ html{overflow-x:hidden;overscroll-behavior:none}body{overflow-x:clip;max-width:1
 .pu-row small{font-family:var(--f-mono);font-size:12px;color:var(--accent)}
 .rec-qbox{display:grid;gap:14px}
 .rec-custom{display:grid;gap:12px;padding:12px;border-radius:12px;background:var(--surface-2)}
+/* 3.8: equalizer */
+.eq-head{display:flex;align-items:center;gap:12px}
+.eq-head h3{margin:0}
+.eq-now{display:flex;align-items:center;gap:12px;margin:14px 0 4px;padding:10px;border-radius:14px;background:var(--surface-2)}
+.eq-now .art{width:44px;height:44px;flex:none}
+.eq-now div{display:grid;min-width:0}
+.eq-now b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eq-now span{font-size:12.5px;color:var(--muted)}
+.eq-chips{flex-wrap:nowrap;overflow-x:auto;margin:14px -4px 6px;padding:0 4px 2px;scrollbar-width:none}
+.eq-chips::-webkit-scrollbar{display:none}
+.eq-cv{display:block;width:100%;height:230px;touch-action:none}
+.eq-off .eq-cv{opacity:.55}
+.eq-knobs{display:flex;justify-content:center;gap:36px;margin-top:10px}
+.eq-knob{display:grid;justify-items:center;gap:6px;font-size:13px}
+.eq-knob i{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-family:var(--f-mono);font-size:12px;color:var(--muted);
+  background:radial-gradient(closest-side,var(--surface) 78%,transparent 80%),conic-gradient(var(--accent) var(--p,0%),var(--surface-2) 0)}
+.eq-knob[aria-pressed="true"] i{color:var(--accent);font-weight:600}
+/* 3.8: voice change / part mixer */
+#vcBody .ex-chips{margin-bottom:4px}

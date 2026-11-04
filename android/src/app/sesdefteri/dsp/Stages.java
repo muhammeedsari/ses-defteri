@@ -396,11 +396,14 @@ public final class Stages {
         final float[][] cf;
         final float fb, damp, wet, dry;
         final long tail;
-        public Reverb(int ch, double fs, double room, double mixAmt) {
+        public Reverb(int ch, double fs, double room, double mixAmt) { this(ch, fs, room, mixAmt, 0.3); }
+
+        /** soft: 0 bright … 1 dark tail (3.8 "softness") */
+        public Reverb(int ch, double fs, double room, double mixAmt, double soft) {
             this.ch = ch;
             double sc = fs / 44100.0;
             fb = (float) (0.7 + 0.28 * Math.max(0, Math.min(1, room)));
-            damp = 0.3f;
+            damp = (float) Math.max(0.05, Math.min(0.9, soft));
             wet = (float) Math.max(0, Math.min(1, mixAmt)) * 0.35f;
             dry = 1f - (float) Math.max(0, Math.min(1, mixAmt)) * 0.3f;
             cb = new float[ch][COMB.length][]; ab = new float[ch][AP.length][];

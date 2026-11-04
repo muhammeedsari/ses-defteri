@@ -406,6 +406,27 @@ final class Workspace {
                     rep.put("air", Math.round(airDb * 10) / 10.0);
                     break;
                 }
+                case "vchange": {
+                    // 3.8 change the voice: pitch (semitones, formants follow unless kept), tempo, a character, room, gain
+                    double sp = Math.max(0.25, Math.min(4, a.optDouble("speed", 1))), st = Math.max(-24, Math.min(24, a.optDouble("semitones", 0)));
+                    String pr = a.optString("preset", "");
+                    m = new Meter(ch, fs);
+                    Node tail = null;
+                    head = null;
+                    if (Math.abs(sp - 1) > 1e-3 || Math.abs(st) > 1e-3) { head = tail = new TimePitch(ch, fs, sp, st, a.optBoolean("formant", false)); }
+                    if (!pr.isEmpty()) { Node v = new app.sesdefteri.dsp.VoiceFx(ch, fs, pr); if (head == null) head = tail = v; else tail = tail.to(v); }
+                    JSONObject rv = a.optJSONObject("rev");
+                    if (rv != null && rv.optDouble("mix", 0) > 0) {
+                        Node v = new Stages.Reverb(ch, fs, rv.optDouble("room", 0.5), rv.optDouble("mix", 0.3), rv.optDouble("soft", 0.3));
+                        if (head == null) head = tail = v; else tail = tail.to(v);
+                    }
+                    Node lim = new Limiter(ch, fs, -1.0, Math.max(-12, Math.min(12, a.optDouble("gain", 0))));
+                    if (head == null) head = lim; else tail.to(lim);
+                    lim.to(m);
+                    rep.put("speed", sp); rep.put("semitones", st);
+                    slice = new double[] { 0, 1 };
+                    break;
+                }
                 case "voicefx": {
                     String pr = a.optString("preset", "radio");
                     rep.put("preset", pr);

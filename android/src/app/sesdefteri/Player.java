@@ -57,7 +57,9 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
 
     /* ---------- 2.1: level matching, EQ, crossfade / gapless, A-B loop, skip silence, sleep timer ---------- */
     private final java.util.HashMap<String, Double> gains = new java.util.HashMap<>();   // id → dB (level matching)
-    private double[] eqDb;                       // 5 bands (100, 300, 1k, 3k, 8k) or null
+    private double[] eqDb;                       // gains at eqFc (3.8: 10 bands 31 Hz … 16 kHz) or null
+    private double[] eqFc = { 100, 300, 1000, 3000, 8000 };
+    private int bassStr, virtStr;                // 3.8: bass booster / virtual surround, 0..1000
     private int xfadeMs;                         // 0 = off
     private boolean gapless = true;
     private long loopA = -1, loopB = -1;
@@ -88,28 +90,19 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     /** EQ and quiet-track boost hang off the player's audio session */
     private void attachFx(MediaPlayer p, JSONObject it) {
         detachFx(p);
-        Object[] o = new Object[2];
+        Object[] o = new Object[4];
         if (noFx && p == mp) { fx.put(p, o); return; }
+        if (eqDb != null) {
+            Object e = null;
+            if (Build.VERSION.SDK_INT >= 28) e = dynEq(p.getAudioSessionId());   // every band exactly where it is drawn
+            if (e == null) e = sysEq(p.getAudioSessionId());
+            o[0] = e;
+        }
         try {
-            if (eqDb != null) {
-                android.media.audiofx.Equalizer e = new android.media.audiofx.Equalizer(1000, p.getAudioSessionId());   // high priority: the phone's sound packs must not take it over
-                double[] fc = { 100, 300, 1000, 3000, 8000 };
-                short n = e.getNumberOfBands();
-                short[] range = e.getBandLevelRange();
-                for (short b = 0; b < n; b++) {
-                    double f = e.getCenterFreq(b) / 1000.0, lf = Math.log(Math.max(20, f)), g;
-                    if (f <= fc[0]) g = eqDb[0];
-                    else if (f >= fc[4]) g = eqDb[4];
-                    else {
-                        int k = 0; while (k < 3 && f > fc[k + 1]) k++;
-                        double t = (lf - Math.log(fc[k])) / (Math.log(fc[k + 1]) - Math.log(fc[k]));
-                        g = eqDb[k] + (eqDb[k + 1] - eqDb[k]) * t;
-                    }
-                    e.setBandLevel(b, (short) Math.max(range[0], Math.min(range[1], Math.round(g * 100))));
-                }
-                e.setEnabled(true);
-                o[0] = e;
-            }
+            if (bassStr > 0) { android.media.audiofx.BassBoost bb = new android.media.audiofx.BassBoost(1000, p.getAudioSessionId()); bb.setStrength((short) bassStr); bb.setEnabled(true); o[2] = bb; }
+        } catch (Exception ignored) { }
+        try {
+            if (virtStr > 0) { android.media.audiofx.Virtualizer v = new android.media.audiofx.Virtualizer(1000, p.getAudioSessionId()); v.setStrength((short) virtStr); v.setEnabled(true); o[3] = v; }
         } catch (Exception ignored) { }
         try {
             double g = gainOf(it);
@@ -121,6 +114,50 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
             }
         } catch (Exception ignored) { }
         fx.put(p, o);
+    }
+
+    /** gain at frequency f (Hz) from the drawn bands, straight lines on a log scale */
+    private double gainAt(double f) {
+        int n = eqFc.length;
+        if (f <= eqFc[0]) return eqDb[0];
+        if (f >= eqFc[n - 1]) return eqDb[n - 1];
+        int k = 0; while (k < n - 2 && f > eqFc[k + 1]) k++;
+        double t = (Math.log(f) - Math.log(eqFc[k])) / (Math.log(eqFc[k + 1]) - Math.log(eqFc[k]));
+        return eqDb[k] + (eqDb[k + 1] - eqDb[k]) * t;
+    }
+
+    private Object dynEq(int session) {
+        try {
+            int n = eqFc.length;
+            android.media.audiofx.DynamicsProcessing.Config cfg = new android.media.audiofx.DynamicsProcessing.Config.Builder(
+                android.media.audiofx.DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, 2, true, n, false, 0, false, 0, false).build();
+            android.media.audiofx.DynamicsProcessing.Eq eq = new android.media.audiofx.DynamicsProcessing.Eq(true, true, n);
+            for (int i = 0; i < n; i++) {
+                double edge = i + 1 < n ? Math.sqrt(eqFc[i] * eqFc[i + 1]) : 20000;   // a band ends half way (log) to the next one
+                eq.setBand(i, new android.media.audiofx.DynamicsProcessing.EqBand(true, (float) edge, (float) eqDb[i]));
+            }
+            cfg.setPreEqAllChannelsTo(eq);
+            android.media.audiofx.DynamicsProcessing d = new android.media.audiofx.DynamicsProcessing(1000, session, cfg);
+            double top = 0; for (double g : eqDb) top = Math.max(top, g);
+            if (top > 0) d.setInputGainAllChannelsTo((float) (-0.6 * top));   // headroom so big boosts do not crackle
+            d.setEnabled(true);
+            return d;
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    private Object sysEq(int session) {
+        try {
+            android.media.audiofx.Equalizer e = new android.media.audiofx.Equalizer(1000, session);   // high priority: the phone's sound packs must not take it over
+            short n = e.getNumberOfBands();
+            short[] range = e.getBandLevelRange();
+            for (short b = 0; b < n; b++) e.setBandLevel(b, (short) Math.max(range[0], Math.min(range[1], Math.round(gainAt(e.getCenterFreq(b) / 1000.0) * 100))));
+            e.setEnabled(true);
+            return e;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private void detachFx(MediaPlayer p) {
@@ -291,8 +328,24 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     }
 
     synchronized void setEq(String json) {
-        eqDb = null;
-        try { if (json != null && !json.isEmpty()) { JSONArray a = new JSONArray(json); eqDb = new double[5]; for (int i = 0; i < 5; i++) eqDb[i] = a.optDouble(i, 0); } } catch (Exception ignored) { }
+        eqDb = null; bassStr = virtStr = 0;
+        try {
+            if (json != null && !json.isEmpty()) {
+                if (json.trim().startsWith("[")) { JSONArray a = new JSONArray(json); eqDb = new double[5]; for (int i = 0; i < 5; i++) eqDb[i] = a.optDouble(i, 0); eqFc = new double[] { 100, 300, 1000, 3000, 8000 }; }
+                else {
+                    JSONObject o = new JSONObject(json);
+                    JSONArray g = o.optJSONArray("g"), f = o.optJSONArray("fc");
+                    if (g != null && f != null && g.length() == f.length() && g.length() > 1) {
+                        boolean any = false;
+                        double[] d = new double[g.length()], c = new double[g.length()];
+                        for (int i = 0; i < d.length; i++) { d[i] = Math.max(-15, Math.min(15, g.getDouble(i))); c[i] = f.getDouble(i); if (d[i] != 0) any = true; }
+                        if (any) { eqDb = d; eqFc = c; }
+                    }
+                    bassStr = Math.max(0, Math.min(1000, o.optInt("bass", 0)));
+                    virtStr = Math.max(0, Math.min(1000, o.optInt("virt", 0)));
+                }
+            }
+        } catch (Exception ignored) { eqDb = null; }
         if (mp != null) attachFx(mp, current());
         if (nmp != null) attachFx(nmp, npos >= 0 ? queue.optJSONObject(order.get(npos)) : null);
     }
