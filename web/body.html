@@ -50,6 +50,7 @@
 
 <div class="dock">
   <div class="selbar" id="selBar" hidden></div>
+  <div class="selbar" id="tlQBar" hidden></div>
   <div class="mini" id="mini" hidden>
     <span class="art" id="miniArt" hidden></span>
     <button class="icon-btn play-s" id="miniPlay" type="button" data-ta="play"></button>
@@ -212,6 +213,7 @@
 <script src="i18n28.js"></script>
 <script src="i18n29.js"></script>
 <script src="i18n30.js"></script>
+<script src="i18n31.js"></script>
 <script>
 (() => {
 'use strict';
@@ -222,7 +224,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.8';
+const VERSION = '3.9';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1179,6 +1181,7 @@ function renderTabs() {
   if (edit) { $('#empty').hidden = true; renderEdit(); }
   $('#q').placeholder = t(music ? 'searchMusic' : 'searchRec');
   $('#libNote').hidden = music || S.media || ls.get('libNoteX', false);
+  tlQBar();
 }
 function render() { renderTabs(); renderChips(); renderList(); renderSummary(); updateMini(); }
 
@@ -2933,6 +2936,7 @@ function renderEdit() {
       <button class="icon-btn tl-snap${TL.snap ? ' on' : ''}" type="button" data-tl="snap" aria-pressed="${TL.snap}" aria-label="${esc(t('tlSnap'))}">${ic('magnet')}</button>
       <button class="icon-btn tl-snap${TL.meter ? ' on' : ''}" type="button" data-tl="meter" aria-pressed="${TL.meter}" aria-label="${esc(t('tlMeter'))}">${ic('spec')}</button>
       <span class="spacer"></span>
+      <button class="icon-btn tl-recb" type="button" data-tl="rec" aria-label="${esc(t('tlRec'))}">${ic('mic')}</button>
       <button class="ctl" type="button" data-tl="play" id="tlPlay" style="width:48px;height:48px"${empty ? ' disabled' : ''}>${ic(TL.play ? 'pause' : 'play')}</button>
       <span class="tc" id="tlTime"></span><span class="spacer"></span>
       <button class="btn primary sm" type="button" data-tl="export"${empty || TL.busy ? ' disabled' : ''}>${esc(t('tlExport'))}</button></div>
@@ -2961,9 +2965,20 @@ function renderTlBar() {
   bar.innerHTML = c
     ? b('done', 'check', t('tlDone')) + b('del', 'trash', t('tlDelete')) + b('split', 'scissors', t('tlSplit')) + (c.prev ? b('ab', 'ear', t('tlAB')) : '') + b('env', 'envl', t('tlEnv')) + b('clarify', 'spark', t('op_clarify')) + b('vchg', 'speak', t('vcT')) + b('spec', 'spec', t('tlSpec')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
       b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('bass', 'wave', t('tlBass')) + b('treble', 'spark', t('tlTreble')) + b('sep', 'mixer', t('tlSep')) + b('spk', 'people', t('tlSpk')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack'))
-    : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + b('sfx', 'bell', t('tlSfx')) + b('tts', 'speak', t('tlTts')) + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('metro', 'beat', t('tlClick')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
+    : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + b('recset', 'gear', t('tlRecSet')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + b('sfx', 'bell', t('tlSfx')) + b('tts', 'speak', t('tlTts')) + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('metro', 'beat', t('tlClick')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
   tlFxList();
   if (TL.rec) bar.innerHTML = `<button class="btn danger-fill" type="button" data-tl="rec">${ic('pause')} ${esc(t('tlRecStop'))} <span class="tc" id="tlRecT"></span></button><span class="hint">${esc(t('tlRecHint'))}</span>`;
+  tlQBar();
+}
+/* 3.9: a tapped clip gets a short bar at the bottom (add, delete, copy, paste, split); the full tool list stays above */
+function tlQBar() {
+  const q = $('#tlQBar'); if (!q) return;
+  const on = !!(S.tab === 'edit' && TL.p && tlSel() && !TL.rec && !TL.env && !SEL);
+  q.hidden = !on; document.body.classList.toggle('tlq', on);
+  if (!on) return;
+  const dis = TL.busy ? ' disabled' : '';
+  q.innerHTML = [['add', 'plus', 'tlAdd'], ['del', 'trash', 'tlDelete'], ['copy', 'copy', 'tlCopy'], ['paste', 'paste', 'tlPaste'], ['split', 'scissors', 'tlSplit']]
+    .map(([k, i, l]) => `<button type="button" data-tl="${k}"${dis || (k === 'paste' && !tlClip() ? ' disabled' : '')}${k === 'del' ? ' data-sb="del"' : ''}>${ic(i)}<span>${esc(t(l))}</span></button>`).join('');
 }
 function tlBusyUi() {
   const b = $('#tlBusy'); if (!b) return;
@@ -3270,7 +3285,7 @@ function drawWs() { drawTl(); }
   box.addEventListener('pointercancel', end);
 })();
 
-$('#editTab').addEventListener('click', e => {
+function tlAct(e) {
   const b = e.target.closest('[data-tl]'); if (!b || b.disabled) return;
   const k = b.dataset.tl;
   if (k === 'play') tlPlay();
@@ -3315,7 +3330,10 @@ $('#editTab').addEventListener('click', e => {
   else if (k === 'punch') tlPunch();
   else if (k === 'beats') tlBeats();
   else if (k === 'rec') tlRec();
-});
+  else if (k === 'recset') tlRecSet();
+}
+$('#editTab').addEventListener('click', tlAct);
+$('#tlQBar').addEventListener('click', tlAct);
 
 /* ----- voice separation, beats, recording onto the timeline ----- */
 /* 3.8: split into voice + music, or four parts (voice, drums, bass, the rest); then a small mixer for the parts */
@@ -3702,10 +3720,39 @@ async function tlBeats() {
   tlCommit(before);
   toast(c.beats.length ? t('beatTitle') + ': ' + t('beatBpm', { b: nf1.format(c.bpm) }) : t('beatNone'), 4000);
 }
+/* 3.9: recording options for the project: a countdown before recording, hearing the other tracks */
+function tlRecSet() {
+  const cd = +ls.get('recCd', 0);
+  const card = openModal(`<h3>${esc(t('tlRecSet'))}</h3>
+    <div class="set-sub"><span>${esc(t('cdT'))}</span></div>
+    <div class="seg2" role="radiogroup">${[0, 3, 5].map(n => `<button type="button" role="radio" data-cd="${n}" aria-checked="${cd === n}">${esc(n ? t('cdN', { n }) : t('cdOff'))}</button>`).join('')}</div>
+    <label class="switch"><input type="checkbox" id="rcCue"${ls.get('recCue', true) ? ' checked' : ''}><span>${esc(t('cueT'))}<small>${esc(t('cueD'))}</small></span></label>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
+  card.onclick = e => {
+    const b = e.target.closest('[data-cd]');
+    if (b) { ls.set('recCd', +b.dataset.cd); card.querySelectorAll('[data-cd]').forEach(x => x.setAttribute('aria-checked', x === b)); }
+    if (e.target.closest('[data-x]')) closeModal();
+  };
+  card.querySelector('#rcCue').onchange = e => ls.set('recCue', e.target.checked);
+}
+/** big numbers over the screen; a tap cancels. Resolves true when it ran out */
+function recCountdown(n) {
+  return new Promise(done => {
+    const o = document.createElement('div'); o.className = 'cd-ov'; o.setAttribute('role', 'status');
+    let k = n, tm = 0;
+    const end = ok => { clearTimeout(tm); o.remove(); TL.cd = false; done(ok); };
+    const tick = () => { if (!k) return end(true); o.innerHTML = `<b>${k}</b><span>${esc(t('cdTap'))}</span>`; k--; tm = setTimeout(tick, 1000); };
+    o.onclick = () => end(false);
+    TL.cd = true; document.body.appendChild(o); tick();
+  });
+}
 async function tlRec() {
   if (TL.rec) return tlRecStop();
-  if (TL.busy) return;
+  if (TL.busy || TL.cd) return;
+  const wasPlaying = TL.play;   // pressed while playing: record over it right away, from the play line
   tlStop();
+  const cd = +ls.get('recCd', 0);
+  if (cd && !wasPlaying && !(await recCountdown(cd))) return;
   const name = t('fileVoice', { d: stamp(Date.now()) }) + '.m4a';
   let res = {};
   try { res = JSON.parse(AND.recStart('voice', name, recOpts())); } catch (e) { res = {}; }
@@ -3715,7 +3762,7 @@ async function tlRec() {
   }
   if (!res.ok) { toast(t('recFail'), 4200); return; }
   // hear the other tracks (and the metronome, with one bar to count in) while recording
-  const ck = tlClickCfg(), pre = ck.on && ck.count ? ck.bar * 60 / ck.bpm : 0, cue = ck.on || TL.pos < tlEnd() - 0.1;
+  const ck = tlClickCfg(), pre = ck.on && ck.count ? ck.bar * 60 / ck.bpm : 0, cue = ck.on || (ls.get('recCue', true) && TL.pos < tlEnd() - 0.1);
   TL.rec = { at: TL.pos - pre, pre, cue, t0: performance.now(), started: Date.now() };
   if (cue) tlPlay(null, TL.pos - pre, ck.on ? 3600 : 0);
   renderTlBar();

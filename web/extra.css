@@ -314,3 +314,12 @@ html{overflow-x:hidden;overscroll-behavior:none}body{overflow-x:clip;max-width:1
 .eq-knob[aria-pressed="true"] i{color:var(--accent);font-weight:600}
 /* 3.8: voice change / part mixer */
 #vcBody .ex-chips{margin-bottom:4px}
+/* 3.9: clip quick bar, record button in the timeline header, countdown */
+.tlq #mini,.tlq #recBtn{display:none!important}
+.tlq #editTab{padding-bottom:84px}
+.tl-recb{color:var(--rec)}
+.cd-ov{position:fixed;inset:0;z-index:60;background:rgb(0 0 0 / .62);display:grid;place-content:center;justify-items:center;gap:14px;color:#fff}
+.cd-ov b{font-family:var(--f-display);font-size:120px;line-height:1;font-weight:600;animation:cdIn 1s ease-out}
+.cd-ov span{font-size:14px;opacity:.8}
+@keyframes cdIn{from{transform:scale(1.5);opacity:0}30%{opacity:1}to{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.cd-ov b{animation:none}}
