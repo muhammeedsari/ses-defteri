@@ -903,6 +903,7 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public float recLevel() { return Recorder.level(); }
         @JavascriptInterface public String recMeter() { return Recorder.meter(); }
         @JavascriptInterface public boolean recMonitor(boolean on) { return Recorder.monitor(on); }
+        @JavascriptInterface public String recFx(boolean ns, boolean aec) { return Recorder.fx(ns, aec).toString(); }
         @JavascriptInterface public String recStop() {
             ui(new Runnable() { @Override public void run() { getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); } });
             return Recorder.stop(MainActivity.this);

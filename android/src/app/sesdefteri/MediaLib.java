@@ -222,16 +222,24 @@ final class MediaLib {
     }
 
     static Target create(Context c, String displayName, String mime) throws IOException {
+        return create(c, displayName, mime, "");
+    }
+
+    /** 3.7: recordings can go to Music (default), Recordings (Android 12+), Podcasts or Download, always in a "Ses Defteri" folder */
+    static Target create(Context c, String displayName, String mime, String dir) throws IOException {
         Target t = new Target();
         t.name = displayName;
         if (scoped()) {
             ContentValues v = new ContentValues();
             v.put(MediaStore.MediaColumns.DISPLAY_NAME, displayName);
             v.put(MediaStore.MediaColumns.MIME_TYPE, mime);
-            v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/" + FOLDER);
+            boolean dl = "download".equals(dir);
+            String base = dl ? Environment.DIRECTORY_DOWNLOADS : "podcasts".equals(dir) ? Environment.DIRECTORY_PODCASTS
+                : "recordings".equals(dir) && Build.VERSION.SDK_INT >= 31 ? Environment.DIRECTORY_RECORDINGS : Environment.DIRECTORY_MUSIC;
+            v.put(MediaStore.MediaColumns.RELATIVE_PATH, base + "/" + FOLDER);
             v.put(MediaStore.MediaColumns.IS_PENDING, 1);
             Uri u = null;
-            try { u = c.getContentResolver().insert(audioCollection(), v); } catch (Exception ignored) { }
+            try { u = c.getContentResolver().insert(dl ? MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY) : audioCollection(), v); } catch (Exception ignored) { }
             if (u == null) {
                 v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + FOLDER);
                 u = c.getContentResolver().insert(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), v);

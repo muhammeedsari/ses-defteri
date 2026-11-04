@@ -45,6 +45,12 @@ final class Recorder {
     private static boolean agc = true;
     private static boolean temp;   // 2.9 latency test: a throwaway file in the cache, not in Music
     private static String fmt = "m4a";
+    // 3.7: chosen quality (0 = from the old q setting), live noise suppression / echo cancelling, Bluetooth mic, folder
+    private static int optRate, optCh, optKbps;
+    private static boolean ns, aec, bt, btOn;
+    private static String dir = "";
+    private static android.media.audiofx.NoiseSuppressor nsFx;
+    private static android.media.audiofx.AcousticEchoCanceler aecFx;
 
     /** opts: {q: std|high|stereo, src: auto|builtin|wired|usb, call: pause during calls, fmt: m4a|wav|flac} */
     static synchronized String start(Context c, String mode, String displayName, String optsJson) {
@@ -55,6 +61,9 @@ final class Recorder {
         temp = o.optBoolean("temp", false);
         fmt = temp ? "m4a" : o.optString("fmt", "m4a");
         if (!"wav".equals(fmt) && !"flac".equals(fmt)) fmt = "m4a";
+        optRate = o.optInt("rate", 0); optCh = o.optInt("ch", 0); optKbps = o.optInt("kbps", 0);
+        ns = o.optBoolean("ns", false); aec = o.optBoolean("aec", false); bt = !temp && o.optBoolean("bt", false);
+        dir = o.optString("dir", "");
         int dot = displayName.lastIndexOf('.');
         displayName = (dot > 0 ? displayName.substring(0, dot) : displayName) + "." + fmt;
         return start(c, mode, displayName, o.optString("q", "std"), o.optString("src", "auto"));
@@ -72,14 +81,18 @@ final class Recorder {
                 String unp = am != null ? am.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED) : null;
                 source = "true".equals(unp) ? MediaRecorder.AudioSource.UNPROCESSED : MediaRecorder.AudioSource.CAMCORDER;
             }
-            boolean stereo = music || "stereo".equals(q), hi = stereo || "high".equals(q) || !"m4a".equals(fmt);
-            rate = hi ? 48000 : 44100;
+            boolean stereo = music || "stereo".equals(q) || optCh == 2, hi = stereo || "high".equals(q) || !"m4a".equals(fmt);
+            rate = optRate > 0 ? optRate : hi ? 48000 : 44100;
             chans = stereo ? 2 : 1;
-            int cfg = stereo ? AudioFormat.CHANNEL_IN_STEREO : AudioFormat.CHANNEL_IN_MONO;
-            int min = AudioRecord.getMinBufferSize(rate, cfg, AudioFormat.ENCODING_PCM_16BIT);
-            ar = new AudioRecord(source, rate, cfg, AudioFormat.ENCODING_PCM_16BIT, Math.max(min * 4, rate / 5 * chans * 2));
-            if (ar.getState() != AudioRecord.STATE_INITIALIZED) throw new IllegalStateException("mic");
-            if (Build.VERSION.SDK_INT >= 28 && !"auto".equals(src)) {
+            android.media.AudioDeviceInfo sco = bt ? btRoute(c) : null;
+            if (sco != null) { source = MediaRecorder.AudioSource.VOICE_COMMUNICATION; chans = 1; }
+            int cfg = chans > 1 ? AudioFormat.CHANNEL_IN_STEREO : AudioFormat.CHANNEL_IN_MONO;
+            ar = newRecord(source, cfg);
+            if (ar == null && rate != 44100) { rate = 44100; ar = newRecord(source, cfg); }   // a rate this phone does not take
+            if (ar == null) throw new IllegalStateException("mic");
+            if (sco != null && Build.VERSION.SDK_INT >= 23) ar.setPreferredDevice(sco);
+            fx(ns, aec);
+            if (Build.VERSION.SDK_INT >= 28 && !"auto".equals(src) && sco == null) {
                 AudioManager am = (AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
                 if (am != null) for (android.media.AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
                     int t = d.getType();
@@ -91,7 +104,7 @@ final class Recorder {
             }
             String mime = "wav".equals(fmt) ? "audio/x-wav" : "flac".equals(fmt) ? "audio/flac" : "audio/mp4";
             if (temp) { target = new MediaLib.Target(); target.file = new File(c.getCacheDir(), "latency.m4a"); target.name = target.file.getName(); }
-            else target = MediaLib.create(c, displayName, mime);
+            else target = MediaLib.create(c, displayName, mime, dir);
             sink = openSink(c);
             meter = new Timeline.Meter(rate);
             fail = null;
@@ -113,6 +126,76 @@ final class Recorder {
             try { res.put("ok", false); res.put("error", String.valueOf(e.getMessage())); } catch (Exception ignored) { }
         }
         return res.toString();
+    }
+
+    private static AudioRecord newRecord(int source, int cfg) {
+        try {
+            int min = AudioRecord.getMinBufferSize(rate, cfg, AudioFormat.ENCODING_PCM_16BIT);
+            if (min <= 0) return null;
+            AudioRecord a = new AudioRecord(source, rate, cfg, AudioFormat.ENCODING_PCM_16BIT, Math.max(min * 4, rate / 5 * chans * 2));
+            if (a.getState() == AudioRecord.STATE_INITIALIZED) return a;
+            a.release();
+        } catch (Exception ignored) { }
+        return null;
+    }
+
+    /** the phone's own noise suppressor / echo canceller on the microphone; can be switched while recording */
+    static synchronized JSONObject fx(boolean n, boolean e) {
+        ns = n; aec = e;
+        JSONObject o = new JSONObject();
+        try {
+            o.put("ns", android.media.audiofx.NoiseSuppressor.isAvailable());
+            o.put("aec", android.media.audiofx.AcousticEchoCanceler.isAvailable());
+            if (ar == null) return o;
+            int id = ar.getAudioSessionId();
+            if (n && nsFx == null && android.media.audiofx.NoiseSuppressor.isAvailable()) nsFx = android.media.audiofx.NoiseSuppressor.create(id);
+            if (nsFx != null) nsFx.setEnabled(n);
+            if (e && aecFx == null && android.media.audiofx.AcousticEchoCanceler.isAvailable()) aecFx = android.media.audiofx.AcousticEchoCanceler.create(id);
+            if (aecFx != null) aecFx.setEnabled(e);
+        } catch (Exception ignored) { }
+        return o;
+    }
+
+    private static void fxRelease() {
+        try { if (nsFx != null) nsFx.release(); } catch (Exception ignored) { }
+        try { if (aecFx != null) aecFx.release(); } catch (Exception ignored) { }
+        nsFx = null; aecFx = null;
+    }
+
+    private static Context btCtx;
+
+    /** a connected Bluetooth headset microphone, routed for recording; null when there is none */
+    private static android.media.AudioDeviceInfo btRoute(Context c) {
+        try {
+            AudioManager am = (AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
+            if (am == null || Build.VERSION.SDK_INT < 23) return null;
+            android.media.AudioDeviceInfo in = null;
+            for (android.media.AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_INPUTS))
+                if (d.getType() == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO) { in = d; break; }
+            if (in == null) return null;
+            if (Build.VERSION.SDK_INT >= 31) {
+                for (android.media.AudioDeviceInfo d : am.getAvailableCommunicationDevices())
+                    if (d.getType() == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO) { am.setCommunicationDevice(d); break; }
+            } else {
+                am.startBluetoothSco();
+                am.setBluetoothScoOn(true);
+                Thread.sleep(600);   // the headset needs a moment to open its microphone
+            }
+            btOn = true; btCtx = c.getApplicationContext();
+            return in;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static void btOff() {
+        if (!btOn) return;
+        btOn = false;
+        try {
+            AudioManager am = (AudioManager) btCtx.getSystemService(Context.AUDIO_SERVICE);
+            if (Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice();
+            else { am.setBluetoothScoOn(false); am.stopBluetoothSco(); }
+        } catch (Exception ignored) { }
     }
 
     private static void loop() {
@@ -231,6 +314,8 @@ final class Recorder {
         if (th != null) { try { th.join(2000); } catch (InterruptedException ignored) { } }
         th = null;
         monitor(false);
+        fxRelease();
+        btOff();
         if (ar != null) {
             try { ar.stop(); } catch (Exception ignored) { }
             ar.release();
@@ -279,6 +364,7 @@ final class Recorder {
         }
         if ("m4a".equals(fmt)) {
             final AudioTools.Encoder enc = fd != null ? new AudioTools.Encoder(fd) : new AudioTools.Encoder(target.file);
+            if (optKbps > 0) enc.bitrate = optKbps * 1000;
             enc.start(rate, chans);
             return new Sink() {
                 long fr;

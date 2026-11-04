@@ -82,7 +82,8 @@
       <button class="icon-btn rec-mon" id="recMon" type="button" aria-pressed="false" hidden></button>
     </div>
     <p class="mode-hint" id="modeHint"></p>
-    <div class="chips rec-purpose" id="purposeRow" role="radiogroup"></div>
+    <div class="rec-purpose" id="purposeRow" role="radiogroup"></div>
+    <div class="rec-fx" id="recFx" hidden></div>
     <div class="room" id="roomBox"><button class="tool" id="roomBtn" type="button"></button><span id="roomRes"></span></div>
     <div class="stage">
       <div class="rec-state"><span class="led"></span><span id="recStateText"></span></div>
@@ -209,6 +210,7 @@
 <script src="i18n26.js"></script>
 <script src="i18n27.js"></script>
 <script src="i18n28.js"></script>
+<script src="i18n29.js"></script>
 <script>
 (() => {
 'use strict';
@@ -219,7 +221,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '3.6';
+const VERSION = '3.7';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -319,6 +321,7 @@ const P = {
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
   phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
   b10: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 3.8v3.4h3.4"/><text x="12" y="15.2" text-anchor="middle" fill="currentColor" stroke="none" style="font:600 7px var(--f-mono)">10</text>',
+  info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="7.8" r=".6" fill="currentColor"/>',
   sortic: '<path d="M7 4v16m0 0l-3-3m3 3l3-3M13 6h8M13 11h6M13 16h4"/>',
   f10: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 3.8v3.4h-3.4"/><text x="12" y="15.2" text-anchor="middle" fill="currentColor" stroke="none" style="font:600 7px var(--f-mono)">10</text>'
 };
@@ -888,8 +891,7 @@ function openSettings() {
       ${NATIVE ? `<div class="set-sub"><span>${esc(t('setPin'))}</span><button class="btn sm" type="button" id="setPin">${ic('mic')}${esc(t('setPinB'))}</button><small class="hint">${esc(t('setPinD'))}</small></div>` : ''}</div>
     <div class="set-sec"><label class="switch"><input type="checkbox" id="setPre"${S.precompute ? ' checked' : ''}><span>${esc(t('precompute'))}<small>${esc(t('precomputeDesc'))}</small></span></label></div>
     <div class="set-sec"><h4>${esc(t('setRec'))}</h4>
-      <div class="set-sub"><span>${esc(t('setQuality'))}</span><select id="setQ" class="sel-full">${['std', 'high', 'stereo'].map(v => `<option value="${v}"${S.recQuality === v ? ' selected' : ''}>${esc(t('q_' + v))}</option>`).join('')}</select></div>
-      ${NATIVE ? `<div class="set-sub"><span>${esc(t('setRecFmt'))}</span><select id="setRecFmt" class="sel-full">${['m4a', 'wav', 'flac'].map(v => `<option value="${v}"${S.recFmt === v ? ' selected' : ''}>${esc(t('rf_' + v))}</option>`).join('')}</select></div>` : ''}
+      <div id="recQBox" class="rec-qbox">${recSettingsHTML()}</div>
       <div class="set-sub"><span>${esc(t('setMic'))}</span><select id="setMic" class="sel-full">${['auto', 'builtin', 'wired', 'usb'].map(v => `<option value="${v}"${S.micSrc === v ? ' selected' : ''}>${esc(t('mic_' + v))}</option>`).join('')}</select></div>
       <label class="switch"><input type="checkbox" id="setCall"${S.callPause ? ' checked' : ''}><span>${esc(t('setCall'))}<small>${esc(t('setCallD'))}</small></span></label>
       <label class="switch"><input type="checkbox" id="setAgc"${S.agc !== false ? ' checked' : ''}><span>${esc(t('setAgc'))}<small>${esc(t('setAgcD'))}</small></span></label>
@@ -972,7 +974,7 @@ function openSettings() {
     if (!n) { toast(t('probNoteNone'), 3000); return; }
     try { AND.shareText('ses-defteri-not.txt', n, 'text/plain'); } catch (e) {}
   };
-  bind('#setQ', 'recQuality'); bind('#setMic', 'micSrc'); bind('#setCall', 'callPause'); bind('#setAuto', 'autoClean'); bind('#setFmt', 'fmt'); bind('#setRecFmt', 'recFmt');
+  recSettingsBind(card); bind('#setMic', 'micSrc'); bind('#setCall', 'callPause'); bind('#setAuto', 'autoClean'); bind('#setFmt', 'fmt'); bind('#setRecFmt', 'recFmt');
   const st = card.querySelector('#setStr'); if (st) st.onchange = () => { CL.strength = +st.value; ls.set('clStrength', CL.strength); };
   const tr = card.querySelector('#setTrash'); if (tr) tr.onchange = () => { S.trashDays = +tr.value; ls.set('trashDays', S.trashDays); purgeTrash().then(() => render(), () => {}); };
   const ot = card.querySelector('#openTrash'); if (ot) ot.onclick = openTrash;
@@ -3879,7 +3881,8 @@ function askParams(title, desc, rows) {
 }
 
 /* ---------- 1.8: export format, file names, trash ---------- */
-const recOpts = () => JSON.stringify({ q: S.recQuality, src: S.micSrc, call: !!S.callPause, agc: S.agc !== false, fmt: S.recFmt });
+const recOpts = () => { const s = recSet(); return JSON.stringify({ q: 'std', src: S.micSrc, call: !!S.callPause, agc: S.agc !== false, fmt: s.fmt, rate: s.rate, ch: s.ch, kbps: s.kbps,
+  ns: !!ls.get('recNs', false), aec: !!ls.get('recAec', false), bt: !!ls.get('recBt', false), dir: ls.get('recDir', '') }); };
 const FMTS = () => ['mp3_192', 'mp3_320', 'm4a', 'wav', 'flac'].concat(CAPS.opus ? ['ogg'] : []);
 /** default export format as job arguments: {format, kbps} */
 function fmtArgs(f) {
@@ -4181,11 +4184,11 @@ $('#batchBtn').addEventListener('click', openBatch);
 /* ---------- recorder ---------- */
 const R = { state: 'idle', mode: ls.get('mode', 'voice'), stream: null, ctx: null, an: null, mr: null, mime: '', chunks: [], idx: 0,
   draftId: null, t0: 0, acc: 0, started: 0, levels: [], marks: [], curMax: 0, raf: 0, wake: null, lastSave: 0, peakDb: -Infinity, peakAt: 0, cancel: false, endEl: 0, native: false };
-const modeHint = m => NATIVE && S.recFmt && S.recFmt !== 'm4a' ? t('setRecFmt') + ': ' + t('rf_' + S.recFmt) : t((m === 'music' ? 'hintMusic' : 'hintVoice') + (NATIVE ? 'N' : 'W'));
+const modeHint = m => NATIVE ? '' : t(m === 'music' ? 'hintMusicW' : 'hintVoiceW');   // 3.7: on the phone the purpose cards show the settings
 function setMode(m) {
   R.mode = m; ls.set('mode', m);
   $('#modeSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', b.dataset.mode === m));
-  $('#modeHint').textContent = modeHint(m);
+  $('#modeHint').textContent = modeHint(m); $('#modeHint').hidden = !modeHint(m);
 }
 $('#modeSeg').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b && R.state === 'idle') setMode(b.dataset.mode); });
 const elapsed = () => R.acc + (R.state === 'rec' ? (performance.now() - R.t0) / 1000 : 0);
@@ -4410,16 +4413,93 @@ function recCallSync() {
 /* purpose of the recording: sets the mode and what "Clean" aims for */
 const PURPOSES = [['youtube', 'youtube'], ['podcast', 'podcast'], ['meeting', 'podcast'], ['note', 'podcast'], ['music', 'youtube']];
 const purposeTarget = p => (PURPOSES.find(x => x[0] === p) || PURPOSES[0])[1];
+/* 3.7: purposes as swipeable cards: when to pick it + the settings it records with */
+const PU_IC = { youtube: 'film', podcast: 'mic', meeting: 'people', note: 'edit', music: 'note' };
 function renderPurpose() {
   const row = $('#purposeRow'); if (!row) return;
-  row.innerHTML = PURPOSES.map(([k]) => `<button class="chip" type="button" role="radio" data-purpose="${k}" aria-pressed="${R.purpose === k}"${R.state !== 'idle' ? ' disabled' : ''}>${esc(t('pu_' + k))}</button>`).join('');
+  const fixed = ls.get('recPreset', 'auto') !== 'auto', idle = R.state === 'idle';
+  row.innerHTML = PURPOSES.map(([k]) => `<button class="pu-card" type="button" role="radio" data-purpose="${k}" aria-pressed="${R.purpose === k}"${idle ? '' : ' disabled'}>
+    <b>${ic(PU_IC[k])}${esc(t('pu_' + k))}</b><span>${esc(t('puD_' + k))}</span><small>${esc(recTags(fixed ? recSet() : PU_SET[k]))}</small></button>`).join('')
+    + `<button class="pu-info" type="button" data-puinfo aria-label="${esc(t('puInfo'))}">${ic('info')}</button>`;
+  const on = row.querySelector('[aria-pressed="true"]');
+  if (on && idle) requestAnimationFrame(() => { row.scrollLeft = on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2; });
+  renderRecFx();
 }
 $('#purposeRow').addEventListener('click', e => {
+  if (e.target.closest('[data-puinfo]')) { purposeInfo(); return; }
   const b = e.target.closest('[data-purpose]'); if (!b || R.state !== 'idle') return;
   R.purpose = b.dataset.purpose; ls.set('purpose', R.purpose);
   setMode(R.purpose === 'music' ? 'music' : 'voice');
   renderPurpose();
 });
+function purposeInfo() {
+  const fixed = ls.get('recPreset', 'auto') !== 'auto';
+  const card = openModal(`<h3>${esc(t('puInfo'))}</h3><p class="mtext">${esc(t(fixed ? 'puFixed' : 'puInfoD'))}</p>
+    <div class="modal-body">${PURPOSES.map(([k]) => `<div class="pu-row"><b>${ic(PU_IC[k])}${esc(t('pu_' + k))}</b><span>${esc(t('puD_' + k))}</span><small>${esc(recTags(fixed ? recSet() : PU_SET[k]))}</small></div>`).join('')}</div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
+  card.querySelector('[data-x]').onclick = () => closeModal();
+}
+/* live noise suppression / echo cancelling: quick switches on the record screen, also while recording */
+function renderRecFx() {
+  const box = $('#recFx'); if (!box) return;
+  box.hidden = !NATIVE;
+  if (!NATIVE) return;
+  if (!R.fxCap) { try { R.fxCap = JSON.parse(AND.recFx(!!ls.get('recNs', false), !!ls.get('recAec', false))); } catch (e) { R.fxCap = { ns: true, aec: true }; } }
+  box.innerHTML = [['ns', 'recNs'], ['aec', 'recAec']].filter(([k]) => R.fxCap[k] !== false).map(([k, key]) =>
+    `<button class="chip" type="button" data-fx="${key}" aria-pressed="${!!ls.get(key, false)}">${ic(k === 'ns' ? 'spark' : 'ear')}${esc(t(key))}</button>`).join('');
+}
+$('#recFx').addEventListener('click', e => {
+  const b = e.target.closest('[data-fx]'); if (!b) return;
+  const k = b.dataset.fx; ls.set(k, !ls.get(k, false));
+  if (R.native && (R.state === 'rec' || R.state === 'paused')) { try { AND.recFx(!!ls.get('recNs', false), !!ls.get('recAec', false)); } catch (x) {} }
+  toast(t(k + (ls.get(k, false) ? 'On' : 'Off')), 2200);
+  renderRecFx();
+});
+/* ---------- 3.7: recording quality: by purpose (default) or a fixed preset / own settings ---------- */
+const PU_SET = { youtube: { fmt: 'm4a', rate: 48000, ch: 2, kbps: 192 }, podcast: { fmt: 'm4a', rate: 44100, ch: 1, kbps: 128 },
+  meeting: { fmt: 'm4a', rate: 22050, ch: 1, kbps: 64 }, note: { fmt: 'm4a', rate: 16000, ch: 1, kbps: 48 }, music: { fmt: 'm4a', rate: 48000, ch: 2, kbps: 256 } };
+const REC_PRE = { high: { fmt: 'm4a', rate: 44100, ch: 2, kbps: 256 }, mid: { fmt: 'm4a', rate: 44100, ch: 1, kbps: 128 }, low: { fmt: 'm4a', rate: 22050, ch: 1, kbps: 64 } };
+(function () {   // older settings (quality std/high/stereo + format) become "own settings"
+  if (ls.get('recPreset', null)) return;
+  const q = ls.get('recQuality', 'std'), f = ls.get('recFmt', 'm4a');
+  if (q === 'std' && f === 'm4a') { ls.set('recPreset', 'auto'); return; }
+  ls.set('recPreset', 'custom'); ls.set('recCustom', { fmt: f, rate: 48000, ch: q === 'stereo' ? 2 : 1, kbps: 192 });
+})();
+const recCustom = () => Object.assign({ fmt: 'm4a', rate: 48000, ch: 1, kbps: 192 }, ls.get('recCustom', {}));
+function recSet() {
+  const p = ls.get('recPreset', 'auto');
+  return p === 'auto' ? PU_SET[R.purpose || ls.get('purpose', 'youtube')] || PU_SET.youtube : p === 'custom' ? recCustom() : REC_PRE[p] || PU_SET.youtube;
+}
+const recTags = s => [s.fmt.toUpperCase(), t(s.ch > 1 ? 'ch_stereo' : 'ch_mono'), nf1.format(s.rate / 1000) + ' kHz'].concat(s.fmt === 'm4a' ? [s.kbps + ' kbps'] : []).join(' · ');
+const REC_DIRS = () => ['music'].concat((CAPS.sdk || 0) >= 31 ? ['recordings'] : [], ['podcasts', 'download']);
+const recFolder = () => ({ recordings: 'Recordings', podcasts: 'Podcasts', download: 'Download' }[ls.get('recDir', '')] || 'Music') + '/Ses Defteri';
+/** the recording part of Settings: quality preset (+ own settings), live noise / echo, Bluetooth mic, folder */
+function recSettingsHTML() {
+  const p = ls.get('recPreset', 'auto'), c = recCustom(), sel = (id, vals, cur, lab) => `<select id="${id}" class="sel-full">${vals.map(v => `<option value="${v}"${String(cur) === String(v) ? ' selected' : ''}>${esc(lab(v))}</option>`).join('')}</select>`;
+  return `<div class="set-sub"><span>${esc(t('setQuality'))}</span>${sel('setRecPre', ['auto', 'high', 'mid', 'low', 'custom'], p, v => t('rp_' + v))}
+      <small class="hint">${esc(p === 'auto' ? t('rp_autoD') : recTags(recSet()))}</small></div>
+    ${p === 'custom' ? `<div class="rec-custom">
+      <div class="set-sub"><span>${esc(t('infFmt'))}</span>${sel('rcFmt', NATIVE ? ['m4a', 'wav', 'flac'] : ['m4a'], c.fmt, v => t('rf_' + v))}</div>
+      <div class="set-sub"><span>${esc(t('rcRate'))}</span>${sel('rcRate', [16000, 22050, 44100, 48000], c.rate, v => nf1.format(v / 1000) + ' kHz')}</div>
+      <div class="set-sub"><span>${esc(t('rcCh'))}</span>${sel('rcCh', [1, 2], c.ch, v => t(v > 1 ? 'ch_stereo' : 'ch_mono'))}</div>
+      ${c.fmt === 'm4a' ? `<div class="set-sub"><span>${esc(t('rcKbps'))}</span>${sel('rcKbps', [48, 64, 96, 128, 192, 256, 320], c.kbps, v => v + ' kbps')}</div>` : ''}</div>` : ''}
+    ${NATIVE ? `<label class="switch"><input type="checkbox" id="setNs"${ls.get('recNs', false) ? ' checked' : ''}><span>${esc(t('recNs'))}<small>${esc(t('recNsD'))}</small></span></label>
+    <label class="switch"><input type="checkbox" id="setAec"${ls.get('recAec', false) ? ' checked' : ''}><span>${esc(t('recAec'))}<small>${esc(t('recAecD'))}</small></span></label>
+    <label class="switch"><input type="checkbox" id="setBt"${ls.get('recBt', false) ? ' checked' : ''}><span>${esc(t('recBt'))}<small>${esc(t('recBtD'))}</small></span></label>
+    ${(CAPS.sdk || 0) >= 29 ? `<div class="set-sub"><span>${esc(t('recDir'))}</span>${sel('setRecDir', REC_DIRS(), ls.get('recDir', '') || 'music', v => t('rd_' + v))}<small class="hint">${esc(t('recDirD', { f: recFolder() }))}</small></div>` : `<div class="set-sub"><span>${esc(t('recDir'))}</span><small class="hint">${esc(CAPS.folder || '')}</small></div>`}` : ''}`;
+}
+function recSettingsBind(card) {
+  const box = card.querySelector('#recQBox'); if (!box) return;
+  box.onchange = e => {
+    const el = e.target, id = el.id;
+    if (id === 'setRecPre') ls.set('recPreset', el.value);
+    else if (id.startsWith('rc')) { const c = recCustom(), k = { rcFmt: 'fmt', rcRate: 'rate', rcCh: 'ch', rcKbps: 'kbps' }[id]; c[k] = k === 'fmt' ? el.value : +el.value; ls.set('recCustom', c); }
+    else if (id === 'setNs' || id === 'setAec' || id === 'setBt') ls.set({ setNs: 'recNs', setAec: 'recAec', setBt: 'recBt' }[id], el.checked);
+    else if (id === 'setRecDir') { ls.set('recDir', el.value === 'music' ? '' : el.value); $('#foot').textContent = t('footNative', { folder: recFolder() }); }
+    else return;
+    box.innerHTML = recSettingsHTML();
+  };
+}
 $('#roomBtn').addEventListener('click', async () => {
   if (R.state !== 'idle' || R.roomBusy) return;
   const res = $('#roomRes');
@@ -5153,7 +5233,7 @@ async function boot() {
   $('#plShare').innerHTML = ic('share') + esc(t(AND || (!IN_FRAME && navigator.canShare) ? 'share' : 'download'));
   $('#plDelete').innerHTML = ic('trash') + esc(t('delete'));
   $('#miniClose').innerHTML = ic('close');
-  $('#foot').textContent = NATIVE ? t('footNative', { folder: CAPS.folder || 'Music/Ses Defteri' }) : t('footWeb');
+  $('#foot').textContent = NATIVE ? t('footNative', { folder: (CAPS.sdk || 0) >= 29 ? recFolder() : CAPS.folder || 'Music/Ses Defteri' }) : t('footWeb');
   S.rate = ls.get('rate', 1); if (!SPEEDS.includes(S.rate)) S.rate = 1;
   if (NATIVE) audio.playbackRate = S.rate;
   setPlayIcons(); setMode(R.mode); updateRecUI();

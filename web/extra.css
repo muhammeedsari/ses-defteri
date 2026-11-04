@@ -144,7 +144,6 @@ h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tl-empty p{margin:6px 0 0;font-size:14px}
 .tl-hint{font-size:12.5px;color:var(--muted);margin:8px 0 0}
 /* 1.7 recorder: purpose, room test, live warnings */
-.rec-purpose{justify-content:center;margin:10px auto 0;padding:0 4px;max-width:100%}
 .rec-sheet .chip{background:transparent;color:var(--stage-muted);border-color:var(--stage-line)}
 .rec-sheet .chip[aria-pressed="true"]{background:var(--stage-ink);color:var(--stage);border-color:var(--stage-ink)}
 .rec-sheet .chip:disabled{opacity:.5}
@@ -210,8 +209,6 @@ html{overflow-x:hidden;overscroll-behavior:none}body{overflow-x:clip;max-width:1
 .tl-top .tc{min-width:0;flex:0 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px}
 .tl-top .btn.sm{padding:0 12px}
 #editTab{min-width:0;max-width:100%}
-.rec-purpose{flex-wrap:wrap;overflow:visible;gap:6px}
-.rec-purpose .chip{padding:0 11px}
 /* 2.4: what was done to the selected clip */
 .tl-fx{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:13px}
 .tl-fx b{display:block;font-size:12.5px;color:var(--muted);font-weight:600;margin-bottom:4px}
@@ -276,3 +273,25 @@ html{overflow-x:hidden;overscroll-behavior:none}body{overflow-x:clip;max-width:1
 .ex-more{display:flex;flex-wrap:wrap;gap:8px}
 .ex-acts{display:grid!important;grid-template-columns:1fr 1fr;gap:10px}
 .ex-acts .btn{width:100%}
+/* 3.7: purpose cards on the record screen, live noise/echo switches, recording settings */
+.rec-purpose{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;padding:10px 4px 4px;margin:0 -4px;scrollbar-width:none;align-items:stretch}
+.rec-purpose::-webkit-scrollbar{display:none}
+.pu-card{flex:0 0 72%;max-width:300px;scroll-snap-align:center;text-align:left;display:grid;gap:4px;align-content:start;padding:12px 14px;border-radius:16px;border:1px solid var(--stage-line);background:var(--stage-2);color:var(--stage-muted)}
+.pu-card b{display:flex;align-items:center;gap:8px;font-size:15px;color:var(--stage-ink)}
+.pu-card b .ic{width:18px;height:18px}
+.pu-card span{font-size:13px;line-height:1.35}
+.pu-card small{font-family:var(--f-mono);font-size:11px;letter-spacing:.01em;opacity:.9;margin-top:2px}
+.pu-card[aria-pressed="true"]{border-color:var(--stage-ink);box-shadow:inset 0 0 0 1px var(--stage-ink)}
+.pu-card:disabled{opacity:.55}
+.rec-sheet:not([data-state="idle"]) .pu-card:not([aria-pressed="true"]),.rec-sheet:not([data-state="idle"]) .pu-info{display:none}
+.rec-sheet:not([data-state="idle"]) .rec-purpose{justify-content:center}
+.pu-info{flex:none;align-self:center;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:var(--stage-muted)}
+.rec-fx{display:flex;justify-content:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.rec-fx[hidden]{display:none}
+.rec-fx .chip .ic{width:16px;height:16px}
+.pu-row{display:grid;gap:3px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.pu-row b{display:flex;align-items:center;gap:8px}
+.pu-row span{font-size:14px;color:var(--muted)}
+.pu-row small{font-family:var(--f-mono);font-size:12px;color:var(--accent)}
+.rec-qbox{display:grid;gap:14px}
+.rec-custom{display:grid;gap:12px;padding:12px;border-radius:12px;background:var(--surface-2)}
