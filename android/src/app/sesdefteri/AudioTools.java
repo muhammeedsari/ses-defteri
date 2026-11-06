@@ -437,19 +437,25 @@ final class AudioTools {
         long framesIn = 0;
         final MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
 
+        boolean opus;                // Opus in Ogg (Android 10+, 48 kHz) instead of AAC in MP4
+        java.io.FileDescriptor fd;   // write straight into an open file (Android 8+), out is then null
+
         Encoder(File out) { this.out = out; }
+        Encoder(java.io.FileDescriptor fd) { this.out = null; this.fd = fd; }
 
         void start(int rate, int channels) throws Exception {
             this.rate = rate;
             this.channels = channels;
-            MediaFormat f = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, rate, channels);
-            f.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
+            String mime = opus ? MediaFormat.MIMETYPE_AUDIO_OPUS : MediaFormat.MIMETYPE_AUDIO_AAC;
+            MediaFormat f = MediaFormat.createAudioFormat(mime, rate, channels);
+            if (!opus) f.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
             f.setInteger(MediaFormat.KEY_BIT_RATE, bitrate > 0 ? bitrate : channels > 1 ? 192000 : 128000);
             f.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 64 * 1024);
-            codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC);
+            codec = MediaCodec.createEncoderByType(mime);
             codec.configure(f, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
             codec.start();
-            muxer = new MediaMuxer(out.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+            int of = opus ? MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG : MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4;
+            muxer = fd != null && Build.VERSION.SDK_INT >= 26 ? new MediaMuxer(fd, of) : new MediaMuxer(out.getAbsolutePath(), of);
             started = true;
         }
 
@@ -524,7 +530,7 @@ final class AudioTools {
 
         void abort() {
             release();
-            out.delete();
+            if (out != null) out.delete();
         }
     }
 }

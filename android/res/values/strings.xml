@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">Ses Defteri</string>
     <string name="import_label">Ses Defteri\'ne ekle</string>
+    <string name="rec_short">New recording</string>
 </resources>

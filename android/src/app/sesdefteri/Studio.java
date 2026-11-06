@@ -105,6 +105,30 @@ final class Studio {
         void abort() { enc.abort(); }
     }
 
+    /** planar float → FLAC file (system encoder) */
+    static final class FlacNode extends Node {
+        final File f;
+        final int rate;
+        Recorder.FlacSink sink;
+        short[] s = new short[0];
+
+        FlacNode(File f, int rate) { this.f = f; this.rate = rate; }
+
+        @Override public void push(float[][] b, int n) throws Exception {
+            int ch = b.length;
+            if (sink == null) sink = new Recorder.FlacSink(new java.io.RandomAccessFile(f, "rw").getChannel(), rate, ch);
+            if (s.length < n * ch) s = new short[n * ch];
+            int q = 0;
+            for (int i = 0; i < n; i++) for (int c = 0; c < ch; c++) {
+                int x = Math.round(b[c][i] * 32767f);
+                s[q++] = (short) (x > 32767 ? 32767 : x < -32768 ? -32768 : x);
+            }
+            sink.write(s, q);
+        }
+
+        @Override public void end() throws Exception { if (sink != null) { Recorder.FlacSink k = sink; sink = null; k.finish(); } }
+    }
+
     /** planar float → 16-bit WAV file */
     static final class WavNode extends Node {
         final File f;
