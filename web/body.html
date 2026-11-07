@@ -219,6 +219,7 @@
 <script src="i18n32.js"></script>
 <script src="i18n33.js"></script>
 <script src="i18n34.js"></script>
+<script src="i18n35.js"></script>
 <script>
 (() => {
 'use strict';
@@ -229,7 +230,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.1';
+const VERSION = '4.2';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -919,7 +920,7 @@ function openSettings() {
         <input id="setTplC" class="sel-full" type="text" value="${esc(ls.get('nameTpl', '{name}'))}"${NAME_TPLS.includes(ls.get('nameTpl', '{name}')) ? ' hidden' : ''} placeholder="{name}_{date}"><small class="hint" id="setTplEx"></small></div></div>
     <div class="set-sec"><h4>${esc(t('setPlayer'))}</h4>
       <div class="set-sub"><span>${esc(t('setMinSong'))}</span><select id="setMinSong" class="sel-full">${[0, 30, 60].map(v => `<option value="${v}"${S.minSong === v ? ' selected' : ''}>${esc(v ? t('minSongN', { n: v }) : t('off'))}</option>`).join('')}</select><small class="hint">${esc(t('setMinSongD'))}</small></div>
-      <label class="switch"><input type="checkbox" id="setNorm"${S.normalize ? ' checked' : ''}><span>${esc(t('setNorm'))}<small>${esc(t('setNormD'))}</small></span></label>
+      <label class="switch"><input type="checkbox" id="setNorm"${S.normalize ? ' checked' : ''}><span>${esc(t('setNorm2'))}<small>${esc(t('setNormD'))}</small></span></label>
       <div class="set-sub"><span>${esc(t('setXfade'))}</span><select id="setXf" class="sel-full">${[0, 2000, 5000, 8000].map(v => `<option value="${v}"${S.xfade === v ? ' selected' : ''}>${esc(v ? t('xfadeN', { n: v / 1000 }) : t('off'))}</option>`).join('')}</select></div>
       <label class="switch"><input type="checkbox" id="setGap"${S.gapless ? ' checked' : ''}><span>${esc(t('setGapless'))}<small>${esc(t('setGaplessD'))}</small></span></label>
       <div class="set-sub"><span>${esc(t('eqT'))}</span><button class="btn sm" type="button" id="setEqB">${ic('mixer')}${esc(eqState().on ? eqPreName(eqState().pre) : t('off'))}</button></div></div>
@@ -1830,10 +1831,11 @@ function sendSkips(r) {
   if (S.skipSil && isComplete(pk)) {
     // 3.4.6: silence = near the recording's own quiet floor (a fixed −45 dB missed every pause with room noise)
     const v = Array.from(pk.data).filter(x => x > 0).sort((a, b) => a - b);
-    const floor = v.length ? v[Math.floor(v.length * 0.1)] / 255 : 0, lin = floor * floor;
-    const thr = clamp(20 * Math.log10(Math.max(1e-5, lin * 2.2)), -50, -28);
+    // 4.2: pauses from 0.4 s (0.8 s missed most of them), ~3 dB above the quiet floor but well under the speech
+    const lv = q => { const x = v.length ? v[Math.floor(v.length * q)] / 255 : 0; return 20 * Math.log10(Math.max(1e-5, x * x)); };
+    const thr = clamp(Math.min(lv(0.1) + 9, lv(0.5) - 14), -55, -24);
     const d = r.duration || curDur();
-    for (const [a, b] of findSilences(pk, d, thr, 0.8)) arr.push(Math.round(a * 1000), Math.round(b * 1000));
+    for (const [a, b] of findSilences(pk, d, thr, 0.4, 0.08)) arr.push(Math.round(a * 1000), Math.round(b * 1000));
   }
   try { AND.plSkips(r.id, JSON.stringify(arr)); } catch (e) {}
 }
@@ -1891,9 +1893,11 @@ function openEq() {
     ${r ? `<div class="eq-now">${artEl(r)}<div><b>${esc(r.title)}</b><span>${esc(kindOf(r) === 'music' ? artistOf(r) : fmt(r.duration))}</span></div></div>` : ''}
     <div class="eq-body"><div class="ex-chips eq-chips" id="eqChips"></div>
     <canvas class="eq-cv" id="eqCv"></canvas>
-    <div class="eq-knobs">${['bass', 'virt'].map(k => `<button type="button" class="eq-knob" data-knob="${k}"><i></i><b>${esc(t(k === 'bass' ? 'eqBass' : 'eqVirt'))}</b></button>`).join('')}</div></div>
+    <div class="eq-knobs">${['bass', 'virt'].map(k => `<button type="button" class="eq-knob" data-knob="${k}"><i></i><b>${esc(t(k === 'bass' ? 'eqBass' : 'eqVirt'))}</b></button>`).join('')}</div>
+    <label class="switch eq-norm"><input type="checkbox" id="eqNorm"${S.normalize ? ' checked' : ''}><span>${esc(t('setNorm2'))}<small>${esc(t('setNormD'))}</small></span></label></div>
     <div class="modal-actions"><button class="btn" type="button" data-eqreset>${esc(t('eqReset'))}</button><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
   const cv = card.querySelector('#eqCv');
+  card.querySelector('#eqNorm').onchange = ev => { S.normalize = ev.target.checked; ls.set('normalize', S.normalize); applyPlayerPrefs(); if (S.normalize) levelMatch(curRec()); };
   const commit = () => { ls.set('eq2', e); clearTimeout(applyT); applyT = setTimeout(() => { applyPlayerPrefs(); plPrefLabels(); }, 90); };
   const chips = () => {
     const u = ls.get('eqUser', []);
@@ -2738,8 +2742,9 @@ async function tlFx() {
     if (v === 'auto') return tlEffect(c, 'denoise', {});
     const k = TL.pos - c.at;
     if (k < 0 || k > tlLen(c) - 0.3) { toast(t('dnHereOut'), 4500); return; }
+    const o = await dnHereBox(); if (!o) return;
     const t0 = c.in + k;
-    return tlEffect(c, 'denoise', { learn: [t0, Math.min(c.dur, t0 + 1)] });
+    return tlEffect(c, 'denoise', { learn: [t0, Math.min(c.in + tlLen(c), t0 + o.len)], red: o.red, sens: o.sens });
   }
   if (op === 'aidenoise' || op === 'gate') {
     const v = await chooseBox(t('op_' + op), t('fxd_' + op), [[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([x, k]) => ({ value: String(x), label: t(k), desc: op === 'aidenoise' ? t('dnStr_' + x) : '' })));
@@ -2829,8 +2834,8 @@ async function tlSilence(c) {
     if (keep.length) tlEffect(c, 'cut', { keep });
   };
 }
-function findSilences(pk, dur, dbThr, minGap) {
-  const pad = 0.15, thr = Math.sqrt(Math.pow(10, dbThr / 20)) * 255;
+function findSilences(pk, dur, dbThr, minGap, pad = 0.15) {
+  const thr = Math.sqrt(Math.pow(10, dbThr / 20)) * 255;
   const found = []; let start = -1;
   for (let i = 0; i <= pk.data.length; i++) {
     const quiet = i < pk.data.length && pk.data[i] < thr;
@@ -3690,18 +3695,39 @@ function tlEq() {
   };
 }
 /** bass / treble boost: one slider, heard live, kept as a clip setting */
+/** 4.2: Audacity-like settings for "learn the noise here": how long the noise stretch is, how much and how eagerly */
+function dnHereBox() {
+  return new Promise(res => {
+    let done = null;
+    const v = ls.get('dnHere', { len: 1, red: 12, sens: 6 });
+    const sl = (id, k, min, max, val) => `<div class="slider"><span>${esc(t(k))}</span><input type="range" min="${min}" max="${max}" step="1" value="${val}" id="${id}"><span class="tc" id="${id}T"></span></div>`;
+    const card = openModal(`<h3>${esc(t('dnHere'))}</h3><p class="mtext">${esc(t('dnHere2D'))}</p>
+      <div class="modal-body"><p class="mtext">${esc(t('dnLen'))}</p><div class="seg2" id="dnLen" role="radiogroup">${[0.5, 1, 2, 3].map(x => `<button type="button" role="radio" data-l="${x}" aria-checked="${x === v.len}">${x} s</button>`).join('')}</div>
+      ${sl('dnRed', 'dnRed', 3, 30, v.red)}<p class="dn-d">${esc(t('dnRedD'))}</p>
+      ${sl('dnSens', 'dnSens', 0, 12, v.sens)}<p class="dn-d">${esc(t('dnSensD'))}</p></div>
+      <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`,
+      () => res(done));
+    const r = card.querySelector('#dnRed'), se = card.querySelector('#dnSens');
+    const upd = () => { card.querySelector('#dnRedT').textContent = r.value + ' dB'; card.querySelector('#dnSensT').textContent = se.value; };
+    upd(); r.oninput = se.oninput = upd;
+    card.querySelectorAll('#dnLen [data-l]').forEach(b => b.onclick = () => { v.len = +b.dataset.l; card.querySelectorAll('#dnLen [data-l]').forEach(x => x.setAttribute('aria-checked', x === b)); });
+    card.querySelector('[data-x]').onclick = () => closeModal();
+    card.querySelector('[data-ok]').onclick = () => { done = { len: v.len, red: +r.value, sens: +se.value }; ls.set('dnHere', done); closeModal(); };
+  });
+}
+const sdb = v => (v > 0 ? '+' : '−') + Math.abs(v) + ' dB';
 function tlTone(kind) {
   const c = tlSel(); if (!c || TL.busy) return;
   const before = tlSnap(); let ok = false;
   const lab = t(kind === 'bass' ? 'tlBass' : 'tlTreble');
-  const card = openModal(`<h3>${esc(lab)}</h3><p class="mtext">${esc(t(kind === 'bass' ? 'bassD' : 'trebleD'))}</p>
-    <div class="modal-body"><div class="slider"><span>${esc(t('tlAmount'))}</span><input type="range" min="0" max="15" step="1" value="${c[kind] || 6}" id="toneV"><span class="tc" id="toneT"></span></div></div>
+  const card = openModal(`<h3>${esc(lab)}</h3><p class="mtext">${esc(t(kind === 'bass' ? 'bassD2' : 'trebleD2'))}</p>
+    <div class="modal-body"><div class="slider"><span>${esc(t('tlAmount'))}</span><input type="range" min="-12" max="18" step="1" value="${c[kind] || 8}" id="toneV"><span class="tc" id="toneT"></span></div></div>
     <div class="modal-actions"><button class="btn" type="button" data-eqplay>${ic(TL.play ? 'pause' : 'play')}${esc(t('eqListen'))}</button><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`,
     () => { if (!ok) { TL.p = JSON.parse(before); tlChanged(); } });
   const inp = card.querySelector('#toneV');
   const upd = () => {
     const x = tlSel() || c, v = +inp.value;
-    x[kind] = v; card.querySelector('#toneT').textContent = v ? '+' + v + ' dB' : t('off');
+    x[kind] = v; card.querySelector('#toneT').textContent = v ? sdb(v) : t('off');
     ls.set('proj', TL.p);
     if (TL.play) try { AND.tlUpdate(JSON.stringify(tlMix())); } catch (e) {}
   };
@@ -3719,8 +3745,8 @@ function tlFxList() {
   const c = tlSel();
   const rows = c ? (c.fx || []).map(f => [t('op_' + f.op), f.r]) : [];
   if (c && c.eq) rows.push([t('tlEq'), c.eq.map((v, i) => EQ_BANDS[i] + ' ' + (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v)).join(' · ')]);
-  if (c && c.bass) rows.push([t('tlBass'), '+' + c.bass + ' dB']);
-  if (c && c.treble) rows.push([t('tlTreble'), '+' + c.treble + ' dB']);
+  if (c && c.bass) rows.push([t('tlBass'), sdb(c.bass)]);
+  if (c && c.treble) rows.push([t('tlTreble'), sdb(c.treble)]);
   if (c && c.gain) rows.push([t('tlVol'), dbTxt(c.gain)]);
   if (c && c.env && c.env.length) rows.push([t('tlEnv'), t('envN', { n: c.env.length })]);
   box.hidden = !rows.length;
@@ -5560,7 +5586,7 @@ function showIntro(again) {
   });
   document.body.appendChild(d); draw();
 }
-const NEWS = ['sel', 'sort', 'export', 'recq', 'eq', 'voice', 'studio', 'home'];
+const NEWS = ['bg', 'tone', 'dn', 'mouth', 'skip', 'norm', 'ns'];
 function showNews() {
   const card = openModal(`<h3>${esc(t('newsT', { v: VERSION.split('.').slice(0, 2).join('.') }))}</h3><ul class="news">${NEWS.map(k => `<li>${esc(t('news_' + k))}</li>`).join('')}</ul>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('newsOk'))}</button></div>`, () => setTimeout(coachMaybe, 300));

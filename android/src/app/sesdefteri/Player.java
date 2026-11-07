@@ -269,7 +269,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
                     JSONObject it = current();
                     int hit = -1;
                     if (it != null && skipsId.equals(it.optString("id"))) {
-                        for (int i = 0; i + 1 < skips.length; i += 2) if (cur >= skips[i] && cur < skips[i + 1] - 250) { hit = i; break; }
+                        for (int i = 0; i + 1 < skips.length; i += 2) if (cur >= skips[i] && cur < skips[i + 1] - 100) { hit = i; break; }
                     }
                     if (hit >= 0 && hit != lastSkip) { seekInternal(skips[hit + 1]); seekWait = now + 400; }
                     lastSkip = hit;

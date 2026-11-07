@@ -86,9 +86,13 @@ final class Recorder {
             chans = stereo ? 2 : 1;
             android.media.AudioDeviceInfo sco = bt ? btRoute(c) : null;
             if (sco != null) { source = MediaRecorder.AudioSource.VOICE_COMMUNICATION; chans = 1; }
+            // 4.2: most phones run their noise suppressor / echo canceller only on the "call" source: on MIC the switch did nothing
+            int plain = source;
+            if (!music && (ns || aec) && sco == null) { source = MediaRecorder.AudioSource.VOICE_COMMUNICATION; chans = 1; }
             int cfg = chans > 1 ? AudioFormat.CHANNEL_IN_STEREO : AudioFormat.CHANNEL_IN_MONO;
             ar = newRecord(source, cfg);
             if (ar == null && rate != 44100) { rate = 44100; ar = newRecord(source, cfg); }   // a rate this phone does not take
+            if (ar == null && source != plain) { source = plain; ar = newRecord(source, cfg); }
             if (ar == null) throw new IllegalStateException("mic");
             if (sco != null && Build.VERSION.SDK_INT >= 23) ar.setPreferredDevice(sco);
             fx(ns, aec);

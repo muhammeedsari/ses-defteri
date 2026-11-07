@@ -183,6 +183,28 @@ final class Workspace {
                     break;
                 }
                 case "denoise": {
+                    JSONArray lr0 = a.optJSONArray("learn");
+                    if (lr0 != null && lr0.length() == 2 && lr0.getDouble(1) - lr0.getDouble(0) >= 0.2) {
+                        // 4.2: Audacity-style: profile of the marked stretch, then a gate per frequency
+                        app.sesdefteri.dsp.NoiseGate.Learner ln = new app.sesdefteri.dsp.NoiseGate.Learner(fs);
+                        Keep kk = new Keep(new JSONArray().put(new JSONArray().put(lr0.getDouble(0) * 1000).put(lr0.getDouble(1) * 1000)), inf.rate);
+                        kk.to(ln);
+                        wav(in, inf, null, new double[] { 0, 1 }, cancel).run(kk);
+                        double[] pr = ln.profile();
+                        if (pr == null) throw new IllegalArgumentException("short");
+                        double red = Math.max(3, Math.min(40, a.optDouble("red", 12))), sens = Math.max(0, Math.min(24, a.optDouble("sens", 6)));
+                        app.sesdefteri.dsp.NoiseGate ng = new app.sesdefteri.dsp.NoiseGate(ch, fs, pr, red, sens);
+                        Analyzer after = new Analyzer(ch, fs);
+                        m = new Meter(ch, fs);
+                        ng.to(new Tee(after)).to(m);
+                        head = ng;
+                        rep.put("learned", true);
+                        rep.put("reduction", Math.round(red));
+                        rep.put("before", Math.round(ln.rmsDb()));
+                        rep.put("_after", true);
+                        tees.set(after);
+                        break;
+                    }
                     Analyzer.Analysis an = analyze(in, inf, p, cancel);
                     double nr = Math.max(4, Math.min(24, (Math.max(6, Math.min(18, (42 - an.snr) * 0.55 + 6))) * str));
                     double[] prof = a.has("profile") ? Studio.doubles(a.optJSONArray("profile")) : null;
@@ -315,11 +337,12 @@ final class Workspace {
                 }
                 case "mouth": {
                     // lip and tongue clicks: smaller and a little longer than vinyl clicks, so a more sensitive detector
-                    final Stages.ClickRepair cr = new Stages.ClickRepair(ch, fs, 8 + 8 * str, 0.004);   // 3.4.6: less sensitive: 114 "clicks" were found in clean speech
+                    // 4.2: only the band above 2.5 kHz is judged and lowered (dsp/MouthClick); the voice itself stays as it was
+                    final app.sesdefteri.dsp.MouthClick mc = new app.sesdefteri.dsp.MouthClick(ch, fs, str);
                     m = new Meter(ch, fs);
-                    cr.to(m);
-                    head = cr;
-                    clicks.set(cr);
+                    mc.to(m);
+                    head = mc;
+                    mouths.set(mc);
                     slice = new double[] { 0, 1 };
                     break;
                 }
@@ -470,13 +493,15 @@ final class Workspace {
             if (atn != null) { rep.put("seconds", Math.round(atn.corrected * 10) / 10.0); autoTunes.remove(); }
             Stages.ClickRepair cr = clicks.get();
             if (cr != null) { rep.put("count", cr.repaired); clicks.remove(); }
+            app.sesdefteri.dsp.MouthClick mcl = mouths.get();
+            if (mcl != null) { rep.put("count", mcl.repaired); mouths.remove(); }
             Stages.PlosiveTamer pt = plos.get();
             if (pt != null) { rep.put("seconds", Math.round(pt.active * 10.0 / fs) / 10.0); plos.remove(); }
             Stages.DeEsser d = dees.get();
             if (d != null) { rep.put("seconds", Math.round(d.active * 10.0 / fs) / 10.0); dees.remove(); }
             rep.remove("_after");
             // nothing to fix in this recording: say so instead of handing back an identical copy
-            if ((cr != null && cr.repaired == 0) || (pt != null && pt.active < fs / 20) || (d != null && d.active < fs / 5)) {
+            if ((cr != null && cr.repaired == 0) || (mcl != null && mcl.repaired == 0) || (pt != null && pt.active < fs / 20) || (d != null && d.active < fs / 5)) {
                 out.delete();
                 rep.put("none", true);
                 return same(a, rep);
@@ -1129,6 +1154,7 @@ final class Workspace {
     // per-job holders for the stage objects whose counters go into the report
     private static final ThreadLocal<Analyzer> tees = new ThreadLocal<>();
     private static final ThreadLocal<Stages.ClickRepair> clicks = new ThreadLocal<>();
+    private static final ThreadLocal<app.sesdefteri.dsp.MouthClick> mouths = new ThreadLocal<>();
     private static final ThreadLocal<AutoTune> autoTunes = new ThreadLocal<>();
     private static final ThreadLocal<Stages.PlosiveTamer> plos = new ThreadLocal<>();
     private static final ThreadLocal<Stages.DeEsser> dees = new ThreadLocal<>();

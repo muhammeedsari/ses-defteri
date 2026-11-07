@@ -85,16 +85,14 @@ final class Timeline {
         double[] et; float[] ed;   // volume line: times in frames from the clip start, levels in dB
         byte[] buf = new byte[0];
         java.util.ArrayList<app.sesdefteri.dsp.Biquad> eq;   // live 5-band EQ (null = flat)
+        app.sesdefteri.dsp.Tone tone;   // bass / treble (null = off)
         float[][] tmp = new float[2][0];
     }
 
     /** same bands as the eqpreset op: shelf 100 Hz, peaks 300 Hz / 1 kHz / 3 kHz, shelf 8 kHz */
     static java.util.ArrayList<app.sesdefteri.dsp.Biquad> eq(JSONArray g, double bass, double treble) {
         java.util.ArrayList<app.sesdefteri.dsp.Biquad> l = new java.util.ArrayList<>();
-        // "bass boost" / "treble boost" buttons: wide shelves under the 5-band EQ
-        // 3.4.6: 250 Hz / 3.5 kHz so a phone speaker can play what is boosted (150 Hz / 5 kHz were barely heard)
-        if (bass != 0) l.add(new app.sesdefteri.dsp.Biquad(2).setLowShelf(RATE, 250, 0.7, bass));
-        if (treble != 0) l.add(new app.sesdefteri.dsp.Biquad(2).setHighShelf(RATE, 3500, 0.7, treble));
+        // bass / treble buttons: dsp/Tone (4.2), applied after these bands
         if (g == null || g.length() < 5) return l.isEmpty() ? null : l;
         double[] mid = { 300, 1000, 3000 };
         double v = g.optDouble(0, 0);
@@ -138,7 +136,9 @@ final class Timeline {
                     }
                     double dd = o.optDouble("duck", 0);
                     if (dd < 0) k.duck = (float) Math.pow(10, dd / 20);
-                    k.eq = eq(o.optJSONArray("eq"), o.optDouble("bass", 0), o.optDouble("treble", 0));
+                    k.eq = eq(o.optJSONArray("eq"), 0, 0);
+                    double tb = o.optDouble("bass", 0), tt = o.optDouble("treble", 0);
+                    if (tb != 0 || tt != 0) k.tone = new app.sesdefteri.dsp.Tone(RATE, tb, tt);
                     if (k.len <= 0 || k.g <= 0) continue;
                     k.f = new RandomAccessFile(file, "r");
                     l.add(k);
@@ -192,7 +192,7 @@ final class Timeline {
                 double[] et = k.et;
                 int j = 0;
                 if (et != null) while (j < et.length - 1 && et[j + 1] <= a - k.at) j++;
-                if (k.eq != null) {
+                if (k.eq != null || k.tone != null) {
                     if (k.tmp[0].length < cnt) k.tmp = new float[2][cnt];
                     L = k.tmp[0]; Rr = k.tmp[1]; base = 0;
                     java.util.Arrays.fill(L, 0, cnt, 0f); java.util.Arrays.fill(Rr, 0, cnt, 0f);
@@ -221,8 +221,9 @@ final class Timeline {
                     L[base + i] += l * g;
                     Rr[base + i] += rr * g;
                 }
-                if (k.eq != null) {
-                    for (app.sesdefteri.dsp.Biquad f : k.eq) { f.process(0, L, 0, cnt); f.process(1, Rr, 0, cnt); }
+                if (k.eq != null || k.tone != null) {
+                    if (k.eq != null) for (app.sesdefteri.dsp.Biquad f : k.eq) { f.process(0, L, 0, cnt); f.process(1, Rr, 0, cnt); }
+                    if (k.tone != null) k.tone.process(L, Rr, cnt);
                     for (int i = 0; i < cnt; i++) { out[0][off + i] += L[i]; out[1][off + i] += Rr[i]; }
                 }
             }
