@@ -41,6 +41,10 @@ public class WorkService extends Service {
     private static long since, lastProg;
     private static int lastPct = -1;
     private static Notification.Builder nb;
+    private static volatile String label;
+
+    /** 4.1: what is running, as the notification's title (null = the general title) */
+    static void label(String s) { label = s == null || s.isEmpty() ? null : s; }
 
     /** 4.0.1: the running work's percentage on the notification (at most twice a second) */
     static void progress(Context c, double f) {
@@ -51,7 +55,7 @@ public class WorkService extends Service {
         if (pct == lastPct || now - lastProg < 500) return;
         lastPct = pct; lastProg = now;
         try {
-            b.setProgress(100, pct, false).setContentText(Str.get(c, "workText") + " · %" + pct);
+            b.setProgress(100, pct, false).setContentTitle(label != null ? label : Str.get(c, "workTitle")).setContentText(Str.get(c, "workText") + " · %" + pct);
             NotificationManager nm = (NotificationManager) c.getSystemService(NOTIFICATION_SERVICE);
             if (nm != null) nm.notify(ID, b.build());
         } catch (Exception ignored) { }

@@ -10,6 +10,7 @@
         <p class="sum" id="summary">&nbsp;</p>
       </div>
     </div>
+    <button class="bg-chip" id="bgChip" type="button" hidden></button>
     <button class="btn" id="importBtn" type="button" data-ta="import"><span id="importIc"></span><span data-t="import"></span></button>
     <button class="icon-btn" id="setBtn" type="button" data-ta="settings"></button>
   </header>
@@ -217,6 +218,7 @@
 <script src="i18n31.js"></script>
 <script src="i18n32.js"></script>
 <script src="i18n33.js"></script>
+<script src="i18n34.js"></script>
 <script>
 (() => {
 'use strict';
@@ -227,7 +229,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.0.1';
+const VERSION = '4.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1387,6 +1389,7 @@ async function loadLibrary() {
 }
 let resumeT = 0;
 window.__sdResume = () => {
+  if (booted) bgPoll(true);   // 4.1: work may have finished while away
   if (!NATIVE || !booted) return;
   clearTimeout(resumeT);
   resumeT = setTimeout(async () => { await loadLibrary(); render(); if (audio.refresh) audio.refresh(); scheduleBackground(); }, 300);
@@ -2193,8 +2196,13 @@ async function transcribeItem(it, auto) {
   if (!NATIVE || !CAPS.asr || !it.src || BUSY.has(it.id)) { if (!auto && NATIVE && !CAPS.asr) toast(t('textNoAsr'), 4000); return; }
   if (!hasAsr()) { if (auto || !(await asrOffer())) return; }
   let res;
-  try { res = await studioJob('transcribe', it, { lang: S.textLang, model: S.asrModel }); }
-  catch (e) { if (!auto || !String(e.message).includes('cancel')) toast(errText(e), 4000); return; }
+  setBusy(it.id, 'transcribe', 0);
+  try { res = await bgStart('transcribe', 'tx:' + it.id, t('bgTx', { t: it.title || '' }), { src: it.src, lang: S.textLang, model: S.asrModel }, f => setBusy(it.id, 'transcribe', f)); }
+  catch (e) { setBusy(it.id); const m = String(e.message); if (!m.includes('pause') && (!auto || !m.includes('cancel'))) toast(errText(e), 4000); return; }
+  setBusy(it.id);
+  await txApply(it, res, auto);
+}
+async function txApply(it, res, auto) {
   const rec = { id: it.id, segments: res.segments || [], srt: res.srt || '', lang: res.lang || '' };
   await db.put('texts', rec).catch(() => {});
   S.texts.set(it.id, rec);
@@ -2380,20 +2388,24 @@ async function asrRefresh() { try { S.asrSt = await runJob('asrStatus', {}); } c
 const ASR_MODELS = [['base', 95], ['small', 375]];
 /** downloads one model with a progress bar; resolves true when it is ready */
 function asrDownload(m, onProg) {
-  const pr = runJob('asrDownload', { model: m, bg: true }, onProg);
-  return { jobId: pr.jobId, done: pr.then(st => { S.asrSt = st; if (!S.asrSt[S.asrModel]) S.asrModel = m; ls.set('asrModel', S.asrModel); toast(t('asrReady'), 3500); return true; },
-    x => { if (!String(x.message).includes('cancel')) toast(t('asrFail'), 5000); return false; }) };
+  const key = 'dl:asr-' + m;
+  const pr = bgStart('asrDownload', key, t('bgDl', { t: t('asr_' + m) }), { model: m }, onProg);
+  return { key, done: pr.then(st => { asrGot(m, st); return true; },
+    x => { const e = String(x.message); if (!e.includes('cancel') && !e.includes('pause')) toast(t('asrFail'), 5000); return false; }) };
 }
+function asrGot(m, st) { S.asrSt = st || S.asrSt; if (!S.asrSt[S.asrModel]) S.asrModel = m; ls.set('asrModel', S.asrModel); toast(t('asrReady'), 3500); }
 /** asked when "to text" is used before any model is on the phone */
 async function asrOffer() {
   const v = await chooseBox(t('asrNeedT'), t('asrNeedD'), ASR_MODELS.map(([m, mb]) => ({ value: m, label: t('asr_' + m) + ' · ' + mb + ' MB', desc: t('asrD_' + m) })));
   if (!v) return false;
   const card = openModal(`<h3>${esc(t('asrGetting'))}</h3><p class="mtext">${esc(t('asr_' + v))}</p><div class="prog"><i id="asrBar" style="width:0%"></i></div>
-    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button></div>`);
+    <p class="hint">${esc(t('bgNote'))}</p>
+    <div class="modal-actions"><button class="btn" type="button" data-bgx>${esc(t('cancel'))}</button><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('bgHide'))}</button></div>`);
   const d = asrDownload(v, f => { const b = card.querySelector('#asrBar'); if (b) b.style.width = Math.round(f * 100) + '%'; });
-  card.querySelector('[data-x]').onclick = () => { try { AND.cancelJob(d.jobId); } catch (e) {} };
+  card.querySelector('[data-bgx]').onclick = () => { try { AND.bgCancel(d.key); } catch (e) {} BG.waits.delete(d.key); closeModal(); };
+  card.querySelector('[data-x]').onclick = () => closeModal();   // it goes on in the background
   const ok = await d.done;
-  if (stack.includes('modal')) closeModal();
+  if (stack.includes('modal') && card.isConnected) closeModal();
   return ok;
 }
 async function asrModelUi(card) {
@@ -2405,7 +2417,7 @@ async function asrModelUi(card) {
     box.innerHTML = ASR_MODELS.map(([m, mb]) => {
       const have = !!S.asrSt[m];
       return `<div class="asr-row"><label class="asr-pick"><input type="radio" name="asrM" data-asr="${m}"${S.asrModel === m && have ? ' checked' : ''}${have ? '' : ' disabled'}><span><b>${esc(t('asr_' + m))}</b><small>${mb} MB · ${esc(t('asrD_' + m))}</small></span></label>
-        ${busy === m ? `<div class="prog"><i style="width:${Math.round(prog * 100)}%"></i></div><button class="btn sm" type="button" data-asr-cancel>${esc(t('cancel'))}</button>`
+        ${busy === m ? `<div class="prog"><i style="width:${Math.round(prog * 100)}%"></i></div><button class="btn sm" type="button" data-asr-cancel>${esc(t('bgPause'))}</button>`
           : have ? `<button class="btn sm danger" type="button" data-asr-del="${m}">${esc(t('asrDel'))}</button>` : `<button class="btn sm primary" type="button" data-asr-get="${m}"${busy ? ' disabled' : ''}>${ic('import')}${esc(t('asrGet'))}</button>`}</div>`;
     }).join('') + `<small class="hint">${esc(t(hasAsr() ? 'asrHaveD' : 'asrNoneD'))}</small>`;
   };
@@ -2413,13 +2425,13 @@ async function asrModelUi(card) {
   box.onclick = async e => {
     const m = e.target.closest('[data-asr]');
     if (m && !m.disabled) { S.asrModel = m.dataset.asr; ls.set('asrModel', S.asrModel); return; }
-    if (e.target.closest('[data-asr-cancel]') && job) { try { AND.cancelJob(job); } catch (x) {} return; }
+    if (e.target.closest('[data-asr-cancel]') && job) { try { AND.bgPause(job); } catch (x) {} return; }
     const del = e.target.closest('[data-asr-del]');
     if (del) { try { S.asrSt = await runJob('asrDelete', { model: del.dataset.asrDel }); } catch (x) {} if (!S.asrSt[S.asrModel]) { S.asrModel = S.asrSt.base ? 'base' : 'small'; ls.set('asrModel', S.asrModel); } draw(); return; }
     const get = e.target.closest('[data-asr-get]');
     if (get && !busy) {
       busy = get.dataset.asrGet; prog = 0; draw();
-      const d = asrDownload(busy, f => { prog = f; draw(); }); job = d.jobId;
+      const d = asrDownload(busy, f => { prog = f; draw(); }); job = d.key;
       await d.done; busy = null; job = null; draw();
     }
   };
@@ -3509,7 +3521,8 @@ async function tlTts() {
     closeModal(); tlStop();
     if (engine === 'ai' && !st[lang]) {
       if (!(await confirmBox({ title: t('ttsGetQ'), text: t('ttsGetD', { n: mb(lang) }), ok: t('spkGetOk') }))) return;
-      try { st = await tlRunJob(t('ttsGetting'), 'ttsGet', { lang }); } catch (e) { toast(errText(e), 5000); return; }
+      toast(t('bgNote'), 3500);
+      try { st = await bgStart('ttsGet', 'dl:tts-' + lang, t('ttsGetting'), { lang }); } catch (e) { if (!String(e.message).includes('pause')) toast(errText(e), 5000); return; }
     }
     let res;
     try { res = await tlRunJob(t('ttsBusy'), 'ttsSpeak', { text, lang, engine, speed }); } catch (e) { toast(errText(e), 6000); return; }
@@ -3543,7 +3556,8 @@ async function tlSpk() {
   tlStop();
   if (!CAPS.spk) {
     if (!(await confirmBox({ title: t('spkGetQ'), text: t('spkGetD'), ok: t('spkGetOk') }))) return;
-    try { await tlRunJob(t('spkGetting'), 'spkGet', {}); CAPS.spk = true; } catch (e) { toast(errText(e), 5000); return; }
+    toast(t('bgNote'), 3500);
+    try { await bgStart('spkGet', 'dl:spk', t('spkGetting'), {}); CAPS.spk = true; } catch (e) { if (!String(e.message).includes('pause')) toast(errText(e), 5000); return; }
   }
   let res;
   try { res = await tlRunJob(t('spkBusy'), 'tlSpk', { path: c.path, in: c.in, out: c.out, n: +n }); } catch (e) { toast(errText(e), 5000); return; }
@@ -5419,7 +5433,84 @@ function tlAB() {
   };
 }
 
-/* 4.0.1: Android back on the main screen: drop a picked clip, then go back to Recordings, then leave the app */
+/* ---------- 4.1: background work (model downloads, speech-to-text): it goes on when the app is left or closed,
+   can be paused and resumed where it stopped; the page asks for the list, so a later start still sees it ---------- */
+const BG = { list: [], tm: 0, waits: new Map(), done: new Set() };
+function bgList() { try { return JSON.parse(AND.bgList()) || []; } catch (e) { return []; } }
+function bgStart(kind, key, label, args, onProg) {
+  const p = new Promise((res, rej) => BG.waits.set(key, { res, rej, onProg }));
+  try { AND.bgStart(kind, key, label, JSON.stringify(args || {})); } catch (e) { BG.waits.delete(key); return Promise.reject(e); }
+  BG.done.delete(key);
+  bgPoll(true);
+  return p;
+}
+function bgPoll(now) {
+  clearTimeout(BG.tm);
+  if (!NATIVE) return;
+  const tick = () => {
+    BG.list = bgList();
+    for (const x of BG.list) {
+      const w = BG.waits.get(x.key);
+      if (x.state === 'run') {
+        if (w && w.onProg) w.onProg(x.p);
+        if (!w && x.key.startsWith('tx:')) { const id = x.key.slice(3); const b = BUSY.get(id); if (!b || Math.abs(b.p - x.p) > 0.004) setBusy(id, 'transcribe', x.p); }
+      } else if (x.state === 'done') bgFinish(x, w);
+      else if (w) { BG.waits.delete(x.key); w.rej(new Error(x.state === 'pause' ? 'pause' : x.err || 'bg')); }
+      else if (x.key.startsWith('tx:') && BUSY.has(x.key.slice(3))) setBusy(x.key.slice(3));
+    }
+    for (const [k, w] of BG.waits) if (!BG.list.some(x => x.key === k)) { BG.waits.delete(k); w.rej(new Error('cancel')); }
+    renderBgChip(); bgPanelDraw();
+    if (BG.list.some(x => x.state === 'run') || BG.waits.size) BG.tm = setTimeout(tick, 1000);
+  };
+  if (now) tick(); else BG.tm = setTimeout(tick, 1000);
+}
+async function bgFinish(x, w) {
+  if (BG.done.has(x.key)) return;
+  BG.done.add(x.key);
+  let res = {}; try { res = JSON.parse(AND.bgResult(x.key) || '{}'); } catch (e) {}
+  try { AND.bgForget(x.key); } catch (e) {}
+  if (w) { BG.waits.delete(x.key); w.res(res); return; }
+  // finished while the page was away
+  if (x.key.startsWith('tx:')) { const it = S.items.get(x.key.slice(3)); setBusy(x.key.slice(3)); if (it) { await txApply(it, res, true); toast(t('bgTxDone', { t: it.title }), 4000); } }
+  else if (x.kind === 'asrDownload') { await asrRefresh(); toast(t('asrReady'), 3500); }
+  else toast(t('bgDlDone', { t: x.label }), 3500);
+}
+function renderBgChip() {
+  const b = $('#bgChip'); if (!b) return;
+  const l = BG.list.filter(x => x.state !== 'done'), run = l.filter(x => x.state === 'run');
+  b.hidden = !l.length; if (!l.length) return;
+  const p = run.length ? Math.round(run.reduce((a, x) => a + x.p, 0) / run.length * 100) : null;
+  b.classList.toggle('run', !!run.length);
+  b.innerHTML = `${ic(run.length ? 'import' : 'pause')}<span>${p != null ? '%' + p : esc(t('bgPaused'))}${l.length > 1 ? ' · ' + l.length : ''}</span>`;
+  b.setAttribute('aria-label', t('bgT'));
+}
+let bgCard = null;
+function bgPanel() {
+  bgCard = openModal(`<h3>${esc(t('bgT'))}</h3><p class="mtext">${esc(t('bgNote'))}</p><div class="modal-body" id="bgRows"></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`, () => { bgCard = null; });
+  bgCard.onclick = e => {
+    if (e.target.closest('[data-x]')) { closeModal(); return; }
+    const b = e.target.closest('[data-bga]'); if (!b) return;
+    const k = b.dataset.key, a = b.dataset.bga;
+    try { if (a === 'pause') AND.bgPause(k); else if (a === 'go') { AND.bgResume(k); BG.done.delete(k); } else { AND.bgCancel(k); if (k.startsWith('tx:')) setBusy(k.slice(3)); } } catch (x) {}
+    setTimeout(() => bgPoll(true), 250);
+  };
+  bgPanelDraw();
+}
+function bgPanelDraw() {
+  if (!bgCard || !bgCard.isConnected) return;
+  const l = BG.list.filter(x => x.state !== 'done');
+  if (!l.length) { closeModal(); return; }
+  const st = x => x.state === 'run' ? t('bgRun') : x.state === 'pause' ? t('bgPaused') : t('bgFail');
+  bgCard.querySelector('#bgRows').innerHTML = l.map(x => `<div class="bg-row"><div class="bg-top"><b>${esc(x.label)}</b><span class="tc">${esc(st(x))} · %${Math.round(x.p * 100)}</span></div>
+    <div class="prog"><i style="width:${Math.round(x.p * 100)}%"></i></div>
+    <div class="bg-acts">${x.state === 'run' ? `<button class="btn sm" type="button" data-bga="pause" data-key="${esc(x.key)}">${ic('pause')}${esc(t('bgPause'))}</button>`
+      : `<button class="btn sm primary" type="button" data-bga="go" data-key="${esc(x.key)}">${ic('play')}${esc(t('bgGo'))}</button>`}
+      <button class="btn sm danger" type="button" data-bga="x" data-key="${esc(x.key)}">${esc(t('cancel'))}</button></div></div>`).join('');
+}
+$('#bgChip').addEventListener('click', bgPanel);
+
+/* ---------- 4.0.1: Android back on the main screen: drop a picked clip, then go back to Recordings, then leave the app */
 window.__sdBack = () => {
   if (document.querySelector('.coach')) { document.querySelector('.coach').remove(); return true; }
   if (SEL) { selEnd(); return true; }
@@ -5630,6 +5721,7 @@ async function boot() {
     if (!S.media && !ls.get('askedMedia', false)) { ls.set('askedMedia', true); requestLibrary(); }
     window.__sdQuickRec();
     setTimeout(welcome, 700);
+    bgPoll(true);
   }
 }
 boot();

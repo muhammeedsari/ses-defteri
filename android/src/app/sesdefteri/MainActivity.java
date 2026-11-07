@@ -87,6 +87,7 @@ public class MainActivity extends Activity implements Player.Listener {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        Bg.init(this);   // 4.1: downloads / speech-to-text left running (or stopped by the system) go on
         hookCrashes(getApplicationContext());
         Player.I.init(this, this);
         web = new WebView(this);
@@ -901,6 +902,17 @@ public class MainActivity extends Activity implements Player.Listener {
             return id;
         }
 
+        /* -- 4.1: background work that outlives the screen (see Bg) -- */
+        @JavascriptInterface public String bgStart(String kind, String key, String label, String argsJson) {
+            try { return Bg.start(kind, key, label, new JSONObject(argsJson)); } catch (Exception e) { return ""; }
+        }
+        @JavascriptInterface public void bgPause(String key) { Bg.pause(key); }
+        @JavascriptInterface public void bgResume(String key) { Bg.resume(key); }
+        @JavascriptInterface public void bgCancel(String key) { Bg.cancel(key); }
+        @JavascriptInterface public void bgForget(String key) { Bg.forget(key); }
+        @JavascriptInterface public String bgList() { return Bg.list(); }
+        @JavascriptInterface public String bgResult(String key) { return Bg.result(key); }
+
         /** 4.0.1: deletes several files with one confirmation; with "media management" (Android 12+) none is asked */
         @JavascriptInterface public String deleteMediaMany(final String srcsJson) {
             final String id = UUID.randomUUID().toString();
@@ -1035,6 +1047,7 @@ public class MainActivity extends Activity implements Player.Listener {
             final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"spectro".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind) && !"ttsStatus".equals(kind) && !"ttsDelete".equals(kind);
             if (heavy) {
                 heavyIds.add(id);
+                WorkService.label(null);
                 WorkService.begin(MainActivity.this);
                 // 4.0.1: the "done" notification needs this permission (Android 13+); asked once per start, when long work begins
                 if (Build.VERSION.SDK_INT >= 33 && !askedNotif && !has(Manifest.permission.POST_NOTIFICATIONS)) {

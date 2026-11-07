@@ -199,7 +199,24 @@ final class Studio {
     /* ---------- speech to text ---------- */
 
     static JSONObject transcribe(Context c, JSONObject src, String lang, final AudioTools.Progress prog, AtomicBoolean cancel) throws Exception {
+        return transcribe(c, src, lang, prog, cancel, null);
+    }
+
+    /** 4.1: with part != null the sentences done so far are kept in it; a later run starts after the last one */
+    static JSONObject transcribe(Context c, JSONObject src, String lang, final AudioTools.Progress prog, AtomicBoolean cancel, final File part) throws Exception {
         Fmt f = probe(c, src);
+        final List<Transcriber.Segment> before = new java.util.ArrayList<>();
+        double from = 0;
+        String lang0 = "";
+        if (part != null && part.isFile()) {
+            try {
+                JSONObject o = new JSONObject(Bg.readText(part));
+                JSONArray a = o.getJSONArray("segs");
+                for (int i = 0; i < a.length(); i++) { JSONArray x = a.getJSONArray(i); before.add(new Transcriber.Segment(x.getDouble(0), x.getDouble(1), x.getString(2))); }
+                from = o.optDouble("reached", 0);
+                lang0 = o.optString("lang", "");
+            } catch (Exception ignored) { before.clear(); from = 0; }
+        }
         int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
         final Transcriber tr;
         try {
@@ -212,6 +229,23 @@ final class Studio {
             throw new IllegalStateException("asr-unavailable: " + e.getMessage());
         }
         try {
+            tr.offset = from;
+            final double reached0 = from;
+            final String langKeep = lang0;
+            if (part != null) tr.setListener(new Transcriber.Listener() {
+                final List<Transcriber.Segment> all = new java.util.ArrayList<>(before);
+                @Override public void onSegment(Transcriber.Segment s) {
+                    all.add(s);
+                    try {
+                        JSONObject o = new JSONObject();
+                        JSONArray a = new JSONArray();
+                        for (Transcriber.Segment x : all) { JSONArray y = new JSONArray(); y.put(x.start); y.put(x.end); y.put(x.text); a.put(y); }
+                        o.put("segs", a); o.put("reached", Math.max(reached0, s.end));
+                        o.put("lang", tr.detectedLang.isEmpty() ? langKeep : tr.detectedLang);
+                        Bg.writeText(part, o.toString());
+                    } catch (Exception ignored) { }
+                }
+            });
             Stages.ChannelMap mono = new Stages.ChannelMap(f.ch, Stages.ChannelMap.MONO);
             Resampler rs = new Resampler(1, (double) f.rate, (double) Transcriber.RATE);
             // rumble and handling noise below 80 Hz only confuse the recogniser
@@ -219,8 +253,26 @@ final class Studio {
                 @Override public void push(float[][] b, int n) { tr.accept(b[0], n); }
                 @Override public void end() { }
             });
-            source(c, src, f, prog, new double[][] { { 0, 0.98 } }, cancel).run(mono);
-            List<Transcriber.Segment> segs = tr.finish();
+            // resuming: what was already turned to text is skipped (decoded, not recognised: that part is quick)
+            final long skip = Math.round(from * f.rate);
+            final Node in = mono;
+            Node head = skip <= 0 ? mono : new Node() {
+                long seen;
+                final float[][] tmp = new float[f.ch][4096];
+                @Override public void push(float[][] b, int n) throws Exception {
+                    if (seen >= skip) { in.push(b, n); return; }
+                    int drop = (int) Math.min(n, skip - seen);
+                    seen += n;
+                    if (drop == n) return;
+                    for (int k = 0; k < b.length; k++) System.arraycopy(b[k], drop, tmp[k], 0, n - drop);
+                    in.push(tmp, n - drop);
+                }
+                @Override public void end() throws Exception { in.end(); }
+            };
+            source(c, src, f, prog, new double[][] { { 0, 0.98 } }, cancel).run(head);
+            List<Transcriber.Segment> segs = new java.util.ArrayList<>(before);
+            segs.addAll(tr.finish());
+            if (tr.detectedLang.isEmpty()) tr.detectedLang = lang0;
             JSONObject res = new JSONObject();
             JSONArray sa = new JSONArray();
             for (Transcriber.Segment s : segs) {

@@ -17,7 +17,7 @@ public final class Transcriber {
     public static final class Segment {
         public final double start, end;
         public final String text;
-        Segment(double s, double e, String t) { start = s; end = e; text = t; }
+        public Segment(double s, double e, String t) { start = s; end = e; text = t; }
     }
 
     public interface Listener { void onSegment(Segment s); }
@@ -29,6 +29,7 @@ public final class Transcriber {
     private int winFill;
     private Listener listener;
     public String detectedLang = "";
+    public double offset;   // 4.1: seconds already done before the first sample given (a resumed run)
 
     /**
      * @param assets AssetManager (paths are asset names) or null (paths are files)
@@ -100,7 +101,7 @@ public final class Transcriber {
         while (!vad.empty()) {
             SpeechSegment s = vad.front();
             vad.pop();
-            double st = s.start / (double) RATE, en = st + s.samples.length / (double) RATE;
+            double st = offset + s.start / (double) RATE, en = st + s.samples.length / (double) RATE;
             // each sentence at a steady level: quiet or far-away speech is recognised as well as close speech
             float[] x = s.samples;
             float pk = 0;
