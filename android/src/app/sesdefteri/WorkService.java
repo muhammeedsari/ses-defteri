@@ -38,7 +38,24 @@ public class WorkService extends Service {
         } catch (Exception e) { requested = false; }
     }
 
-    private static long since;
+    private static long since, lastProg;
+    private static int lastPct = -1;
+    private static Notification.Builder nb;
+
+    /** 4.0.1: the running work's percentage on the notification (at most twice a second) */
+    static void progress(Context c, double f) {
+        Notification.Builder b = nb;
+        if (!fg || b == null) return;
+        int pct = (int) Math.max(0, Math.min(100, Math.round(f * 100)));
+        long now = android.os.SystemClock.uptimeMillis();
+        if (pct == lastPct || now - lastProg < 500) return;
+        lastPct = pct; lastProg = now;
+        try {
+            b.setProgress(100, pct, false).setContentText(Str.get(c, "workText") + " · %" + pct);
+            NotificationManager nm = (NotificationManager) c.getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) nm.notify(ID, b.build());
+        } catch (Exception ignored) { }
+    }
 
     static synchronized void end(Context c) {
         running = Math.max(0, running - 1);
@@ -91,7 +108,9 @@ public class WorkService extends Service {
             .setOngoing(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setProgress(0, 0, true)
+            .setOnlyAlertOnce(true)
             .setContentIntent(pi);
+        nb = b; lastPct = -1;
         try {
             if (Build.VERSION.SDK_INT >= 29) startForeground(ID, b.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
             else startForeground(ID, b.build());
@@ -110,7 +129,7 @@ public class WorkService extends Service {
 
     @Override
     public void onDestroy() {
-        synchronized (WorkService.class) { fg = false; requested = false; }
+        synchronized (WorkService.class) { fg = false; requested = false; nb = null; }
         try {
             if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE); else stopForeground(true);
         } catch (Exception ignored) { }

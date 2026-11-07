@@ -92,12 +92,8 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         detachFx(p);
         Object[] o = new Object[4];
         if (noFx && p == mp) { fx.put(p, o); return; }
-        if (eqDb != null) {
-            Object e = null;
-            if (Build.VERSION.SDK_INT >= 28) e = dynEq(p.getAudioSessionId());   // every band exactly where it is drawn
-            if (e == null) e = sysEq(p.getAudioSessionId());
-            o[0] = e;
-        }
+        // 4.0.1: only the phone's standard equalizer. DynamicsProcessing took over the volume on some phones (volume keys stopped working)
+        if (eqDb != null) { boolean flat = true; for (double g : eqDb) if (Math.abs(g) > 0.05) flat = false; if (!flat) o[0] = sysEq(p.getAudioSessionId()); }
         try {
             if (bassStr > 0) { android.media.audiofx.BassBoost bb = new android.media.audiofx.BassBoost(1000, p.getAudioSessionId()); bb.setStrength((short) bassStr); bb.setEnabled(true); o[2] = bb; }
         } catch (Exception ignored) { }
@@ -124,27 +120,6 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         int k = 0; while (k < n - 2 && f > eqFc[k + 1]) k++;
         double t = (Math.log(f) - Math.log(eqFc[k])) / (Math.log(eqFc[k + 1]) - Math.log(eqFc[k]));
         return eqDb[k] + (eqDb[k + 1] - eqDb[k]) * t;
-    }
-
-    private Object dynEq(int session) {
-        try {
-            int n = eqFc.length;
-            android.media.audiofx.DynamicsProcessing.Config cfg = new android.media.audiofx.DynamicsProcessing.Config.Builder(
-                android.media.audiofx.DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, 2, true, n, false, 0, false, 0, false).build();
-            android.media.audiofx.DynamicsProcessing.Eq eq = new android.media.audiofx.DynamicsProcessing.Eq(true, true, n);
-            for (int i = 0; i < n; i++) {
-                double edge = i + 1 < n ? Math.sqrt(eqFc[i] * eqFc[i + 1]) : 20000;   // a band ends half way (log) to the next one
-                eq.setBand(i, new android.media.audiofx.DynamicsProcessing.EqBand(true, (float) edge, (float) eqDb[i]));
-            }
-            cfg.setPreEqAllChannelsTo(eq);
-            android.media.audiofx.DynamicsProcessing d = new android.media.audiofx.DynamicsProcessing(1000, session, cfg);
-            double top = 0; for (double g : eqDb) top = Math.max(top, g);
-            if (top > 0) d.setInputGainAllChannelsTo((float) (-0.6 * top));   // headroom so big boosts do not crackle
-            d.setEnabled(true);
-            return d;
-        } catch (Throwable e) {
-            return null;
-        }
     }
 
     private Object sysEq(int session) {

@@ -59,6 +59,7 @@ public class MainActivity extends Activity implements Player.Listener {
     private static final int REQ_MEDIA = 13;
     private static final int REQ_PICK = 14;
     private static final int REQ_DELETE = 15;
+    private static final int REQ_NOTIF = 16;
     private static final int REQ_VIDEO = 16;
     private static final int REQ_VIDEO_TL = 17;
     private volatile String videoBusy;
@@ -219,7 +220,11 @@ public class MainActivity extends Activity implements Player.Listener {
         js("window.__sdJobChunk && window.__sdJobChunk(" + q(id) + "," + from + ",'" + android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP) + "')");
     }
 
+    private final java.util.Set<String> heavyIds = java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
+    private boolean askedNotif;
+
     private void jobProgress(String id, double f) {
+        if (heavyIds.contains(id)) WorkService.progress(this, f);   // 4.0.1: the percentage also in the notification
         js("window.__sdJobProgress && window.__sdJobProgress(" + q(id) + "," + f + ")");
     }
 
@@ -533,8 +538,12 @@ public class MainActivity extends Activity implements Player.Listener {
     }
 
     private void goBack() {
-        if (web != null && web.canGoBack()) web.goBack();
-        else moveTaskToBack(true);
+        if (web != null && web.canGoBack()) { web.goBack(); return; }
+        if (web == null) { moveTaskToBack(true); return; }
+        // 4.0.1: on the main screen the page may still step back (another tab → Recordings, a picked clip → none)
+        web.evaluateJavascript("window.__sdBack ? !!window.__sdBack() : false", new android.webkit.ValueCallback<String>() {
+            @Override public void onReceiveValue(String v) { if (!"true".equals(v)) moveTaskToBack(true); }
+        });
     }
 
     @Override
@@ -772,8 +781,10 @@ public class MainActivity extends Activity implements Player.Listener {
             try {
                 android.os.Vibrator v = (android.os.Vibrator) getSystemService(VIBRATOR_SERVICE);
                 if (v == null) return;
-                if (Build.VERSION.SDK_INT >= 26) v.vibrate(android.os.VibrationEffect.createOneShot(Math.max(5, ms), 60));
-                else v.vibrate(Math.max(5, ms));
+                // 4.0.1: a long press is felt clearly (amplitude 60 of 255 was too weak on many phones)
+                if (ms >= 15 && Build.VERSION.SDK_INT >= 29) v.vibrate(android.os.VibrationEffect.createPredefined(android.os.VibrationEffect.EFFECT_HEAVY_CLICK));
+                else if (Build.VERSION.SDK_INT >= 26) v.vibrate(android.os.VibrationEffect.createOneShot(Math.max(10, ms), ms >= 15 ? 255 : 120));
+                else v.vibrate(Math.max(10, ms));
             } catch (Exception ignored) { }
         }
 
@@ -890,6 +901,52 @@ public class MainActivity extends Activity implements Player.Listener {
             return id;
         }
 
+        /** 4.0.1: deletes several files with one confirmation; with "media management" (Android 12+) none is asked */
+        @JavascriptInterface public String deleteMediaMany(final String srcsJson) {
+            final String id = UUID.randomUUID().toString();
+            ui(new Runnable() {
+                @Override public void run() {
+                    try {
+                        org.json.JSONArray a = new org.json.JSONArray(srcsJson);
+                        List<Uri> left = new ArrayList<>();
+                        int bad = 0;
+                        for (int i = 0; i < a.length(); i++) {
+                            JSONObject src = a.getJSONObject(i);
+                            Player.I.releaseIfCurrentSrc(src.toString());
+                            if (MediaLib.deleteOwn(MainActivity.this, src)) continue;
+                            Uri u = MediaLib.srcUri(src);
+                            if (u != null) left.add(u); else bad++;
+                        }
+                        if (left.isEmpty()) { jobDone(id, bad == 0, "{\"deleted\":" + (bad == 0) + "}"); return; }
+                        if (Build.VERSION.SDK_INT >= 30) {
+                            PendingIntent pi = MediaStore.createDeleteRequest(getContentResolver(), left);
+                            pendingDeleteJob = id;
+                            startIntentSenderForResult(pi.getIntentSender(), REQ_DELETE, null, 0, 0, 0);
+                            return;
+                        }
+                        jobDone(id, false, "{\"deleted\":false}");
+                    } catch (Exception e) {
+                        jobDone(id, false, "{\"deleted\":false}");
+                    }
+                }
+            });
+            return id;
+        }
+        /** Android 12+: "media management" lets the app delete without asking every time */
+        @JavascriptInterface public boolean canManageMedia() {
+            if (Build.VERSION.SDK_INT < 31) return Build.VERSION.SDK_INT < 30;
+            try { return MediaStore.canManageMedia(MainActivity.this); } catch (Throwable e) { return false; }
+        }
+        @JavascriptInterface public void askManageMedia() {
+            if (Build.VERSION.SDK_INT < 31) return;
+            ui(new Runnable() {
+                @Override public void run() {
+                    try { startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_MANAGE_MEDIA, Uri.parse("package:" + getPackageName()))); }
+                    catch (Exception e) { try { startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))); } catch (Exception ignored) { } }
+                }
+            });
+        }
+
         /* -- recorder -- */
         @JavascriptInterface public String recStart(String mode, String name, String opts) {
             if (!has(Manifest.permission.RECORD_AUDIO)) return "{\"ok\":false,\"error\":\"perm\"}";
@@ -976,7 +1033,15 @@ public class MainActivity extends Activity implements Player.Listener {
             boolean bg = false;
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
             final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"spectro".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind) && !"ttsStatus".equals(kind) && !"ttsDelete".equals(kind);
-            if (heavy) WorkService.begin(MainActivity.this);
+            if (heavy) {
+                heavyIds.add(id);
+                WorkService.begin(MainActivity.this);
+                // 4.0.1: the "done" notification needs this permission (Android 13+); asked once per start, when long work begins
+                if (Build.VERSION.SDK_INT >= 33 && !askedNotif && !has(Manifest.permission.POST_NOTIFICATIONS)) {
+                    askedNotif = true;
+                    ui(new Runnable() { @Override public void run() { try { requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF); } catch (Exception ignored) { } } });
+                }
+            }
             (bg ? bgPool : heavy || "wsClean".equals(kind) || "tlClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
                 @Override
                 public void run() {
@@ -1088,7 +1153,7 @@ public class MainActivity extends Activity implements Player.Listener {
                         String msg = e instanceof OutOfMemoryError ? "memory" : String.valueOf(e.getMessage());
                         jobDone(id, false, "{\"error\":" + q(msg) + "}");
                     } finally {
-                        if (heavy) WorkService.end(MainActivity.this);
+                        if (heavy) { heavyIds.remove(id); WorkService.end(MainActivity.this); }
                     }
                 }
             });

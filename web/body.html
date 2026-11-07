@@ -216,6 +216,7 @@
 <script src="i18n30.js"></script>
 <script src="i18n31.js"></script>
 <script src="i18n32.js"></script>
+<script src="i18n33.js"></script>
 <script>
 (() => {
 'use strict';
@@ -226,7 +227,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.0';
+const VERSION = '4.0.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -898,6 +899,8 @@ function openSettings() {
     <div class="set-sec"><label class="switch"><input type="checkbox" id="setPre"${S.precompute ? ' checked' : ''}><span>${esc(t('precompute'))}<small>${esc(t('precomputeDesc'))}</small></span></label></div>
     <div class="set-sec"><h4>${esc(t('setRec'))}</h4>
       <div id="recQBox" class="rec-qbox">${recSettingsHTML()}</div>
+      ${NATIVE ? `<div class="set-sub"><span>${esc(t('cdT'))}</span><select id="setCd" class="sel-full">${[0, 3, 5].map(n => `<option value="${n}"${+ls.get('recCd', 0) === n ? ' selected' : ''}>${esc(n ? t('cdN', { n }) : t('cdOff'))}</option>`).join('')}</select></div>
+      <label class="switch"><input type="checkbox" id="setCue"${ls.get('recCue', true) ? ' checked' : ''}><span>${esc(t('cueT'))}<small>${esc(t('cueD'))}</small></span></label>` : ''}
       <div class="set-sub"><span>${esc(t('setMic'))}</span><select id="setMic" class="sel-full">${['auto', 'builtin', 'wired', 'usb'].map(v => `<option value="${v}"${S.micSrc === v ? ' selected' : ''}>${esc(t('mic_' + v))}</option>`).join('')}</select></div>
       <label class="switch"><input type="checkbox" id="setCall"${S.callPause ? ' checked' : ''}><span>${esc(t('setCall'))}<small>${esc(t('setCallD'))}</small></span></label>
       <label class="switch"><input type="checkbox" id="setAgc"${S.agc !== false ? ' checked' : ''}><span>${esc(t('setAgc'))}<small>${esc(t('setAgcD'))}</small></span></label>
@@ -924,7 +927,8 @@ function openSettings() {
       <small class="hint">${esc(t('setMetaD'))}</small></div>
     <div class="set-sec"><h4>${esc(t('setStorage'))}</h4>
       <div class="set-sub"><span>${esc(t('setTrash'))}</span><select id="setTrash" class="sel-full">${[30, 7, 0].map(v => `<option value="${v}"${S.trashDays === v ? ' selected' : ''}>${esc(t('trash_' + v))}</option>`).join('')}</select></div>
-      <div><button class="btn sm" type="button" id="openTrash">${esc(t('trash'))} (${trashItems().length})</button></div></div>` : ''}
+      <div><button class="btn sm" type="button" id="openTrash">${esc(t('trash'))} (${trashItems().length})</button></div>
+      ${(CAPS.sdk || 0) >= 31 && !(() => { try { return AND.canManageMedia(); } catch (e) { return true; } })() ? `<div class="set-sub"><span>${esc(t('setMM'))}</span><button class="btn sm" type="button" id="setMM">${esc(t('mmGo'))}</button><small class="hint">${esc(t('setMMD'))}</small></div>` : ''}</div>` : ''}
     <p class="about">Ses Defteri ${VERSION}</p>
     <p class="about">${esc(t('licenses'))}</p>
     <div class="about-btns"><button class="btn sm" type="button" id="setPriv">${esc(t('privacy'))}</button><button class="btn sm" type="button" id="setFeed">${esc(t('feedback'))}</button>${NATIVE ? `<button class="btn sm" type="button" id="setNews">${esc(t('newsBtn'))}</button><button class="btn sm" type="button" id="setIntro">${esc(t('introBtn'))}</button><button class="btn sm" type="button" id="setCoach">${esc(t('coReset'))}</button>` : ''}${NATIVE ? `<button class="btn sm" type="button" id="setNote">${esc(t('probNote'))}</button>` : ''}</div>
@@ -979,6 +983,9 @@ function openSettings() {
   on('#setNews', () => { closeModal(); showNews(); });
   on('#setIntro', () => { closeModal(); showIntro(true); });
   on('#setCoach', () => { ls.set('coach', {}); ls.set('coachOff', false); toast(t('coResetDone'), 3000); });
+  const cdS = card.querySelector('#setCd'); if (cdS) cdS.onchange = () => ls.set('recCd', +cdS.value);
+  const cuS = card.querySelector('#setCue'); if (cuS) cuS.onchange = () => ls.set('recCue', cuS.checked);
+  const mmB = card.querySelector('#setMM'); if (mmB) mmB.onclick = () => { try { AND.askManageMedia(); } catch (e) {} };
   const qa = card.querySelector('#setQa'); if (qa) qa.onchange = () => { ls.set('qaOn', qa.checked); renderQa(); };
   // 3.4.6: what went wrong without a crash (player stalls, failed downloads): the user sends it when they want to
   if (card.querySelector('#setNote')) card.querySelector('#setNote').onclick = () => {
@@ -1702,7 +1709,7 @@ function fillPlayer(r) {
   const q = NATIVE && audio.st.count > 1;
   $('#plPrev').hidden = !q; $('#plNext').hidden = !q; $('#plShuffle').hidden = !q; $('#plRepeat').hidden = !q;
   updateQueueTools();
-  $('#plEdit').hidden = !NATIVE || !r.src; $('#plEdit2').hidden = !NATIVE || !r.src; $('#plClean').hidden = !NATIVE || !r.src; $('#plChap').hidden = !NATIVE || !r.src || (r.duration || 0) < 240; $('#plRing').hidden = !NATIVE || !r.src; $('#plAB').hidden = $('#plSkip').hidden = $('#plSleep').hidden = $('#plEqB').hidden = $('#plXfB').hidden = !NATIVE || !r.src; abLabel(); sleepLabel(); plPrefLabels(); $('#plSkip').setAttribute('aria-pressed', !!S.skipSil);
+  $('#plEdit').hidden = !NATIVE || !r.src; $('#plEdit2').hidden = !NATIVE || !r.src; $('#plClean').hidden = !NATIVE || !r.src; $('#plChap').hidden = !NATIVE || !r.src || (r.duration || 0) < 240; $('#plRing').hidden = !NATIVE || !r.src; $('#plAB').hidden = $('#plSkip').hidden = $('#plSleep').hidden = $('#plEqB').hidden = !NATIVE || !r.src; $('#plXfB').hidden = true;   /* 4.0.1: crossfade lives in Settings only */ abLabel(); sleepLabel(); plPrefLabels(); $('#plSkip').setAttribute('aria-pressed', !!S.skipSil);
   $('#plWhere').textContent = NATIVE && r.src ? t('where', { p: `${r.folder || ''}${r.name || ''}` }) : '';
   renderBookmarks(); setPlayIcons(); updateTimes();
   renderText(r); loadExtras(r);
@@ -1856,10 +1863,11 @@ function plPrefLabels() {
 $('#plEqB').addEventListener('click', () => openEq());
 /* ---------- 3.8: equalizer: on/off, presets, 10 bands ±15 dB on a curve, own presets, bass booster, virtual surround ---------- */
 const EQ10 = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-const EQ10_PRE = [['normal', [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], ['rock', [5, 4, 3, 1, -1, -1, 1, 3, 4, 5]], ['pop', [-1, 1, 3, 4, 3, 0, -1, -1, 1, 2]],
-  ['classical', [5, 4, 3, 2, -1, -1, 0, 2, 3, 4]], ['dance', [6, 5, 3, 0, 0, -2, -2, 0, 3, 4]], ['electronic', [5, 4, 1, 0, -2, 2, 1, 2, 4, 5]],
-  ['bassboost', [8, 7, 5, 3, 1, 0, 0, 0, 0, 0]], ['vocal', [-3, -2, -1, 1, 3, 4, 4, 2, 0, -1]], ['jazz', [4, 3, 1, 2, -2, -2, 0, 1, 3, 4]],
-  ['hiphop', [5, 4, 1, 3, -1, -1, 1, -1, 2, 3]], ['treble', [0, 0, 0, 0, 0, 1, 3, 5, 7, 8]]];
+/* 4.0.1: presets about 1.5 times stronger: on the phone's 5-band equalizer the old ones were hard to hear */
+const EQ10_PRE = [['normal', [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], ['rock', [8, 6, 4, 2, -2, -2, 2, 4, 6, 8]], ['pop', [-2, 2, 4, 6, 4, 0, -2, -2, 2, 3]],
+  ['classical', [8, 6, 4, 3, -2, -2, 0, 3, 4, 6]], ['dance', [9, 8, 4, 0, 0, -3, -3, 0, 4, 6]], ['electronic', [8, 6, 2, 0, -3, 3, 2, 3, 6, 8]],
+  ['bassboost', [12, 10, 8, 4, 2, 0, 0, 0, 0, 0]], ['vocal', [-4, -3, -2, 2, 4, 6, 6, 3, 0, -2]], ['jazz', [6, 4, 2, 3, -3, -3, 0, 2, 4, 6]],
+  ['hiphop', [8, 6, 2, 4, -2, -2, 2, -2, 3, 4]], ['treble', [0, 0, 0, 0, 0, 2, 4, 8, 10, 12]]];
 const eqFrom5 = (g5, f) => { const fc = [100, 300, 1000, 3000, 8000]; if (f <= fc[0]) return g5[0]; if (f >= fc[4]) return g5[4];
   let k = 0; while (k < 3 && f > fc[k + 1]) k++; const u = Math.log(f / fc[k]) / Math.log(fc[k + 1] / fc[k]); return Math.round(g5[k] + (g5[k + 1] - g5[k]) * u); };
 function eqState() {
@@ -2886,6 +2894,7 @@ async function tlExport() {
       <div class="ex-more"><button class="btn sm" type="button" data-ex="ring">${ic('bell')}${esc(t('exRing'))}</button><button class="btn sm" type="button" data-ex="video">${ic('film')}${esc(t('tlVideo'))}</button></div>
     </div>
     <div class="modal-actions ex-acts"><button class="btn" type="button" data-ex="share">${ic('share')}${esc(t('share'))}</button><button class="btn primary" type="button" data-ex="save">${ic('check')}${esc(t('exSaveRec'))}</button></div>`);
+  card.classList.add('ex-sheet');
   const only = () => { const c = card.querySelector('#exOnly'); return !!(c && c.checked && sel); };
   const upd = () => {
     card.querySelectorAll('[data-ef]').forEach(b => b.setAttribute('aria-pressed', b.dataset.ef === f));
@@ -4102,19 +4111,35 @@ function fileName(title, tag) {
   return safeName(out.trim() || title || date);
 }
 /** really deletes a recording (file + everything stored with it) */
-async function hardDelete(r) {
-  if (NATIVE && r.src) {
+async function hardDelete(r) { return !!(await hardDeleteMany([r])); }
+/* 4.0.1: one confirmation for many files; asks once for "media management" (Android 12+) so deleting needs no confirmation at all */
+async function askMM() {
+  if (!NATIVE || (CAPS.sdk || 0) < 31 || ls.get('mmAsked', false)) return;
+  let ok = true; try { ok = AND.canManageMedia(); } catch (e) {}
+  if (ok) return;
+  ls.set('mmAsked', true);
+  if (!(await confirmBox({ title: t('mmT'), text: t('mmD'), ok: t('mmGo') }))) return;
+  try { AND.askManageMedia(); } catch (e) { return; }
+  // wait until the person comes back from the system screen
+  await new Promise(done => { let away = false; const f = () => { if (document.hidden) away = true; else if (away) { document.removeEventListener('visibilitychange', f); done(); } }; document.addEventListener('visibilitychange', f); setTimeout(() => { document.removeEventListener('visibilitychange', f); done(); }, 90000); });
+}
+async function hardDeleteMany(list) {
+  if (!list.length) return 0;
+  const nat = list.filter(r => NATIVE && r.src);
+  if (nat.length) {
+    if (nat.some(r => !r.own)) await askMM();
     let res = null;
-    try { res = await nativeCall(() => AND.deleteMedia(JSON.stringify(r.src))); } catch (e) { res = e.result || null; }
-    if (!res || !res.deleted) return false;
+    try { res = await nativeCall(() => AND.deleteMediaMany(JSON.stringify(nat.map(r => r.src)))); } catch (e) { res = e.result || null; }
+    if (!res || !res.deleted) return 0;
   }
-  await forgetItem(r.id);
-  return true;
+  for (const r of list) await forgetItem(r.id);
+  return list.length;
 }
 const trashItems = () => [...S.items.values()].filter(it => it.trashed).sort((a, b) => b.trashed - a.trashed);
 async function purgeTrash() {
   const lim = Date.now() - S.trashDays * 86400000;
-  for (const r of trashItems()) if (r.trashed <= lim) await hardDelete(r);
+  const old = trashItems().filter(r => r.trashed <= lim);
+  if (old.length) await hardDeleteMany(old);
 }
 function openTrash() {
   const draw = () => {
@@ -4128,7 +4153,7 @@ function openTrash() {
       if (e.target.closest('[data-x]')) { card.onclick = null; closeModal(); return; }
       if (rs) { const r = S.items.get(rs.dataset.trRestore); if (r) { delete r.trashed; await saveRec(r); render(); toast(t('restored')); } draw(); return; }
       if (dl) { const r = S.items.get(dl.dataset.trDel); if (r && !(await hardDelete(r))) toast(t('delFail')); draw(); return; }
-      if (e.target.closest('[data-tr-all]')) { for (const r of trashItems()) await hardDelete(r); draw(); }
+      if (e.target.closest('[data-tr-all]')) { if (!(await hardDeleteMany(trashItems()))) toast(t('delFail')); draw(); }
     };
   };
   draw();
@@ -4154,7 +4179,7 @@ async function openClean(r, auto) {
   if (CL.r !== r) return;
   roomLearn(CL.diag);
   // 3.4.6: music cleaned as speech lost the music (denoise/gate keep only voice): songs start from "Music"
-  if (!r.purpose && kindOf(r) === 'music') CL.purpose = 'music';
+  if (kindOf(r) === 'music' || r.mode === 'music') CL.purpose = 'music';   // 4.0.1: also when the song had another purpose saved
   clPlan();
   if (auto && CL.fixes.size) clRun();
 }
@@ -4198,7 +4223,7 @@ function clPlan() {
 
     <div class="modal-body">
       <div class="set-sub"><span>${esc(t('clPurpose'))}</span><select id="clPu" class="sel-full">${PURPOSES.map(([k]) => `<option value="${k}"${CL.purpose === k ? ' selected' : ''}>${esc(t('pu_' + k))}</option>`).join('')}</select></div>
-      ${CL.purpose !== 'music' ? `<p class="mtext" style="margin:2px 0 8px">${esc(t('clMusicHint'))}</p>` : ''}
+      ${CL.purpose !== 'music' && (kindOf(CL.r) === 'music' || CL.r.mode === 'music') ? `<p class="cl-warn" role="alert">${ic('info')}<span>${esc(t('clMusicWarn'))}</span></p>` : CL.purpose !== 'music' ? `<p class="mtext" style="margin:2px 0 8px">${esc(t('clMusicHint'))}</p>` : ''}
       <div class="cl-list">${issues.map(([k, why]) => `<label class="switch"><input type="checkbox" data-fix="${k}"${CL.fixes.has(k) ? ' checked' : ''}><span>${esc(t('op_' + k))}<small>${esc(why)}</small></span></label>`).join('')}</div>
       <h4 class="cl-h">${esc(t('clStrength'))}</h4>
       <div class="seg2" role="radiogroup" id="clStr">${[[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([v, k]) => `<button type="button" role="radio" data-str="${v}" aria-checked="${CL.strength === v}">${esc(t(k))}</button>`).join('')}</div>
@@ -4406,6 +4431,8 @@ function openRecorder() {
   requestAnimationFrame(drawLive);
 }
 async function startRecNative() {
+  const cd = +ls.get('recCd', 0);   // 4.0.1: the countdown (Settings › Recording) also before a normal recording
+  if (cd && R.state === 'idle' && !(await recCountdown(cd))) return;
   R.state = 'starting'; updateRecUI();
   if (!audio.paused) audio.pause();
   const name = t(R.mode === 'music' ? 'fileMusic' : 'fileVoice', { d: stamp(Date.now()) }) + '.m4a';
@@ -5246,9 +5273,10 @@ async function delItems(list) {
       S.cur = null; S.miniOn = false;
     }
     if (soft(r)) { r.trashed = Date.now(); await saveRec(r); tr++; continue; }
-    if (!(await hardDelete(r))) { fail++; continue; }
-    if (NATIVE && r.origId && r.origSrc) { try { await nativeCall(() => AND.deleteMedia(JSON.stringify(r.origSrc))); } catch (e) {} await forgetItem(r.origId); }
   }
+  // the rest go in one go: one system confirmation at most
+  const hard = list.filter(r => !soft(r)), origs = hard.filter(r => NATIVE && r.origId && r.origSrc).map(r => ({ id: r.origId, src: r.origSrc, own: true }));
+  if (hard.length && !(await hardDeleteMany(hard.concat(origs)))) fail = hard.length;
   render(); if (stack.includes('coll')) renderColl();
   toast(t(fail ? 'delFail' : tr === list.length ? 'toTrash' : 'deleted'), 3500);
   return fail < list.length;
@@ -5391,6 +5419,14 @@ function tlAB() {
   };
 }
 
+/* 4.0.1: Android back on the main screen: drop a picked clip, then go back to Recordings, then leave the app */
+window.__sdBack = () => {
+  if (document.querySelector('.coach')) { document.querySelector('.coach').remove(); return true; }
+  if (SEL) { selEnd(); return true; }
+  if (S.tab === 'edit' && TL.sel) { TL.sel = null; renderTlBar(); drawTl(); return true; }
+  if (S.tab !== 'rec') { const b = $('#tabs [data-tab="rec"]'); if (b) { b.click(); return true; } }
+  return false;
+};
 /* ---------- 4.0: first-run intro, "what's new" once after an update, one-time screen tips, home cards ---------- */
 P.lock = '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2"/>';
 const INTRO = ['rec', 'clean', 'studio', 'music', 'private'];
@@ -5435,7 +5471,7 @@ function showIntro(again) {
 }
 const NEWS = ['sel', 'sort', 'export', 'recq', 'eq', 'voice', 'studio', 'home'];
 function showNews() {
-  const card = openModal(`<h3>${esc(t('newsT', { v: VERSION }))}</h3><ul class="news">${NEWS.map(k => `<li>${esc(t('news_' + k))}</li>`).join('')}</ul>
+  const card = openModal(`<h3>${esc(t('newsT', { v: VERSION.split('.').slice(0, 2).join('.') }))}</h3><ul class="news">${NEWS.map(k => `<li>${esc(t('news_' + k))}</li>`).join('')}</ul>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('newsOk'))}</button></div>`, () => setTimeout(coachMaybe, 300));
   card.onclick = e => { if (e.target.closest('[data-x]')) closeModal(); };
 }
@@ -5445,7 +5481,8 @@ function welcome() {
   ls.set('lastVer', VERSION);
   if (!ls.get('introDone', false) && !last && !S.items.size) { showIntro(false); return; }
   ls.set('introDone', true);
-  if (last !== VERSION) showNews(); else coachMaybe();
+  const mm = v => String(v).split('.').slice(0, 2).join('.');   // a fix release (4.0.1) does not show the card again
+  if (mm(last) !== mm(VERSION)) showNews(); else coachMaybe();
 }
 /* tips: the screen dims around one control with a short line; each screen once, all can be switched off */
 const COACH = {

@@ -395,3 +395,12 @@ html{overflow-x:hidden;overscroll-behavior:none}body{overflow-x:clip;max-width:1
 .qa .qa-video{background:linear-gradient(150deg,#9b5de5,#6c3bb8)}
 .qa .qa-music{background:linear-gradient(150deg,#f0a43a,#d0731c)}
 .selecting .qa{display:none}
+/* 4.0.1: the export sheet fits small screens and big fonts: tighter, and its two main buttons always stay in sight */
+.ex-sheet .modal-body{gap:12px}
+.ex-sheet .sort-lab{margin:0 0 6px}
+.ex-sheet .chip{min-height:36px;padding:0 14px}
+.ex-sheet .ex-more .btn{flex:1 1 auto}
+.ex-sheet .ex-acts{position:sticky;bottom:calc(-1 * env(safe-area-inset-bottom,0px));background:var(--surface);padding:10px 0 4px;margin-top:6px;z-index:1}
+.cl-warn{display:flex;gap:8px;align-items:flex-start;margin:4px 0 8px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--rec) 12%,var(--surface));color:var(--ink);font-size:14px;line-height:1.4}
+.cl-warn .ic{flex:none;width:20px;height:20px;color:var(--rec)}
+@media (max-width:360px){.qa{grid-template-columns:1fr 1fr}.qa .qa-rec{grid-row:auto;grid-column:span 2;min-height:72px}}
