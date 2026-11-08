@@ -21,8 +21,13 @@ public class WorkService extends Service {
     private static boolean requested, fg;
     private static final android.os.Handler H = new android.os.Handler(android.os.Looper.getMainLooper());
 
-    static synchronized void begin(final Context c) {
+    static void begin(final Context c) { begin(c, false); }
+
+    /** now: long work (downloads, speech-to-text) asks for the service at once, while the app is surely on screen;
+     *  Android refuses to start it from the background, so waiting a second lost it when the app was left at once */
+    static synchronized void begin(final Context c, boolean now) {
         running++;
+        if (now && !requested) { start(c.getApplicationContext()); return; }
         if (running == 1 && !requested) {
             final Context app = c.getApplicationContext();
             H.postDelayed(new Runnable() { @Override public void run() { start(app); } }, 1000);

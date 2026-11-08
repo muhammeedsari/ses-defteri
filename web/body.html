@@ -230,7 +230,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.2';
+const VERSION = '4.2.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -4170,7 +4170,13 @@ async function hardDeleteMany(list) {
     if (nat.some(r => !r.own)) await askMM();
     let res = null;
     try { res = await nativeCall(() => AND.deleteMediaMany(JSON.stringify(nat.map(r => r.src)))); } catch (e) { res = e.result || null; }
-    if (!res || !res.deleted) return 0;
+    // 4.2: only the ones that really went are forgotten (a refused dialog used to keep the own files that were already gone)
+    const gone = new Set(res && Array.isArray(res.done) ? res.done.map(i => nat[i]) : res && res.deleted ? nat : []);
+    // Android 10 has no batch request: one confirmation each
+    for (const i of (res && res.single) || []) {
+      try { const r1 = await nativeCall(() => AND.deleteMedia(JSON.stringify(nat[i].src))); if (r1 && r1.deleted) gone.add(nat[i]); } catch (e) {}
+    }
+    list = list.filter(r => !(NATIVE && r.src) || gone.has(r));
   }
   for (const r of list) await forgetItem(r.id);
   return list.length;

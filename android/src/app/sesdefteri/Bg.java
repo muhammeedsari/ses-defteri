@@ -158,12 +158,16 @@ final class Bg {
     }
 
     private static void work(final Task t) {
-        if (t.cancel.get()) { finishCancelled(t); return; }
-        WorkService.begin(app);
+        // 4.2: the run's own cancel flag: a quick pause + resume gives the task a new one, and the old run ending late
+        // must not mark the new run as failed or paused
+        final AtomicBoolean cancel = t.cancel;
+        if (cancel.get()) { finishCancelled(t, cancel); return; }
+        WorkService.begin(app, true);
         WorkService.label(t.label);
         final long[] last = { 0 };
         AudioTools.Progress p = new AudioTools.Progress() {
             @Override public void on(double f) {
+                if (t.cancel != cancel) return;
                 t.p = Math.max(0, Math.min(1, f));
                 WorkService.label(t.label);
                 WorkService.progress(app, t.p);
@@ -174,20 +178,25 @@ final class Bg {
         try {
             JSONObject res;
             JSONObject a = new JSONObject(t.args.toString());
-            if ("asrDownload".equals(t.kind)) res = AsrModels.download(app, a, p, t.cancel);
-            else if ("ttsGet".equals(t.kind)) res = Tts.download(app, a, p, t.cancel);
-            else if ("spkGet".equals(t.kind)) res = Speakers.download(app, p, t.cancel);
+            if ("asrDownload".equals(t.kind)) res = AsrModels.download(app, a, p, cancel);
+            else if ("ttsGet".equals(t.kind)) res = Tts.download(app, a, p, cancel);
+            else if ("spkGet".equals(t.kind)) res = Speakers.download(app, p, cancel);
             else if ("transcribe".equals(t.kind)) {
                 JSONObject src = a.getJSONObject("src");
                 src.put("_model", a.optString("model", ""));
-                res = Studio.transcribe(app, src, a.optString("lang", ""), p, t.cancel, partFile(t.key));
+                res = Studio.transcribe(app, src, a.optString("lang", ""), p, cancel, partFile(t.key));
             } else throw new IllegalArgumentException("unknown");
-            writeText(resultFile(t.key), res.toString());
-            partFile(t.key).delete();
-            synchronized (Bg.class) { t.p = 1; t.state = "done"; save(); }
+            if (cancel.get()) throw new InterruptedException("cancel");
+            synchronized (Bg.class) {
+                if (t.cancel != cancel || tasks.get(t.key) != t) return;
+                writeText(resultFile(t.key), res.toString());
+                partFile(t.key).delete();
+                t.p = 1; t.state = "done"; save();
+            }
         } catch (Throwable e) {
-            if (t.cancel.get()) finishCancelled(t);
+            if (cancel.get()) finishCancelled(t, cancel);
             else synchronized (Bg.class) {
+                if (t.cancel != cancel || tasks.get(t.key) != t) return;
                 t.state = "fail";
                 String m = String.valueOf(e.getMessage());
                 t.err = m.length() > 160 ? m.substring(0, 160) : m;
@@ -199,8 +208,8 @@ final class Bg {
         }
     }
 
-    private static synchronized void finishCancelled(Task t) {
-        if (tasks.get(t.key) != t) return;   // cancelled for good: already forgotten
+    private static synchronized void finishCancelled(Task t, AtomicBoolean cancel) {
+        if (tasks.get(t.key) != t || t.cancel != cancel) return;   // cancelled for good, or started again meanwhile
         t.state = t.wantPause ? "pause" : "fail";
         if (!t.wantPause) t.err = "cancel";
         save();

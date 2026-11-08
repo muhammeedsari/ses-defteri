@@ -24,25 +24,33 @@ public final class NoiseGate extends Node {
 
     public static int size(int fs) { return Fft.nextPow2((int) Math.round(fs * 0.043)); }
 
-    /** collects the noise profile: mean power per bin (same window and size as the gate) */
+    /** collects the noise profile: mean power per bin over all channels (same window and size as the gate, which works per channel) */
     public static final class Learner extends Node {
         final int N; final Fft fft; final double[] win, re, im; public final double[] mean;
-        final float[] buf; int fill; long frames; double sq; long n;
+        float[][] buf; int fill; long frames; double sq; long n;
         public Learner(int fs) {
             N = size(fs); fft = new Fft(N); win = Fft.hann(N, true);
-            re = new double[N]; im = new double[N]; mean = new double[N / 2 + 1]; buf = new float[N];
+            re = new double[N]; im = new double[N]; mean = new double[N / 2 + 1];
         }
         @Override public void push(float[][] b, int cnt) {
-            for (int i = 0; i < cnt; i++) {
-                float v = 0; for (float[] c : b) v += c[i]; v /= b.length;
-                sq += v * v; n++;
-                buf[fill++] = v;
+            if (buf == null || buf.length != b.length) { buf = new float[b.length][N]; fill = 0; }
+            int off = 0;
+            while (off < cnt) {
+                int take = Math.min(cnt - off, N - fill);
+                for (int c = 0; c < b.length; c++) {
+                    System.arraycopy(b[c], off, buf[c], fill, take);
+                    for (int i = off; i < off + take; i++) sq += b[c][i] * b[c][i];
+                }
+                n += (long) take * b.length; fill += take; off += take;
                 if (fill == N) {
-                    for (int k = 0; k < N; k++) { re[k] = buf[k] * win[k]; im[k] = 0; }
-                    fft.transform(re, im, false);
-                    for (int k = 0; k < mean.length; k++) mean[k] += re[k] * re[k] + im[k] * im[k];
-                    frames++;
-                    System.arraycopy(buf, N / 2, buf, 0, N / 2); fill = N / 2;
+                    for (float[] x : buf) {
+                        for (int k = 0; k < N; k++) { re[k] = x[k] * win[k]; im[k] = 0; }
+                        fft.transform(re, im, false);
+                        for (int k = 0; k < mean.length; k++) mean[k] += re[k] * re[k] + im[k] * im[k];
+                        frames++;
+                        System.arraycopy(x, N / 2, x, 0, N / 2);
+                    }
+                    fill = N / 2;
                 }
             }
         }

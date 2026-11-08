@@ -70,6 +70,7 @@ public class MainActivity extends Activity implements Player.Listener {
     private boolean pageReady = false;
     private String barMode = "page";
     private String pendingDeleteJob;
+    private org.json.JSONArray pendingDeleteDone, pendingDeleteAsk;
 
     private final ExecutorService pool = Executors.newSingleThreadExecutor();
     /* enhancement, speech-to-text, mixing: one at a time, apart from waveform work */
@@ -339,7 +340,12 @@ public class MainActivity extends Activity implements Player.Listener {
         } else if (code == REQ_DELETE && pendingDeleteJob != null) {
             String id = pendingDeleteJob;
             pendingDeleteJob = null;
-            jobDone(id, result == RESULT_OK, result == RESULT_OK ? "{\"deleted\":true}" : "{\"deleted\":false}");
+            org.json.JSONArray d = pendingDeleteDone, k = pendingDeleteAsk;
+            pendingDeleteDone = pendingDeleteAsk = null;
+            if (d != null) {   // batch: own files went before the dialog
+                if (result == RESULT_OK && k != null) for (int i = 0; i < k.length(); i++) d.put(k.opt(i));
+                jobDone(id, d.length() > 0, "{\"deleted\":" + (result == RESULT_OK) + ",\"done\":" + d + "}");
+            } else jobDone(id, result == RESULT_OK, result == RESULT_OK ? "{\"deleted\":true}" : "{\"deleted\":false}");
         }
     }
 
@@ -920,23 +926,24 @@ public class MainActivity extends Activity implements Player.Listener {
                 @Override public void run() {
                     try {
                         org.json.JSONArray a = new org.json.JSONArray(srcsJson);
+                        // 4.2: says which ones went, so a partial delete (own files gone, the rest refused) is not lost
                         List<Uri> left = new ArrayList<>();
-                        int bad = 0;
+                        org.json.JSONArray done = new org.json.JSONArray(), ask = new org.json.JSONArray();
                         for (int i = 0; i < a.length(); i++) {
                             JSONObject src = a.getJSONObject(i);
                             Player.I.releaseIfCurrentSrc(src.toString());
-                            if (MediaLib.deleteOwn(MainActivity.this, src)) continue;
+                            if (MediaLib.deleteOwn(MainActivity.this, src)) { done.put(i); continue; }
                             Uri u = MediaLib.srcUri(src);
-                            if (u != null) left.add(u); else bad++;
+                            if (u != null) { left.add(u); ask.put(i); }
                         }
-                        if (left.isEmpty()) { jobDone(id, bad == 0, "{\"deleted\":" + (bad == 0) + "}"); return; }
-                        if (Build.VERSION.SDK_INT >= 30) {
+                        if (!left.isEmpty() && Build.VERSION.SDK_INT >= 30) {
                             PendingIntent pi = MediaStore.createDeleteRequest(getContentResolver(), left);
-                            pendingDeleteJob = id;
+                            pendingDeleteJob = id; pendingDeleteDone = done; pendingDeleteAsk = ask;
                             startIntentSenderForResult(pi.getIntentSender(), REQ_DELETE, null, 0, 0, 0);
                             return;
                         }
-                        jobDone(id, false, "{\"deleted\":false}");
+                        // Android 10: one confirmation per file (no batch request there): the page asks for those one by one
+                        jobDone(id, done.length() > 0, "{\"deleted\":" + (done.length() == a.length()) + ",\"done\":" + done + ",\"single\":" + ask + "}");
                     } catch (Exception e) {
                         jobDone(id, false, "{\"deleted\":false}");
                     }

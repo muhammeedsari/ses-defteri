@@ -419,3 +419,4 @@ html{overflow-x:hidden;overscroll-behavior:none}body{overflow-x:clip;max-width:1
 @media (prefers-reduced-motion:reduce){.bg-chip.run .ic{animation:none}}
 .dn-d{margin:-4px 0 10px;font-size:12px;color:var(--muted)}
 .eq-norm{margin-top:12px}
+@media (max-width:440px){.tl-top{gap:2px}.tl-top .icon-btn{width:36px;height:36px}.tl-top #tlPlay{width:44px!important;height:44px!important}.tl-top .btn.sm{padding:0 10px;white-space:nowrap;flex:none}}
