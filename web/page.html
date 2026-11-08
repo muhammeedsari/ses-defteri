@@ -1132,6 +1132,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n40.js"></script>
 <script src="i18n41.js"></script>
 <script src="i18n42.js"></script>
+<script src="i18n43.js"></script>
 <script>
 (() => {
 'use strict';
@@ -1142,7 +1143,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.11';
+const VERSION = '4.11.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -3826,8 +3827,13 @@ async function tlEffect(c, op, extra) {
     else { c.in = 0; c.out = nd; delete c.env; }
   }
   const old = c.path, same = Math.abs(nd - c.dur) < 0.01;
+  // 4.12: where a cut joined the sound (seconds of the new file): from the tool's own report, or from the kept ranges
+  let cutsAt = null;
+  if (!same && res.report && Array.isArray(res.report.cuts)) cutsAt = res.report.cuts.map(x => Math.round(x[0] * 100) / 100);
+  else if (!same && extra && Array.isArray(extra.keep)) { let o = 0; cutsAt = []; extra.keep.forEach(([a, b], i) => { if (i) cutsAt.push(Math.round(o * 100) / 100); o += (b - a) / 1000; }); }
   Object.assign(c, { path: res.path, dur: nd, ch: res.ch, prev: old });
-  delete c.chg;
+  delete c.chg; delete c.cuts;
+  if (cutsAt && cutsAt.length) { c.cuts = cutsAt; tlMarkTip(); }
   c.out = Math.min(c.out, nd); c.in = Math.min(c.in, c.out - 0.05);
   c.fx = (c.fx || []).concat([{ op, r: wsReport(op, res) || '' }]);
   if (same) tlDiff(c.id, old, res.path);
@@ -4104,6 +4110,11 @@ function drawTl() {
     ctx.globalAlpha = tr.mute ? 0.35 : 1;
     ctx.fillStyle = KC.soft; rr(ctx, x0, y, Math.max(2, x1 - x0), hh, 7);
     const pk = S.peaks.get('f:' + k.path), mid = y + hh / 2 + 6, amp = (hh - 18) / 2;
+    if (k.chg && k.chg.length) {   // 4.12: the places the last edit changed: a soft band behind the wave (and a bar below)
+      ctx.fillStyle = COL.rec; const ga = ctx.globalAlpha; ctx.globalAlpha = ga * 0.13;
+      for (const [p0, p1] of k.chg) { const u = Math.max(x0 + (p0 - k.in) * pps, x0 + 2), v = Math.min(x0 + (p1 - k.in) * pps, x1 - 2); if (v > u) ctx.fillRect(u, y + 2, Math.max(2, v - u), hh - 4); }
+      ctx.globalAlpha = ga;
+    }
     ctx.fillStyle = KC.c;
     const a = Math.max(x0 + 2, 0), z = Math.min(x1 - 2, w);
     for (let x = a; x < z; x += 3) {
@@ -4112,7 +4123,14 @@ function drawTl() {
     }
     if (k.chg && k.chg.length) {
       ctx.fillStyle = COL.rec;
-      for (const [p0, p1] of k.chg) { const u = Math.max(x0 + (p0 - k.in) * pps, x0 + 2), v = Math.min(x0 + (p1 - k.in) * pps, x1 - 2); if (v > u) ctx.fillRect(u, y + hh - 4, Math.max(2, v - u), 3); }
+      for (const [p0, p1] of k.chg) { const u = Math.max(x0 + (p0 - k.in) * pps, x0 + 2), v = Math.min(x0 + (p1 - k.in) * pps, x1 - 2); if (v > u) ctx.fillRect(u, y + hh - 6, Math.max(3, v - u), 5); }
+      ctx.fillStyle = KC.c;
+    }
+    if (k.cuts && k.cuts.length) {   // 4.12: where a cut joined the sound: a small red mark on top and bottom
+      ctx.fillStyle = COL.rec;
+      for (const q of k.cuts) { if (q < k.in || q > k.out) continue; const x = x0 + (q - k.in) * pps; if (x < x0 + 2 || x > x1 - 2) continue;
+        ctx.beginPath(); ctx.moveTo(x - 5, y + 1); ctx.lineTo(x + 5, y + 1); ctx.lineTo(x, y + 8); ctx.fill();
+        ctx.fillRect(x - 0.75, y + hh - 9, 1.5, 8); }
       ctx.fillStyle = KC.c;
     }
     if (k.beats && k.beats.length) {
@@ -4396,6 +4414,7 @@ async function tlStudio() {
   c.out = Math.min(c.out, nd); c.in = Math.min(c.in, c.out - 0.05);
   c.fx = (c.fx || []).concat([{ op: 'studio', r: STUDIO.map(k => t('op_' + k)).join(', ') }]);
   tlCommit(before);
+  tlDiff(c.id, old, add.path);
   toast(t('studioDone'), 3500);
 }
 function tlDo(k, b) {
@@ -6643,7 +6662,17 @@ async function tlDiff(id, a, b) {
     if (s0 >= 0) out.push([s0, c.dur]);
     c.chg = out.map(([p, q]) => [Math.round(p * 10) / 10, Math.round(q * 10) / 10]);
     ls.set('proj', TL.p); drawTl();
+    if (out.length) tlMarkTip();
   } catch (e) {}
+}
+/** 4.12: the first time an edit leaves marks, the tutorial shows what they mean (once) */
+function tlMarkTip() {
+  if (ls.get('coachMarks', false) || S.tab !== 'edit') return;
+  ls.set('coachMarks', true);
+  setTimeout(() => {
+    if (ls.get('coachOff', false) || document.querySelector('.coach')) { toast(t('co_marks'), 7000); return; }
+    coachRun([['#tl', 'co_marks'], ['#tlBar .tc-badge', 'co_hist']]);
+  }, 700);
 }
 function tlAB() {
   const c = tlSel(); if (!c || !c.prev) return;
@@ -7091,6 +7120,7 @@ async function tlSmartFix() {
   c.fx = (c.fx || []).concat([{ op: 'smart', r: dg.fixes.map(k => t('op_' + k)).join(', ') }]);
   TL.dg = null;
   tlCommit(before);
+  tlDiff(c.id, old, add.path);
   toast(t('smDone', { n: dg.fixes.length }), 3500);
 }
 
