@@ -235,7 +235,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.5.2';
+const VERSION = '4.6';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -2406,6 +2406,20 @@ async function tlStt() {
     try { AND.shareText(safeName(c.name || 'audio') + '.srt', srtOf(sh), 'application/x-subrip'); } catch (x) {}
   };
 }
+/** 4.6: key and tempo of a music clip */
+const KEY_L = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'], KEY_S = ['Do', 'Do♯', 'Re', 'Mi♭', 'Mi', 'Fa', 'Fa♯', 'Sol', 'La♭', 'La', 'Si♭', 'Si'];
+async function tlKeyFind() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  let r; try { r = await tlRunJob(t('sh_key'), 'musicKey', { src: { path: c.path } }); } catch (e) { toast(errText(e), 5000); return; }
+  if (r.key < 0) { toast(t('keyNone'), 3500); return; }
+  const sol = ['tr', 'fr', 'es', 'pt', 'it', 'ar'].includes(LANG), name = (sol ? KEY_S : KEY_L)[r.key] + ' ' + t(r.minor ? 'keyMin' : 'keyMaj');
+  const short = KEY_L[r.key].replace('♯', '#').replace('♭', 'b') + (r.minor ? 'm' : '');
+  c.mkey = short; c.bpm = r.bconf >= 0.3 ? r.bpm : null; ls.set('proj', TL.p);
+  const card = openModal(`<h3>${esc(t('sh_key'))}</h3><div class="key-res"><div><small>${esc(t('keyT'))}</small><b>${esc(name)}</b><span>${esc(short)}${r.conf < 0.3 ? ' · ' + esc(t('keyUnsure')) : ''}</span></div>
+    <div><small>${esc(t('keyTempo'))}</small><b>${c.bpm ? esc(String(r.bpm)) + ' BPM' : '—'}</b></div></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
+  card.querySelector('[data-x]').onclick = closeModal;
+}
 async function tlTextEdit() {
   const c = tlSel(); if (!c || TL.busy) return;
   const segs = await tlTx(c); if (!segs) return;
@@ -3470,6 +3484,7 @@ function tlDo(k, b) {
   if (k === 'studio') { tlStudio(); return; }
   if (k === 'stt') { tlStt(); return; }
   if (k === 'sep4') { tlSep('four'); return; }
+  if (k === 'keyfind') { tlKeyFind(); return; }
   if (k === 'tedit') { tlTextEdit(); return; }
   if (k.startsWith('cat:')) { const c = tlSel(); if (c) { TL.cat = k.slice(4); TL.catId = c.id; renderTlBar(); } return; }
   if (k === 'catx') { TL.cat = null; renderTlBar(); return; }
@@ -3661,7 +3676,7 @@ async function tlSfx() {
 async function tlTts() {
   if (TL.busy) return;
   let st = {}; try { st = await runJob('ttsStatus', {}); } catch (e) {}
-  const lang0 = ls.get('ttsLang', LANG), eng0 = ls.get('ttsEng', 'phone');
+  const lang0 = ls.get('ttsLang', LANG), eng0 = ls.get('ttsEng', 'ai');
   const card = openModal(`<h3>${esc(t('tlTts'))}</h3><p class="mtext">${esc(t('ttsD'))}</p>
     <textarea id="ttsText" class="tts-text" rows="6" placeholder="${esc(t('ttsPh'))}">${esc(ls.get('ttsText', ''))}</textarea>
     <div class="set-sub"><span>${esc(t('ttsLang'))}</span><select id="ttsLang" class="sel-full">${LANGS.map(([k, n]) => `<option value="${k}"${k === lang0 ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
@@ -6065,7 +6080,7 @@ function tlGroups(c) {
     ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
   const op = (x, i) => ['op:' + x, i, 'op_' + x];
   return [
-    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk']]],
+    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk'], ['tts', 'speak', 'sh_tts'], ['keyfind', 'beat', 'sh_key']]],
     ['grp_clean', 'speech', [['clarify', 'spark', 'op_clarify'], op('denoise', 'wave'), op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
     ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null, ['spec', 'spec', 'tlSpec']]],
     ['grp_vt', 'music', [['gain', 'vol', 'tlVol'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol'), ['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],

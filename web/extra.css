@@ -546,3 +546,9 @@ body.ed .tl-top{margin-top:8px}
 .rec-sheet:not([data-state="idle"]) #purposeRow,.rec-sheet:not([data-state="idle"]) #recFx,.rec-sheet:not([data-state="idle"]) #roomBox,.rec-sheet:not([data-state="idle"]) #modeHint{display:none!important}
 /* 4.4.1: level bar with its word underneath, centred */
 #recPeak{display:inline-flex;flex-direction:column;align-items:center;gap:6px}
+/* 4.6: key and tempo result */
+.key-res{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.key-res>div{background:var(--surface-2);border-radius:14px;padding:14px;display:grid;gap:4px}
+.key-res small{color:var(--muted);font-size:12px}
+.key-res b{font-size:22px;font-family:var(--f-display)}
+.key-res span{color:var(--muted);font-size:13px}

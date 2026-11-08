@@ -196,6 +196,19 @@ final class Studio {
         return beatsJson(Beats.track(a.onset, a.onsetRate), -a.fftSize / 2.0 / a.fs);
     }
 
+    /** 4.6: key and tempo of a piece of music */
+    static JSONObject musicKey(Context c, JSONObject src, AudioTools.Progress prog, AtomicBoolean cancel) throws Exception {
+        Fmt f = probe(c, src);
+        app.sesdefteri.dsp.KeyFind k = new app.sesdefteri.dsp.KeyFind(f.rate);
+        Analyzer an = new Analyzer(f.ch, f.rate);
+        k.to(an);
+        source(c, src, f, prog, new double[][] { { 0, 1 } }, cancel).run(k);
+        Analyzer.Analysis a = an.finish();
+        Beats b = Beats.track(a.onset, a.onsetRate);
+        return new JSONObject().put("key", k.key).put("minor", k.minor).put("conf", Math.round(k.confidence * 100) / 100.0)
+            .put("bpm", Math.round(b.bpm)).put("bconf", Math.round(b.confidence * 100) / 100.0);
+    }
+
     /* ---------- speech to text ---------- */
 
     static JSONObject transcribe(Context c, JSONObject src, String lang, final AudioTools.Progress prog, AtomicBoolean cancel) throws Exception {
