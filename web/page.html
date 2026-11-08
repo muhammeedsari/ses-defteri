@@ -1133,7 +1133,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.5';
+const VERSION = '4.5.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -3279,6 +3279,53 @@ async function addTopicChapters(r) {
   await saveRec(r); renderBookmarks(); drawPlayer(); renderList();
   toast(t('topicDone', { n: ch.length }), 3500);
 }
+/* ----- 4.5: speech to text on a timeline clip: read it, copy it, subtitles, or cut by ticking sentences ----- */
+async function tlTx(c) {
+  if (!CAPS.asr) { toast(t('textNoAsr'), 4000); return null; }
+  if (!hasAsr() && !(await asrOffer())) return null;
+  if (!c.tx || c.tx.path !== c.path) {
+    let r; try { r = await tlRunJob(t('sh_stt'), 'transcribe', { src: { path: c.path }, lang: S.textLang, model: S.asrModel }); } catch (e) { toast(errText(e), 5000); return null; }
+    c.tx = { path: c.path, segs: r.segments || [] }; ls.set('proj', TL.p);
+  }
+  const segs = c.tx.segs.filter(x => x[1] > c.in + 0.05 && x[0] < c.out - 0.05);
+  if (!segs.length) toast(t('textEmpty'), 3500);
+  return segs.length ? segs : null;
+}
+async function tlStt() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  const segs = await tlTx(c); if (!segs) return;
+  const text = segs.map(x => x[2]).join('\n');
+  const card = openModal(`<h3>${esc(t('sh_stt'))}</h3><div class="modal-body"><div class="te-list">${segs.map(x => `<div class="te-row"><span class="tc">${fmt(c.at + Math.max(0, x[0] - c.in))}</span><span class="te-txt">${esc(x[2])}</span></div>`).join('')}</div></div>
+    <div class="modal-actions"><button class="btn sm" type="button" data-srt>${ic('textic')}SRT</button><span class="spacer"></span><button class="btn" type="button" data-cp>${esc(t('sh_copy'))}</button><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
+  card.querySelector('[data-x]').onclick = closeModal;
+  card.querySelector('[data-cp]').onclick = () => { try { AND.copyText(text); toast(t('textCopied')); } catch (x) {} };
+  card.querySelector('[data-srt]').onclick = () => {
+    const sh = segs.map(x => [c.at + Math.max(0, x[0] - c.in), c.at + Math.min(x[1], c.out) - c.in, x[2]]);
+    try { AND.shareText(safeName(c.name || 'audio') + '.srt', srtOf(sh), 'application/x-subrip'); } catch (x) {}
+  };
+}
+async function tlTextEdit() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  const segs = await tlTx(c); if (!segs) return;
+  const retake = findRetakes(segs);
+  const rows = segs.map((x, i) => ({ s: x[0], e: x[1], text: x[2], del: retake.has(i), rt: retake.has(i) }));
+  const card = openModal(`<h3>${esc(t('teTitle'))}</h3><p class="mtext">${esc(t('teD'))}</p>
+    ${retake.size ? `<p class="mtext"><b>${esc(t('teRetakes', { n: retake.size }))}</b></p>` : ''}
+    <div class="modal-body"><div class="te-list">${rows.map((x, i) => `<label class="te-row${x.rt ? ' te-retake' : ''}"><input type="checkbox" data-te="${i}"${x.del ? ' checked' : ''}>
+      <span class="tc">${fmt(c.at + Math.max(0, x.s - c.in))}</span><span class="te-txt">${esc(x.text)}${x.rt ? ` <i class="pill">${esc(t('teRetake'))}</i>` : ''}</span></label>`).join('')}</div></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('delete'))}</button></div>`);
+  card.onchange = e => { const i = e.target.dataset.te; if (i != null) rows[+i].del = e.target.checked; };
+  card.querySelector('[data-x]').onclick = closeModal;
+  card.querySelector('[data-ok]').onclick = () => {
+    const del = rows.filter(x => x.del).map(x => [Math.max(0, x.s - 0.03), x.e + 0.03]).sort((a, b) => a[0] - b[0]);
+    if (!del.length) { toast(t('teNothing')); return; }
+    closeModal();
+    const keep = []; let pos = 0;
+    for (const [a, b] of del) { if (a > pos + 0.02) keep.push([pos * 1000, a * 1000]); pos = Math.max(pos, b); }
+    keep.push([pos * 1000, c.dur * 1000 + 1000]);
+    tlEffect(c, 'cut', { keep });
+  };
+}
 /** hesitation sounds in a timeline clip: listed, ticked, cut out */
 async function tlFillers(c) {
   let res;
@@ -4319,6 +4366,8 @@ async function tlStudio() {
 }
 function tlDo(k, b) {
   if (k === 'studio') { tlStudio(); return; }
+  if (k === 'stt') { tlStt(); return; }
+  if (k === 'tedit') { tlTextEdit(); return; }
   if (k.startsWith('cat:')) { const c = tlSel(); if (c) { TL.cat = k.slice(4); TL.catId = c.id; renderTlBar(); } return; }
   if (k === 'catx') { TL.cat = null; renderTlBar(); return; }
   if (k.startsWith('op:')) { const c = tlSel(); if (c) tlFxRun(c, k.slice(3)); return; }
@@ -6909,7 +6958,7 @@ function tlGroups(c) {
     ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
   const op = (x, i) => ['op:' + x, i, 'op_' + x];
   return [
-    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], CAPS.sep ? op('aidenoise', 'chip') : null, CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], ['spk', 'people', 'tlSpk']]],
+    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], ['spk', 'people', 'tlSpk']]],
     ['grp_clean', 'speech', [['clarify', 'spark', 'op_clarify'], op('denoise', 'wave'), op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
     ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null, ['spec', 'spec', 'tlSpec']]],
     ['grp_vt', 'music', [['gain', 'vol', 'tlVol'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol'), ['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],
