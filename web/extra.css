@@ -539,8 +539,8 @@ body.ed .tl-top{margin-top:8px}
 .lvl.lvGood i{background:#3fbf7a}.lvl.lvQuiet i{background:#8e96a1}.lvl.lvLoud i{background:#e8b13f}.lvl.lvClip i{background:var(--stage-rec)}
 .lvt{font-family:var(--f-body);font-size:12.5px}
 .lvt.lvGood{color:#3fbf7a}.lvt.lvLoud{color:#e8b13f}.lvt.lvClip{color:var(--stage-rec)}
-#recLufs{display:none!important}
-.pu-card small{display:none}
+html:not(.tech) #recLufs{display:none!important}
+html:not(.tech) .pu-card small{display:none}
 .rec-sum{display:none;text-align:center;color:var(--stage-muted);font-size:13px;margin:6px 0 0}
 .rec-sheet:not([data-state="idle"]) .rec-sum{display:block}
 .rec-sheet:not([data-state="idle"]) #purposeRow,.rec-sheet:not([data-state="idle"]) #recFx,.rec-sheet:not([data-state="idle"]) #roomBox,.rec-sheet:not([data-state="idle"]) #modeHint{display:none!important}

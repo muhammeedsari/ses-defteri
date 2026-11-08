@@ -887,8 +887,8 @@ body.ed .tl-top{margin-top:8px}
 .lvl.lvGood i{background:#3fbf7a}.lvl.lvQuiet i{background:#8e96a1}.lvl.lvLoud i{background:#e8b13f}.lvl.lvClip i{background:var(--stage-rec)}
 .lvt{font-family:var(--f-body);font-size:12.5px}
 .lvt.lvGood{color:#3fbf7a}.lvt.lvLoud{color:#e8b13f}.lvt.lvClip{color:var(--stage-rec)}
-#recLufs{display:none!important}
-.pu-card small{display:none}
+html:not(.tech) #recLufs{display:none!important}
+html:not(.tech) .pu-card small{display:none}
 .rec-sum{display:none;text-align:center;color:var(--stage-muted);font-size:13px;margin:6px 0 0}
 .rec-sheet:not([data-state="idle"]) .rec-sum{display:block}
 .rec-sheet:not([data-state="idle"]) #purposeRow,.rec-sheet:not([data-state="idle"]) #recFx,.rec-sheet:not([data-state="idle"]) #roomBox,.rec-sheet:not([data-state="idle"]) #modeHint{display:none!important}
@@ -1139,7 +1139,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.8';
+const VERSION = '4.8.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1816,7 +1816,8 @@ function openSettings() {
       <div class="set-sub"><span>${esc(t('setMic'))}</span><select id="setMic" class="sel-full">${['auto', 'builtin', 'wired', 'usb'].map(v => `<option value="${v}"${S.micSrc === v ? ' selected' : ''}>${esc(t('mic_' + v))}</option>`).join('')}</select></div>
       <label class="switch"><input type="checkbox" id="setCall"${S.callPause ? ' checked' : ''}><span>${esc(t('setCall'))}<small>${esc(t('setCallD'))}</small></span></label>
       <label class="switch"><input type="checkbox" id="setAgc"${S.agc !== false ? ' checked' : ''}><span>${esc(t('setAgc'))}<small>${esc(t('setAgcD'))}</small></span></label>
-      <label class="switch"><input type="checkbox" id="setSilCut"${S.silCut ? ' checked' : ''}><span>${esc(t('setSilCut'))}<small>${esc(t('setSilCutD'))}</small></span></label></div>
+      <label class="switch"><input type="checkbox" id="setSilCut"${S.silCut ? ' checked' : ''}><span>${esc(t('setSilCut'))}<small>${esc(t('setSilCutD'))}</small></span></label>
+      <label class="switch"><input type="checkbox" id="setTech"${ls.get('techInfo', false) ? ' checked' : ''}><span>${esc(t('setTech'))}<small>${esc(t('setTechD'))}</small></span></label></div>
     <div class="set-sec"><h4>${esc(t('setClean'))}</h4>
       <div class="set-sub"><span>${esc(t('setStrength'))}</span><select id="setStr" class="sel-full">${[[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([v, k]) => `<option value="${v}"${CL.strength === v ? ' selected' : ''}>${esc(t(k))}</option>`).join('')}</select></div>
       <label class="switch"><input type="checkbox" id="setAuto"${S.autoClean ? ' checked' : ''}><span>${esc(t('setAuto'))}<small>${esc(t('setAutoD'))}</small></span></label>
@@ -1885,6 +1886,7 @@ function openSettings() {
     ci.onchange = () => { const f = ci.files && ci.files[0]; if (f) coverFrom(f).then(b => { ls.set('cover', b); cimg.src = 'data:image/jpeg;base64,' + b; cimg.hidden = false; cc.hidden = false; }, () => toast(t('coverFail'))); };
     cc.onclick = () => { ls.set('cover', ''); cimg.hidden = true; cc.hidden = true; };
   }
+  { const tb = card.querySelector('#setTech'); if (tb) tb.onchange = () => { ls.set('techInfo', tb.checked); document.documentElement.classList.toggle('tech', tb.checked); }; }
   bind('#setAgc', 'agc'); bind('#setSilCut', 'silCut'); bind('#setTlXf', 'tlXf'); bind('#setChans', 'chans'); bind('#setStartTab', 'startTab');
   const ps = card.querySelector('#setPause'); if (ps) ps.onchange = () => { S.pauseMax = +ps.value; ls.set('pauseMax', S.pauseMax); };
   const ms = card.querySelector('#setMinSong'); if (ms) ms.onchange = () => { S.minSong = +ms.value; ls.set('minSong', S.minSong); render(); };
@@ -4362,6 +4364,9 @@ function tlAct(e) {
   const b = e.target.closest('[data-tl]'); if (!b || b.disabled) return;
   tlDo(b.dataset.tl, b);
 }
+/** 4.8.1: technical numbers (dB, LUFS, file format) only for those who switch them on */
+const TECH = () => ls.get('techInfo', false);
+document.documentElement.classList.toggle('tech', TECH());
 /** 4.4.2: music or not: the music list, a recording made as music, an artist / album tag, or a name that says so */
 const MUSIC_RX = /m[uü]zik|music|song|[sş]ark[ıi]|caz|jazz|enstr[uü]man|instrum|beat|remix|melod|piano|piyano|gitar|guitar|orkestra|orchestra|klasik|classical|lofi|lo-fi|karaoke|cover|feat\.|ft\./i;
 function tlIsMusic(r) {
@@ -5763,7 +5768,7 @@ function loopRec() {
     if (lvl > R.peakDb || now - R.peakAt > 900) { R.peakDb = lvl; R.peakAt = now; }
     if (++frame % 4 === 0) {
       const db = m >= 0.995 ? 0 : R.peakDb, lk = !isFinite(db) || db < -60 ? 'lvNone' : db < -36 ? 'lvQuiet' : db < -4 ? 'lvGood' : db < -0.5 ? 'lvLoud' : 'lvClip';
-      $('#recPeak').innerHTML = `<span class="lvl ${lk}"><i style="width:${Math.round(clamp(((isFinite(db) ? db : -60) + 60) / 60, 0, 1) * 100)}%"></i></span><span class="lvt ${lk}">${esc(t(lk))}</span>`;
+      $('#recPeak').innerHTML = `<span class="lvl ${lk}"><i style="width:${Math.round(clamp(((isFinite(db) ? db : -60) + 60) / 60, 0, 1) * 100)}%"></i></span><span class="lvt ${lk}">${esc(t(lk))}${TECH() && isFinite(db) && db > -60 ? ` · ${Math.round(db).toString().replace('-', '−')} dB` : ''}</span>`;
     }
     drawLive();
   };
