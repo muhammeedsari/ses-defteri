@@ -741,6 +741,17 @@ final class Workspace {
     }
 
     /** hesitation sounds in any audio: [[start, end], …] in seconds */
+    private static final java.util.regex.Pattern HES = java.util.regex.Pattern.compile(
+        "(ı+|i+|e+h*|a+h*|ö+|ü+|o+h*|u+h*m*|h*m+|hı+|ha+|he+|er+m*|ehm|äh+m*|öh+m*|euh+|eh+|em+|ум+|эм+|э+|а+|м+|嗯+|呃+|啊+|额+|ах+|يعني|اه+|ام+)",
+        java.util.regex.Pattern.UNICODE_CASE | java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /** Whisper's text for a snippet: nothing, or only hesitation sounds */
+    static boolean hesitation(String t) {
+        String[] w = t.toLowerCase(java.util.Locale.ROOT).replaceAll("[^\\p{L}\\s]", " ").trim().split("\\s+");
+        for (String x : w) if (!x.isEmpty() && !HES.matcher(x).matches()) return false;
+        return true;
+    }
+
     static JSONObject fillers(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         File w = new File(c.getCacheDir(), "fl" + System.nanoTime() + ".wav");
         try {
@@ -752,9 +763,35 @@ final class Workspace {
             try { r.seek(44); r.readFully(b); } finally { r.close(); }
             for (int i = 0; i < x.length; i++) x[i] = (short) ((b[2 * i] & 0xff) | (b[2 * i + 1] << 8)) / 32768f;
             JSONArray out = new JSONArray();
-            for (double[] q : Speech.fillers(x, 16000)) out.put(new JSONArray().put(Math.round(q[0] * 100) / 100.0).put(Math.round(q[1] * 100) / 100.0));
+            String model = a.optBoolean("ai") ? AsrModels.pick(c, a.optString("model", "")) : null;
+            if (model == null) {
+                for (double[] q : Speech.fillers(x, 16000)) out.put(new JSONArray().put(Math.round(q[0] * 100) / 100.0).put(Math.round(q[1] * 100) / 100.0));
+                p.on(1);
+                return new JSONObject().put("ranges", out);
+            }
+            // 4.7: smart: a looser search finds more candidates, then Whisper listens to each one: no words (or only
+            // "ıı / eee / hmm / um…") = a hesitation; real words = speech, kept
+            java.util.ArrayList<double[]> cand = Speech.fillers(x, 16000, 24, 0.06);
+            int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
+            app.sesdefteri.asr.Transcriber tr = new app.sesdefteri.asr.Transcriber(null, AsrModels.dir(c, model).getAbsolutePath(), model, a.optString("lang", ""), threads);
+            int kept = 0;
+            try {
+                for (int i = 0; i < cand.size(); i++) {
+                    if (cancel.get()) throw new InterruptedException("cancel");
+                    double[] q = cand.get(i);
+                    int s0 = Math.max(0, (int) ((q[0] - 0.12) * 16000)), s1 = Math.min(x.length, (int) ((q[1] + 0.12) * 16000));
+                    if (s1 - s0 < 1600) continue;
+                    String t = tr.recognize(java.util.Arrays.copyOfRange(x, s0, s1));
+                    if (!hesitation(t)) continue;
+                    out.put(new JSONArray().put(Math.round(q[0] * 100) / 100.0).put(Math.round(q[1] * 100) / 100.0));
+                    kept++;
+                    p.on(0.7 + 0.3 * (i + 1) / cand.size());
+                }
+            } finally {
+                tr.release();
+            }
             p.on(1);
-            return new JSONObject().put("ranges", out);
+            return new JSONObject().put("ranges", out).put("ai", true).put("checked", cand.size());
         } finally {
             w.delete();
         }

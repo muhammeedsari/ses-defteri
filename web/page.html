@@ -1139,7 +1139,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.6';
+const VERSION = '4.7';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -3215,7 +3215,7 @@ async function openTextEdit(r) {
   const tx = S.texts.get(r.id); if (!tx || !tx.segments || !tx.segments.length || BUSY.has(r.id)) return;
   let fl = [];
   toast(t('teScan'), 0);
-  try { fl = ((await studioJob('fillers', r, {})).ranges) || []; } catch (e) {}
+  try { fl = ((await studioJob('fillers', r, flAi())).ranges) || []; } catch (e) {}
   hideToast();
   const retake = findRetakes(tx.segments);
   const rows = tx.segments.map((s, i) => ({ s: s[0], e: s[1], text: s[2], kind: retake.has(i) ? 'retake' : 'seg', del: retake.has(i) }))
@@ -3346,10 +3346,12 @@ async function tlTextEdit() {
     tlEffect(c, 'cut', { keep });
   };
 }
+/** 4.7: with the speech-to-text model on the phone, every hesitation is double-checked by Whisper (and more are found) */
+const flAi = () => CAPS.asr && hasAsr() ? { ai: true, model: S.asrModel || '', lang: S.textLang || '' } : {};
 /** hesitation sounds in a timeline clip: listed, ticked, cut out */
 async function tlFillers(c) {
   let res;
-  try { res = await tlRunJob(t('op_fillers'), 'fillers', { src: { path: c.path } }); } catch (e) { toast(errText(e), 5000); return; }
+  try { res = await tlRunJob(t('op_fillers'), 'fillers', Object.assign({ src: { path: c.path } }, flAi())); } catch (e) { toast(errText(e), 5000); return; }
   const fl = (res.ranges || []).filter(([s, e]) => e > c.in && s < c.out);
   if (!fl.length) { toast(t('fxNone', { x: t('op_fillers') }), 3500); return; }
   const card = openModal(`<h3>${esc(t('op_fillers'))}</h3><p class="mtext">${esc(t('teFillers', { n: fl.length }))}</p>
@@ -6984,7 +6986,7 @@ function tlGroups(c) {
     ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
   const op = (x, i) => ['op:' + x, i, 'op_' + x];
   return [
-    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk'], ['tts', 'speak', 'sh_tts'], ['keyfind', 'beat', 'sh_key']]],
+    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk'], CAPS.asr ? op('fillers', 'speak') : null, ['tts', 'speak', 'sh_tts'], ['keyfind', 'beat', 'sh_key']]],
     ['grp_clean', 'speech', [['clarify', 'spark', 'op_clarify'], op('denoise', 'wave'), op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
     ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null, ['spec', 'spec', 'tlSpec']]],
     ['grp_vt', 'music', [['gain', 'vol', 'tlVol'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol'), ['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],

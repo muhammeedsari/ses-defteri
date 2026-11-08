@@ -138,6 +138,19 @@ public final class Transcriber {
         return t;
     }
 
+    /** 4.7: one short 16 kHz snippet straight to Whisper (no voice detection); "" when nothing was said */
+    public String recognize(float[] x) {
+        float pk = 0;
+        for (float v : x) pk = Math.max(pk, Math.abs(v));
+        if (pk > 1e-4f && pk < 0.7f) { float g = Math.min(12f, 0.8f / pk); x = x.clone(); for (int i = 0; i < x.length; i++) x[i] *= g; }
+        OfflineStream os = rec.createStream();
+        os.acceptWaveform(x, RATE);
+        rec.decode(os);
+        OfflineRecognizerResult r = rec.getResult(os);
+        os.release();
+        return clean(r.text);
+    }
+
     public void release() { vad.release(); rec.release(); }
 
     // ---------- outputs ----------
