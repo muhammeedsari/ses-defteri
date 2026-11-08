@@ -552,3 +552,13 @@ html:not(.tech) .pu-card small{display:none}
 .key-res small{color:var(--muted);font-size:12px}
 .key-res b{font-size:22px;font-family:var(--f-display)}
 .key-res span{color:var(--muted);font-size:13px}
+/* 4.11.2: experimental badge, history with listen / go back */
+.beta{position:relative}
+.beta::after{content:attr(data-beta);position:absolute;top:3px;right:3px;font-size:8.5px;font-weight:700;letter-spacing:.02em;padding:1px 4px;border-radius:5px;background:var(--surface);color:var(--muted);border:1px solid var(--line)}
+.hist.h2{list-style:none;padding:0;counter-reset:h}
+.hist.h2 li,.hist li:has(div){display:flex;align-items:center;gap:8px;justify-content:space-between}
+.hist.h2 li{padding:8px 0;border-bottom:1px solid var(--line)}
+.hist.h2 li>div{min-width:0}
+.hist.h2 li.now b{color:var(--accent)}
+.h-acts{display:flex;align-items:center;gap:4px;flex:none}
+.h-acts .icon-btn{width:36px;height:36px}

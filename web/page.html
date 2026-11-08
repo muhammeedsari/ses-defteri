@@ -900,6 +900,16 @@ html:not(.tech) .pu-card small{display:none}
 .key-res small{color:var(--muted);font-size:12px}
 .key-res b{font-size:22px;font-family:var(--f-display)}
 .key-res span{color:var(--muted);font-size:13px}
+/* 4.11.2: experimental badge, history with listen / go back */
+.beta{position:relative}
+.beta::after{content:attr(data-beta);position:absolute;top:3px;right:3px;font-size:8.5px;font-weight:700;letter-spacing:.02em;padding:1px 4px;border-radius:5px;background:var(--surface);color:var(--muted);border:1px solid var(--line)}
+.hist.h2{list-style:none;padding:0;counter-reset:h}
+.hist.h2 li,.hist li:has(div){display:flex;align-items:center;gap:8px;justify-content:space-between}
+.hist.h2 li{padding:8px 0;border-bottom:1px solid var(--line)}
+.hist.h2 li>div{min-width:0}
+.hist.h2 li.now b{color:var(--accent)}
+.h-acts{display:flex;align-items:center;gap:4px;flex:none}
+.h-acts .icon-btn{width:36px;height:36px}
 </style>
 
 <div class="seltop" id="selTop" hidden></div>
@@ -1133,6 +1143,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n41.js"></script>
 <script src="i18n42.js"></script>
 <script src="i18n43.js"></script>
+<script src="i18n44.js"></script>
 <script>
 (() => {
 'use strict';
@@ -1143,7 +1154,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.11.1';
+const VERSION = '4.11.2';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -3491,7 +3502,7 @@ function tlUndo(redo) {
   tlChanged();
 }
 function tlClean() {
-  const keep = new Set(), cb = tlClip(), add = c => { keep.add(c.path); if (c.prev) keep.add(c.prev); };
+  const keep = new Set(), cb = tlClip(), add = c => { keep.add(c.path); if (c.prev) keep.add(c.prev); for (const f of c.fx || []) if (f.b) keep.add(f.b.path); };
   TL.p.clips.forEach(add);
   if (cb) keep.add(cb.path);
   for (const s of TL.undo.concat(TL.redo)) try { JSON.parse(s).clips.forEach(add); } catch (e) {}
@@ -3822,6 +3833,7 @@ async function tlEffect(c, op, extra) {
   try { res = await tlRunJob(t('op_' + op), 'wsOp', Object.assign({ path: c.path, op }, extra || {})); } catch (e) { if (b0) { TL.p = JSON.parse(b0); drawTl(); } toast(errText(e), 5000); return; }
   if (res.same) { toast(res.report && res.report.none ? t('fxNone', { x: t('op_' + op) }) : t('wsSame'), 4000); return; }
   const before = b0 || tlSnap(), nd = res.dur / 1000;
+  const b4 = tlState(b0 ? (JSON.parse(b0).clips.find(x => x.id === c.id) || c) : c);
   if (Math.abs(nd - c.dur) > 0.01) {
     if (op === 'speed') { const f = nd / c.dur; c.in *= f; c.out = Math.min(nd, c.out * f); c.fi *= f; c.fo *= f; if (c.env) c.env = c.env.map(([x, d]) => [x * f, d]); }
     else { c.in = 0; c.out = nd; delete c.env; }
@@ -3835,7 +3847,7 @@ async function tlEffect(c, op, extra) {
   delete c.chg; delete c.cuts;
   if (cutsAt && cutsAt.length) { c.cuts = cutsAt; tlMarkTip(); }
   c.out = Math.min(c.out, nd); c.in = Math.min(c.in, c.out - 0.05);
-  c.fx = (c.fx || []).concat([{ op, r: wsReport(op, res) || '' }]);
+  tlStep(c, { op, r: wsReport(op, res) || '' }, b4);
   if (same) tlDiff(c.id, old, res.path);
   TL.lastRep = res.report || null;
   if (op === 'eq' && S.learnVoice && res.report && res.report.tone) addVoiceProfile(res.report.tone);
@@ -4407,12 +4419,12 @@ async function tlStudio() {
     res = await tlRunJob(t('sh_studio'), 'clean', { path: c.path, fixes: STUDIO, strength: 1, target: purposeTarget('podcast'), ai: !!CAPS.sep });
     add = await tlRunJob(t('sh_studio'), 'tlAdd', { src: { path: res.path } });
   } catch (e) { toast(errText(e), 5000); return; }
-  const before = tlSnap(), nd = add.dur / 1000, old = c.path;
+  const before = tlSnap(), nd = add.dur / 1000, old = c.path, b4 = tlState(c);
   if (Math.abs(nd - c.dur) > 0.01) { c.in = 0; c.out = nd; delete c.env; }
   Object.assign(c, { path: add.path, dur: nd, ch: add.ch, prev: old });
   delete c.chg;
   c.out = Math.min(c.out, nd); c.in = Math.min(c.in, c.out - 0.05);
-  c.fx = (c.fx || []).concat([{ op: 'studio', r: STUDIO.map(k => t('op_' + k)).join(', ') }]);
+  tlStep(c, { op: 'studio', r: STUDIO.map(k => t('op_' + k)).join(', ') }, b4);
   tlCommit(before);
   tlDiff(c.id, old, add.path);
   toast(t('studioDone'), 3500);
@@ -6665,6 +6677,12 @@ async function tlDiff(id, a, b) {
     if (out.length) tlMarkTip();
   } catch (e) {}
 }
+/** 4.11.2: a step of the history keeps the clip as it was before it; only the last 5 keep that sound (space) */
+const tlState = c => ({ path: c.path, dur: c.dur, ch: c.ch, in: c.in, out: c.out, env: c.env || null });
+function tlStep(c, entry, b4) {
+  entry.b = b4; c.fx = (c.fx || []).concat([entry]);
+  let n = 0; for (let i = c.fx.length - 1; i >= 0; i--) if (c.fx[i].b && ++n > 5) delete c.fx[i].b;
+}
 /** 4.12: the first time an edit leaves marks, the tutorial shows what they mean (once) */
 function tlMarkTip() {
   if (ls.get('coachMarks', false) || S.tab !== 'edit') return;
@@ -7018,7 +7036,7 @@ function edFit() {
 }
 addEventListener('resize', () => { if (S.tab === 'edit') edFit(); });
 
-const tile = (k, icn, lab, cls) => `<button type="button" class="tc-tile${cls ? ' ' + cls : ''}" data-tl="${k}"${TL.busy ? ' disabled' : ''}>${ic(icn)}<span>${esc(lab)}</span></button>`;
+const tile = (k, icn, lab, cls) => `<button type="button" class="tc-tile${cls ? ' ' + cls : ''}" data-tl="${k}"${cls && cls.includes('beta') ? ` data-beta="${esc(t('beta'))}"` : ''}${TL.busy ? ' disabled' : ''}>${ic(icn)}<span>${esc(lab)}</span></button>`;
 /* 4.4: the card: 6 everyday tools, then the 6 tool groups (a group opens inside the card) */
 const CATS = [['grp_ai', 'ai', 'spark', 'cat_ai'], ['grp_clean', 'speech', 'wave', 'cat_clean'], ['grp_fix', 'fx', 'mouth', 'cat_fix'],
   ['grp_vt', 'music', 'mixer', 'cat_vt'], ['grp_edit', 'other', 'trimI', 'cat_edit'], ['grp_fx', 'fx', 'note', 'cat_fx']];
@@ -7051,7 +7069,7 @@ function renderTlBar() {
   const grp = TL.cat && TL.catId === c.id ? tlGroups(c).find(g => g[0] === TL.cat) : null;
   const body = grp
     ? `<div class="tc-cat" style="--cc:${TK[grp[1]].c};--cs:${TK[grp[1]].soft}"><button type="button" class="icon-btn" data-tl="catx" aria-label="${esc(t('back'))}">${ic('backI')}</button><b>${esc(t(grp[0]))}</b><button type="button" class="icon-btn" data-tl="all" aria-label="${esc(t('drSearch'))}">${ic('search')}</button></div>
-      <div class="tc-grid g4" style="--kc:${TK[grp[1]].c};--ks:${TK[grp[1]].soft}">${grp[2].filter(Boolean).map(([k, i, l]) => tile(k, i, t(l), 'k')).join('')}</div>`
+      <div class="tc-grid g4" style="--kc:${TK[grp[1]].c};--ks:${TK[grp[1]].soft}">${grp[2].filter(Boolean).map(([k, i, l, beta]) => tile(k, i, t(l), beta ? 'k beta' : 'k')).join('')}</div>`
     : `<div class="tc-grid">${tile('split', 'scissors', t('sh_split')) + tile('del', 'trash', t('sh_del'), 'del') + tile('copy', 'copy', t('sh_copy')) + tile('gain', 'vol', t('sh_vol')) + tile('speed', 'gauge', t('sh_speed')) + tile('fade', 'fade', t('sh_xf'))}</div>
       <div class="tc-grid">${CATS.map(([g, k, i, l]) => `<button type="button" class="tc-tile cat${CAT_FOR[kind] === g ? ' hl' : ''}" style="--kc:${TK[k].c};--ks:${TK[k].soft}" data-tl="cat:${g}"${TL.busy ? ' disabled' : ''}>${ic(i)}<span>${esc(t(l))}</span></button>`).join('')}</div>`;
   bar.innerHTML = `<div class="tc-head"><span class="tc-ic" style="color:${K.c};background:${K.soft}">${ic(K.ic)}</span>
@@ -7069,16 +7087,49 @@ function tlFxList() { }
 /* ----- the "what was done" list, now a sheet behind the ✦ badge ----- */
 function tlHistory() {
   const c = tlSel(); if (!c) return;
-  const rows = (c.fx || []).map(f => [t('op_' + f.op), f.r]);
-  if (c.eq) rows.push([t('tlEq'), c.eq.map((v, i) => EQ_BANDS[i] + ' ' + (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v)).join(' · ')]);
-  if (c.bass) rows.push([t('tlBass'), sdb(c.bass)]);
-  if (c.treble) rows.push([t('tlTreble'), sdb(c.treble)]);
-  if (c.gain) rows.push([t('tlVol'), dbTxt(c.gain)]);
-  if (c.env && c.env.length) rows.push([t('tlEnv'), t('envN', { n: c.env.length })]);
-  const card = openModal(`<h3>${esc(t('fxDone'))}</h3><p class="mtext">${esc(t('histD'))}</p>
-    <ol class="hist">${rows.map(([a, b]) => `<li><b>${esc(a)}</b>${b ? `<small>${esc(b)}</small>` : ''}</li>`).join('')}</ol>
-    <div class="modal-actions">${c.prev ? `<button class="btn" type="button" data-h="ab">${ic('hp')}${esc(t('tcAB'))}</button>` : ''}<span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
-  card.onclick = e => { if (e.target.closest('[data-x]')) closeModal(); else if (e.target.closest('[data-h="ab"]')) { closeModal(); tlAB(); } };
+  const fx = c.fx || [];
+  // states: 0 = before the first step (the original), i+1 = after step i (the last one is the clip as it is now)
+  const st = i => i === fx.length ? tlState(c) : fx[i] && fx[i].b;
+  const extra = [];
+  if (c.eq) extra.push([t('tlEq'), c.eq.map((v, i) => EQ_BANDS[i] + ' ' + (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v)).join(' · ')]);
+  if (c.bass) extra.push([t('tlBass'), sdb(c.bass)]);
+  if (c.treble) extra.push([t('tlTreble'), sdb(c.treble)]);
+  if (c.gain) extra.push([t('tlVol'), dbTxt(c.gain)]);
+  if (c.env && c.env.length) extra.push([t('tlEnv'), t('envN', { n: c.env.length })]);
+  const row = (i, title, sub) => { const s0 = st(i), now = i === fx.length;
+    return `<li class="${now ? 'now' : ''}"><div><b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</div>
+      <span class="h-acts">${s0 ? `<button class="icon-btn" type="button" data-hp="${i}" aria-label="${esc(t('hListen'))}">${ic('play')}</button>` : ''}
+      ${s0 && !now ? `<button class="btn sm" type="button" data-hb="${i}">${esc(t('hBack'))}</button>` : now ? `<i class="pill">${esc(t('hNow'))}</i>` : ''}</span></li>`; };
+  const card = openModal(`<h3>${esc(t('fxDone'))}</h3><p class="mtext">${esc(t('histD2'))}</p>
+    <ol class="hist h2">${fx.length ? row(0, t('hOrig'), '') : ''}${fx.map((f, i) => row(i + 1, t('op_' + f.op), f.r)).join('')}</ol>
+    ${extra.length ? `<ul class="hist">${extra.map(([a, b]) => `<li><div><b>${esc(a)}</b><small>${esc(b)}</small></div></li>`).join('')}</ul>` : ''}
+    <div class="modal-actions">${c.prev ? `<button class="btn" type="button" data-h="ab">${ic('hp')}${esc(t('tcAB'))}</button>` : ''}<span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`, () => tlStop());
+  let playing = -1;
+  card.onclick = e => {
+    if (e.target.closest('[data-x]')) { closeModal(); return; }
+    if (e.target.closest('[data-h="ab"]')) { closeModal(); tlAB(); return; }
+    const pb = e.target.closest('[data-hp]');
+    if (pb) {
+      const i = +pb.dataset.hp, s0 = st(i); tlStop();
+      card.querySelectorAll('[data-hp]').forEach(x => { x.innerHTML = ic('play'); });
+      if (playing === i) { playing = -1; return; }
+      playing = i; pb.innerHTML = ic('pause');
+      const tr = TL.p.tracks[c.tr] || {}, g = Math.pow(10, ((c.gain || 0) + (tr.vol || 0)) / 20);
+      tlPlay([{ path: s0.path, at: c.at, in: s0.in, len: s0.out - s0.in, g, fi: 0, fo: 0 }], c.at);
+      return;
+    }
+    const bb = e.target.closest('[data-hb]');
+    if (bb) {
+      const i = +bb.dataset.hb, s0 = st(i); if (!s0) return;
+      tlStop(); closeModal();
+      const before = tlSnap(), cur = c.path;
+      Object.assign(c, { path: s0.path, dur: s0.dur, ch: s0.ch, in: s0.in, out: s0.out, prev: cur });
+      if (s0.env) c.env = s0.env; else delete c.env;
+      c.fx = fx.slice(0, i); delete c.chg; delete c.cuts;
+      tlCommit(before);
+      toast(t('hBackDone'), 3000);
+    }
+  };
 }
 
 /* ----- smart check: the clean-up analysis on one clip, a 0–100 score, one tap to fix what it found ----- */
@@ -7112,12 +7163,12 @@ async function tlSmartFix() {
     res = await tlRunJob(t('smFixing'), 'clean', Object.assign(pauseArgs(), { path: dg.d.path, fixes: dg.fixes, strength: 1, target: purposeTarget(dg.purpose), ai: !!CAPS.sep && dg.purpose !== 'music' }, roomArgs(dg.d)));
     add = await tlRunJob(t('smFixing'), 'tlAdd', { src: { path: res.path } });   // the result lives in the clean-up cache: copy it into the project
   } catch (e) { toast(errText(e), 5000); return; }
-  const before = tlSnap(), nd = add.dur / 1000, old = c.path;
+  const before = tlSnap(), nd = add.dur / 1000, old = c.path, b4 = tlState(c);
   if (Math.abs(nd - c.dur) > 0.01) { c.in = 0; c.out = nd; delete c.env; }
   Object.assign(c, { path: add.path, dur: nd, ch: add.ch, prev: old });
   delete c.chg;
   c.out = Math.min(c.out, nd); c.in = Math.min(c.in, c.out - 0.05);
-  c.fx = (c.fx || []).concat([{ op: 'smart', r: dg.fixes.map(k => t('op_' + k)).join(', ') }]);
+  tlStep(c, { op: 'smart', r: dg.fixes.map(k => t('op_' + k)).join(', ') }, b4);
   TL.dg = null;
   tlCommit(before);
   tlDiff(c.id, old, add.path);
@@ -7132,8 +7183,8 @@ function tlGroups(c) {
     ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
   const op = (x, i) => ['op:' + x, i, 'op_' + x];
   return [
-    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], ['clarify', 'spark', 'op_clarify'], ['aigate', 'sil', 'op_aigate'], ['aipauses', 'gapI', 'op_aipauses'], ['ailevel', 'people', 'op_ailevel'], ['aibreaths', 'speak', 'op_aibreaths'], ['aiduck', 'note', 'op_aiduck'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk'], CAPS.asr ? ['flai', 'speak', 'sh_flai'] : null, ['tts', 'speak', 'sh_tts'], ['keyfind', 'beat', 'sh_key'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
-    ['grp_clean', 'speech', [op('denoise', 'wave'), op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
+    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], ['clarify', 'spark', 'op_clarify'], ['aigate', 'sil', 'op_aigate'], ['aipauses', 'gapI', 'op_aipauses'], ['ailevel', 'people', 'op_ailevel'], ['aibreaths', 'speak', 'op_aibreaths'], ['aiduck', 'note', 'op_aiduck'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk'], CAPS.asr ? ['flai', 'speak', 'sh_flai'] : null, ['tts', 'speak', 'sh_tts'], ['keyfind', 'beat', 'sh_key'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
+    ['grp_clean', 'speech', [op('denoise', 'wave'), CAPS.sep ? ['op:sepdenoise', 'note', 'op_sepdenoise', 1] : null, op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
     ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null, ['spec', 'spec', 'tlSpec']]],
     ['grp_vt', 'music', [['gain', 'vol', 'tlVol'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol'), ['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],
     ['grp_edit', 'other', [op('trim', 'trimI'), op('pauses', 'gapI'), op('fillers', 'speak'), op('silence', 'sil'), ['speed', 'gauge', 'tlSpeed'], ['merge', 'mergeI', 'tlMerge'], ['dup', 'dupI', 'tlDup'], ['punch', 'mic', 'tlPunch'], ['beats', 'beat', 'tlBeats']]],
@@ -7143,8 +7194,8 @@ function tlAll() {
   const c = tlSel(), groups = tlGroups(c).map(([g, k, items]) => [g, k, items.filter(Boolean)]);
   const card = openModal(`<div class="dr-head"><h3>${esc(t(c ? 'drTools' : 'drProject'))}</h3>
       <label class="dr-search">${ic('search')}<input type="search" id="drQ" placeholder="${esc(t('drSearch'))}" aria-label="${esc(t('drSearch'))}"></label></div>
-    <div class="drawer" id="drBody">${groups.map(([g, k, items]) => `<section class="dr-g" style="--kc:${TK[k].c};--ks:${TK[k].soft}"><h4>${esc(t(g))}</h4><div class="dr-grid">${items.map(([a, i, l]) =>
-      `<button type="button" class="dr-t" data-dr="${a}"${TL.busy ? ' disabled' : ''}><span class="dr-ic">${ic(i)}</span><span>${esc(t(l))}</span></button>`).join('')}</div></section>`).join('')}</div>
+    <div class="drawer" id="drBody">${groups.map(([g, k, items]) => `<section class="dr-g" style="--kc:${TK[k].c};--ks:${TK[k].soft}"><h4>${esc(t(g))}</h4><div class="dr-grid">${items.map(([a, i, l, beta]) =>
+      `<button type="button" class="dr-t${beta ? ' beta' : ''}" data-dr="${a}"${beta ? ` data-beta="${esc(t('beta'))}"` : ''}${TL.busy ? ' disabled' : ''}><span class="dr-ic">${ic(i)}</span><span>${esc(t(l))}</span></button>`).join('')}</div></section>`).join('')}</div>
     <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('close'))}</button></div>`);
   card.classList.add('dr-card');
   const q = card.querySelector('#drQ');
