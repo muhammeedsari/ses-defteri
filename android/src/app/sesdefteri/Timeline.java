@@ -109,8 +109,11 @@ final class Timeline {
         final long end;
         final int ch;
 
+        long[] ta = new long[0], tb = new long[0];   // 4.10: where somebody speaks (AI ducking), project frames, sorted, merged
+
         Engine(JSONArray a) throws Exception {
             java.util.ArrayList<Clip> l = new java.util.ArrayList<>();
+            java.util.ArrayList<long[]> talk = new java.util.ArrayList<>();
             long e = 0;
             int c2 = 1;
             try {
@@ -134,6 +137,12 @@ final class Timeline {
                         k.et = new double[ev.length()]; k.ed = new float[ev.length()];
                         for (int j = 0; j < ev.length(); j++) { JSONArray pt = ev.getJSONArray(j); k.et[j] = pt.getDouble(0) * RATE; k.ed[j] = (float) pt.getDouble(1); }
                     }
+                    JSONArray tk = o.optJSONArray("talk");   // speech stretches of this clip (seconds of its file): music dips just before and stays down through them
+                    if (tk != null) for (int j = 0; j < tk.length(); j++) {
+                        JSONArray x = tk.getJSONArray(j);
+                        long t0 = Math.max(k.at, k.at + Math.round((x.getDouble(0) - 0.25) * RATE) - k.in), t1 = Math.min(k.at + k.len, k.at + Math.round((x.getDouble(1) + 0.15) * RATE) - k.in);
+                        if (t1 > t0) talk.add(new long[] { t0, t1 });
+                    }
                     double dd = o.optDouble("duck", 0);
                     if (dd < 0) k.duck = (float) Math.pow(10, dd / 20);
                     k.eq = eq(o.optJSONArray("eq"), 0, 0);
@@ -151,6 +160,13 @@ final class Timeline {
             }
             clips = l.toArray(new Clip[0]);
             end = e;
+            if (!talk.isEmpty()) {
+                java.util.Collections.sort(talk, new java.util.Comparator<long[]>() { @Override public int compare(long[] x, long[] y) { return Long.compare(x[0], y[0]); } });
+                java.util.ArrayList<long[]> m = new java.util.ArrayList<>();
+                for (long[] x : talk) { long[] last = m.isEmpty() ? null : m.get(m.size() - 1); if (last != null && x[0] <= last[1] + RATE / 2) last[1] = Math.max(last[1], x[1]); else m.add(new long[] { x[0], x[1] }); }
+                ta = new long[m.size()]; tb = new long[m.size()];
+                for (int i = 0; i < m.size(); i++) { ta[i] = m.get(i)[0]; tb[i] = m.get(i)[1]; }
+            }
             ch = c2;
         }
 
@@ -167,10 +183,19 @@ final class Timeline {
             for (Clip k : clips) { if (k.duck < 1) ducked = true; else add(k, pos, n, out, null); }
             if (!ducked) return;
             if (dep.length < n) dep = new float[n];
+            int ti = 0;
+            if (ta.length > 0) { int lo = 0, hi = ta.length; while (lo < hi) { int mid = (lo + hi) >>> 1; if (tb[mid] <= pos) lo = mid + 1; else hi = mid; } ti = lo; }
             for (int i = 0; i < n; i++) {
-                float x = Math.max(Math.abs(out[0][i]), Math.abs(out[1][i]));
-                env = x > env ? env + (x - env) * E_ATK : env * E_REL;
-                float tg = env > THR ? 1 : 0;
+                float tg;
+                if (ta.length > 0) {   // AI ducking: speech found by the detector, a cough or a clap does not count
+                    long fr = pos + i;
+                    while (ti < ta.length && tb[ti] <= fr) ti++;
+                    tg = ti < ta.length && ta[ti] <= fr ? 1 : 0;
+                } else {
+                    float x = Math.max(Math.abs(out[0][i]), Math.abs(out[1][i]));
+                    env = x > env ? env + (x - env) * E_ATK : env * E_REL;
+                    tg = env > THR ? 1 : 0;
+                }
                 depth += (tg - depth) * (tg > depth ? D_ATK : D_REL);
                 dep[i] = depth;
             }

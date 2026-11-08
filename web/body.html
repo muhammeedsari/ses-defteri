@@ -226,6 +226,7 @@
 <script src="i18n38.js"></script>
 <script src="i18n39.js"></script>
 <script src="i18n40.js"></script>
+<script src="i18n41.js"></script>
 <script>
 (() => {
 'use strict';
@@ -236,7 +237,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.9';
+const VERSION = '4.10';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -2561,6 +2562,7 @@ function tlPrune(before) {
 }
 function tlCommit(before) {
   tlUnstack(); tlPrune(before);
+  if (TL.p.aiDuck) setTimeout(() => { if (!TL.busy) tlAiDuckRefresh(true); }, 400);
   if (before === tlSnap()) return;
   TL.undo.push(before); if (TL.undo.length > 40) TL.undo.shift();
   TL.redo = [];
@@ -2593,7 +2595,8 @@ function tlClean() {
 function tlMix() {
   const tr = TL.p.tracks;
   return TL.p.clips.filter(c => tr[c.tr] && !tr[c.tr].mute).map(c => { const [xi, xo] = tlXf(c); return { path: c.path, at: c.at, in: c.in, len: tlLen(c),
-    g: Math.pow(10, ((c.gain || 0) + (tr[c.tr].vol || 0)) / 20), fi: c.fi || 0, fo: c.fo || 0, xi, xo, env: tlEnvMix(c), duck: tr[c.tr].duck ? (tr[c.tr].duckDb || -12) : 0, eq: c.eq || null, bass: c.bass || 0, treble: c.treble || 0 }; });
+    g: Math.pow(10, ((c.gain || 0) + (tr[c.tr].vol || 0)) / 20), fi: c.fi || 0, fo: c.fo || 0, xi, xo, env: tlEnvMix(c), duck: tr[c.tr].duck ? (tr[c.tr].duckDb || -12) : 0, eq: c.eq || null, bass: c.bass || 0, treble: c.treble || 0,
+    talk: TL.p.aiDuck && !tr[c.tr].duck && c.vad && c.vad.path === c.path ? c.vad.segs : null }; });
 }
 /* ----- 2.6: volume line (points kept in the file's own time, so trimming and splitting keep them in place) ----- */
 const ENV_TOP = 6, ENV_BOT = -40;
@@ -3494,6 +3497,8 @@ function tlDo(k, b) {
   if (k === 'sep4') { tlSep('four'); return; }
   if (k === 'keyfind') { tlKeyFind(); return; }
   if (k === 'capvid') { tlCapVideo(); return; }
+  if (k === 'aiduck') { tlAiDuck(); return; }
+  if (k === 'aibreaths') { const c = tlSel(); if (c) tlAiBreaths(c); return; }
   if (k === 'aigate' || k === 'aipauses' || k === 'ailevel') { const c = tlSel(); if (c) ({ aigate: tlAiGate, aipauses: tlAiPauses, ailevel: tlAiLevel })[k](c); return; }
   if (k === 'flai') { const c = tlSel(); if (!c) return; if (!hasAsr()) { asrOffer().then(ok => { if (ok) toast(t('flaiReady'), 4000); }); return; } tlFillers(c, true); return; }
   if (k === 'tedit') { tlTextEdit(); return; }
@@ -4246,6 +4251,42 @@ async function tlAiLevel(c) {
   const map = res.segs.map(([a, b, k]) => [Math.max(0, a - 0.05), b + 0.05, res.db[k] > -80 ? clamp(Math.round((ref - res.db[k]) * 2) / 2, -10, 10) : 0]);
   await tlEffect(c, 'ailevel', { map, rest: 0, ramp: 0.08 });
   toast(t('aiLevelDone', { n: res.n }), 4000);
+}
+/** 4.10: breaths turned down only where the speech detector heard no words */
+async function tlAiBreaths(c) {
+  if (TL.busy) return;
+  const segs = await tlVad(c, 0.15); if (!segs) return;
+  if (!segs.length) { toast(t('aiNoSpeech'), 3500); return; }
+  tlEffect(c, 'aibreaths', { talk: segs });
+}
+/** 4.10: music tracks dip only while somebody speaks (the detector decides, not the loudness: a cough or a clap does not count) */
+const tlTalkClips = () => TL.p.clips.filter(c => { const tr = TL.p.tracks[c.tr]; return tr && !tr.mute && !tr.duck && tlKind(c.tr) !== 'music'; });
+async function tlAiDuckRefresh(quiet) {
+  for (const c of tlTalkClips()) {
+    if (c.vad && c.vad.path === c.path) continue;
+    let r; try { r = quiet ? await runJob('vad', { path: c.path, minSil: 0.35 }) : await tlRunJob(t('aiListening'), 'vad', { path: c.path, minSil: 0.35 }); } catch (e) { if (!quiet) toast(errText(e), 5000); return false; }
+    c.vad = { path: c.path, segs: r.segs || [] };
+  }
+  ls.set('proj', TL.p);
+  if (TL.play) try { AND.tlUpdate(JSON.stringify(tlMix())); } catch (x) {}
+  return true;
+}
+async function tlAiDuck() {
+  if (TL.busy) return;
+  const mus = TL.p.tracks.map((x, i) => i).filter(i => tlKind(i) === 'music');
+  if (TL.p.aiDuck) {
+    if (await confirmBox({ title: t('op_aiduck'), text: t('aiDuckOffQ'), ok: t('aiDuckOff'), cancel: t('cancel') })) { const b0 = tlSnap(); TL.p.aiDuck = false; tlCommit(b0); toast(t('aiDuckOffDone'), 3000); }
+    return;
+  }
+  if (!mus.length) { toast(t('aiDuckNoMusic'), 4500); return; }
+  if (!tlTalkClips().length) { toast(t('aiNoSpeech'), 3500); return; }
+  tlStop();
+  const b0 = tlSnap();
+  if (!(await tlAiDuckRefresh(false))) return;
+  for (const i of mus) TL.p.tracks[i].duck = true;
+  TL.p.aiDuck = true;
+  tlCommit(b0);
+  toast(t('aiDuckOn'), 4500);
 }
 async function tlCapVideo() {
   if (!TL.p.clips.length || TL.busy) return;
@@ -6156,11 +6197,11 @@ async function tlSmartFix() {
 function tlGroups(c) {
   if (!c) return [
     ['grp_add', 'speech', [['rec', 'mic', 'sh_rec'], ['add', 'import', 'sh_add'], ['sfx', 'bell', 'sh_sfx'], ['tts', 'speak', 'sh_tts'], ['insSil', 'sil', 'sh_sil'], ['paste', 'paste', 'sh_paste']]],
-    ['grp_arrange', 'other', [['marker', 'flag', 'sh_marker'], ['metro', 'beat', 'sh_metro'], ['fit', 'wave', 'tlFit'], ['video', 'film', 'sh_video'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
+    ['grp_arrange', 'other', [['marker', 'flag', 'sh_marker'], ['metro', 'beat', 'sh_metro'], ['fit', 'wave', 'tlFit'], ['aiduck', 'note', 'op_aiduck'], ['video', 'film', 'sh_video'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
     ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
   const op = (x, i) => ['op:' + x, i, 'op_' + x];
   return [
-    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], ['clarify', 'spark', 'op_clarify'], ['aigate', 'sil', 'op_aigate'], ['aipauses', 'gapI', 'op_aipauses'], ['ailevel', 'people', 'op_ailevel'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk'], CAPS.asr ? ['flai', 'speak', 'sh_flai'] : null, ['tts', 'speak', 'sh_tts'], ['keyfind', 'beat', 'sh_key'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
+    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], ['clarify', 'spark', 'op_clarify'], ['aigate', 'sil', 'op_aigate'], ['aipauses', 'gapI', 'op_aipauses'], ['ailevel', 'people', 'op_ailevel'], ['aibreaths', 'speak', 'op_aibreaths'], ['aiduck', 'note', 'op_aiduck'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk'], CAPS.asr ? ['flai', 'speak', 'sh_flai'] : null, ['tts', 'speak', 'sh_tts'], ['keyfind', 'beat', 'sh_key'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
     ['grp_clean', 'speech', [op('denoise', 'wave'), op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
     ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null, ['spec', 'spec', 'tlSpec']]],
     ['grp_vt', 'music', [['gain', 'vol', 'tlVol'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol'), ['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],

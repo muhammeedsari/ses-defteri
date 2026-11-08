@@ -173,6 +173,7 @@ final class Workspace {
             if ("breaths".equals(op)) return breaths(in, inf, out, str, p, cancel);
             if ("declip".equals(op)) return declip(in, inf, out, p, cancel);
             if ("spaint".equals(op)) return spaint(in, inf, out, a, p, cancel);
+            if ("aibreaths".equals(op)) return aiBreaths(in, inf, out, a, str, p, cancel);
             if ("gainmap".equals(op)) {   // 4.9: a smooth gain per stretch: [[start s, end s, dB]…], 0 dB elsewhere (AI gate, speaker levelling)
                 Meter gm = new Meter(ch, fs);
                 GainMap g = new GainMap(ch, fs, a.getJSONArray("map"), a.optDouble("rest", 0), a.optDouble("ramp", 0.02));
@@ -552,6 +553,44 @@ final class Workspace {
             pos += n;
             if (next != null) next.push(b, n);
         }
+    }
+
+    /** 4.10: breaths, only where the speech detector heard no speech: short sounds (0.12–0.9 s) clearly above the room's
+       hiss inside the gaps are turned down. Words are never touched, however soft. a.talk = [[start, end]…] seconds */
+    static JSONObject aiBreaths(File in, Info inf, File out, JSONObject a, double str, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        final int ch = inf.ch, hop = Math.max(1, inf.rate / 100);
+        final java.util.ArrayList<Float> lv = new java.util.ArrayList<>();
+        wav(in, inf, part(p, 0, 0.4), new double[] { 0, 1 }, cancel).run(new Node() {
+            double acc; int k;
+            @Override public void push(float[][] x, int n) {
+                for (int i = 0; i < n; i++) { double e = 0; for (int c = 0; c < ch; c++) e += x[c][i] * x[c][i]; acc += e / ch; if (++k == hop) { lv.add((float) (10 * Math.log10(acc / hop + 1e-12))); acc = 0; k = 0; } }
+            }
+            @Override public void end() { }
+        });
+        int n = lv.size();
+        boolean[] talk = new boolean[n];
+        JSONArray tk = a.getJSONArray("talk");
+        for (int i = 0; i < tk.length(); i++) { JSONArray x = tk.getJSONArray(i); for (int f = Math.max(0, (int) (x.getDouble(0) * 100) - 3); f < Math.min(n, (int) (x.getDouble(1) * 100) + 3); f++) talk[f] = true; }
+        float[] gap = new float[n]; int g = 0;
+        for (int f = 0; f < n; f++) if (!talk[f]) gap[g++] = lv.get(f);
+        if (g < 20) return same(a, new JSONObject().put("none", true));
+        java.util.Arrays.sort(gap, 0, g);
+        double floor = gap[(int) (g * 0.2)], thr = floor + 7;
+        JSONArray map = new JSONArray();
+        double db = -Math.max(6, Math.min(30, 12 * str));
+        int cnt = 0;
+        for (int f = 0; f < n; ) {
+            if (talk[f] || lv.get(f) < thr) { f++; continue; }
+            int s0 = f; while (f < n && !talk[f] && lv.get(f) >= thr - 3) f++;
+            double len = (f - s0) / 100.0;
+            if (len >= 0.12 && len <= 0.9) { map.put(new JSONArray().put(Math.max(0, s0 / 100.0 - 0.03)).put(f / 100.0 + 0.03).put(db)); cnt++; }
+        }
+        if (cnt == 0) return same(a, new JSONObject().put("none", true));
+        Meter m = new Meter(ch, inf.rate);
+        GainMap gm = new GainMap(ch, inf.rate, map, 0, 0.012);
+        gm.to(m).to(new Studio.WavNode(out, inf.rate));
+        wav(in, inf, part(p, 0.4, 1), new double[] { 0, 1 }, cancel).run(gm);
+        return done(out, m, new JSONObject().put("count", cnt));
     }
 
     static JSONObject pauses(File in, Info inf, File out, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
