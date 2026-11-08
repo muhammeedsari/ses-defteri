@@ -158,6 +158,8 @@ final class Workspace {
         File in = new File(a.getString("path"));
         Info inf = info(in);
         String op = a.getString("op");
+        if ("aipauses".equals(op) && a.has("talk")) return aiPauses(in, inf, new File(in.getParentFile(), "s" + System.nanoTime() + ".wav"), a, p, cancel);
+        final boolean hybridGate = "aigate".equals(op);
         if ("aipauses".equals(op)) op = "cut";   // 4.9: the AI versions reuse the plain machinery with AI-found stretches
         else if ("aigate".equals(op) || "ailevel".equals(op)) op = "gainmap";
         File out = new File(in.getParentFile(), "s" + System.nanoTime() + ".wav");
@@ -173,10 +175,18 @@ final class Workspace {
             if ("breaths".equals(op)) return breaths(in, inf, out, str, p, cancel);
             if ("declip".equals(op)) return declip(in, inf, out, p, cancel);
             if ("spaint".equals(op)) return spaint(in, inf, out, a, p, cancel);
-            if ("aibreaths".equals(op)) return aiBreaths(in, inf, out, a, str, p, cancel);
+            if ("aibreaths".equals(op)) return aiBreathsW(c, in, inf, out, a, str, p, cancel);
             if ("gainmap".equals(op)) {   // 4.9: a smooth gain per stretch: [[start s, end s, dB]…], 0 dB elsewhere (AI gate, speaker levelling)
                 Meter gm = new Meter(ch, fs);
                 GainMap g = new GainMap(ch, fs, a.getJSONArray("map"), a.optDouble("rest", 0), a.optDouble("ramp", 0.02));
+                if (hybridGate) {   // 4.11: speech heard by the loudness method stays too (the detector can miss very soft endings);
+                    // and long stretches at the room's own hiss level are quiet even inside a detector stretch (its tails, merged sentences)
+                    Speech.Scan sc = Speech.scan(in, inf, null, cancel);
+                    double gap = sc.speech - sc.noise, thr = sc.noise + Math.max(4, Math.min(12, gap * 0.3));
+                    boolean[] spk = new boolean[sc.n], deep = deepQuiet(sc);
+                    for (int k = 0; k < sc.n; k++) if (sc.lvl[k] >= thr) for (int j = Math.max(0, k - 2); j < Math.min(sc.n, k + 7); j++) spk[j] = true;   // 40 ms before, 120 ms after
+                    g.adjust(spk, deep, sc.hop, a.optDouble("rest", 0));
+                }
                 g.to(gm).to(new Studio.WavNode(out, fs));
                 wav(in, inf, p, new double[] { 0, 1 }, cancel).run(g);
                 return done(out, gm, new JSONObject().put("count", a.getJSONArray("map").length()));
@@ -543,6 +553,15 @@ final class Workspace {
             k = 1 - Math.exp(-1 / (Math.max(0.002, ramp) * fs));
         }
         final float restLin;
+        /** speech[] = keep at 0 dB, deep[] = turn down to the rest level; both per scan frame of `hop` samples */
+        void adjust(boolean[] speech, boolean[] deep, int frameHop, double rest) {
+            float r = (float) Math.pow(10, rest / 20);
+            for (int f = 0; f < tbl.length; f++) {
+                int k = (int) ((long) f * hop / frameHop);
+                if (k >= speech.length) break;
+                if (speech[k]) tbl[f] = 1; else if (deep[k]) tbl[f] = Math.min(tbl[f], r);
+            }
+        }
         @Override public void push(float[][] b, int n) throws Exception {
             for (int i = 0; i < n; i++) {
                 int f = (int) ((pos + i) / hop);
@@ -555,42 +574,88 @@ final class Workspace {
         }
     }
 
-    /** 4.10: breaths, only where the speech detector heard no speech: short sounds (0.12–0.9 s) clearly above the room's
-       hiss inside the gaps are turned down. Words are never touched, however soft. a.talk = [[start, end]…] seconds */
-    static JSONObject aiBreaths(File in, Info inf, File out, JSONObject a, double str, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
-        final int ch = inf.ch, hop = Math.max(1, inf.rate / 100);
-        final java.util.ArrayList<Float> lv = new java.util.ArrayList<>();
-        wav(in, inf, part(p, 0, 0.4), new double[] { 0, 1 }, cancel).run(new Node() {
-            double acc; int k;
-            @Override public void push(float[][] x, int n) {
-                for (int i = 0; i < n; i++) { double e = 0; for (int c = 0; c < ch; c++) e += x[c][i] * x[c][i]; acc += e / ch; if (++k == hop) { lv.add((float) (10 * Math.log10(acc / hop + 1e-12))); acc = 0; k = 0; } }
-            }
-            @Override public void end() { }
-        });
-        int n = lv.size();
-        boolean[] talk = new boolean[n];
-        JSONArray tk = a.getJSONArray("talk");
-        for (int i = 0; i < tk.length(); i++) { JSONArray x = tk.getJSONArray(i); for (int f = Math.max(0, (int) (x.getDouble(0) * 100) - 3); f < Math.min(n, (int) (x.getDouble(1) * 100) + 3); f++) talk[f] = true; }
-        float[] gap = new float[n]; int g = 0;
-        for (int f = 0; f < n; f++) if (!talk[f]) gap[g++] = lv.get(f);
-        if (g < 20) return same(a, new JSONObject().put("none", true));
-        java.util.Arrays.sort(gap, 0, g);
-        double floor = gap[(int) (g * 0.2)], thr = floor + 7;
-        JSONArray map = new JSONArray();
-        double db = -Math.max(6, Math.min(30, 12 * str));
-        int cnt = 0;
-        for (int f = 0; f < n; ) {
-            if (talk[f] || lv.get(f) < thr) { f++; continue; }
-            int s0 = f; while (f < n && !talk[f] && lv.get(f) >= thr - 3) f++;
-            double len = (f - s0) / 100.0;
-            if (len >= 0.12 && len <= 0.9) { map.put(new JSONArray().put(Math.max(0, s0 / 100.0 - 0.03)).put(f / 100.0 + 0.03).put(db)); cnt++; }
+    /** frames that sit at the room's hiss level (≤ noise + 3.5 dB) for at least 0.4 s: nobody speaks there, whatever the detector says */
+    static boolean[] deepQuiet(Speech.Scan sc) {
+        boolean[] d = new boolean[sc.n];
+        double q = sc.noise + 3.5; int min = (int) Math.round(0.4 / Speech.FR);
+        for (int k = 0; k < sc.n; ) {
+            if (sc.lvl[k] > q) { k++; continue; }
+            int s0 = k, miss = 0, e = k;
+            while (k < sc.n && (sc.lvl[k] <= q || ++miss <= 1)) { if (sc.lvl[k] <= q) { e = k; miss = 0; } k++; }
+            if (e - s0 + 1 >= min) for (int j = s0; j <= e; j++) d[j] = true;
+            k = e + 1;
         }
-        if (cnt == 0) return same(a, new JSONObject().put("none", true));
-        Meter m = new Meter(ch, inf.rate);
-        GainMap gm = new GainMap(ch, inf.rate, map, 0, 0.012);
-        gm.to(m).to(new Studio.WavNode(out, inf.rate));
-        wav(in, inf, part(p, 0.4, 1), new double[] { 0, 1 }, cancel).run(gm);
-        return done(out, m, new JSONObject().put("count", cnt));
+        return d;
+    }
+
+    /** 4.11: pauses both methods agree on: below the strict hiss line, and outside detected speech (or a long hiss-level stretch).
+       Longer than `max` → shortened to `keep`. a.talk = detector stretches [[s, e]…] seconds */
+    static JSONObject aiPauses(File in, Info inf, File out, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        double max = Math.max(0.3, a.optDouble("max", 0.8)), keep = Math.min(max, Math.max(0.15, a.optDouble("keep", 0.45)));
+        Speech.Scan sc = Speech.scan(in, inf, part(p, 0, 0.4), cancel);
+        boolean[] vad = new boolean[sc.n], deep = deepQuiet(sc);
+        JSONArray tk = a.getJSONArray("talk");
+        for (int i = 0; i < tk.length(); i++) { JSONArray x = tk.getJSONArray(i); for (int k = Math.max(0, (int) (x.getDouble(0) / Speech.FR)); k < Math.min(sc.n, (int) Math.ceil(x.getDouble(1) / Speech.FR)); k++) vad[k] = true; }
+        double q = sc.noise + 3.5;
+        JSONArray ranges = new JSONArray(), cuts = new JSONArray();
+        double pos = 0, outT = 0, saved = 0, dur = inf.frames / (double) inf.rate;
+        int min = (int) Math.round(max / Speech.FR);
+        for (int k = 0; k < sc.n; ) {
+            boolean quiet = sc.lvl[k] <= q && (!vad[k] || deep[k]);
+            if (!quiet) { k++; continue; }
+            int s0 = k; while (k < sc.n && sc.lvl[k] <= q && (!vad[k] || deep[k])) k++;
+            if (s0 == 0 || k >= sc.n || k - s0 < min) continue;   // the very start and end are left alone, like the plain tool
+            double t0 = s0 * Speech.FR + keep / 2, t1 = k * Speech.FR - keep / 2;
+            if (t1 - t0 < 0.05) continue;
+            ranges.put(new JSONArray().put(pos * 1000).put(t0 * 1000));
+            outT += t0 - pos;
+            cuts.put(new JSONArray().put(Math.round(outT * 1000) / 1000.0).put(Math.round((t1 - t0) * 1000) / 1000.0));
+            saved += t1 - t0; pos = t1;
+        }
+        JSONObject rep = new JSONObject();
+        if (cuts.length() == 0) { rep.put("none", true); return same(a, rep); }
+        ranges.put(new JSONArray().put(pos * 1000).put(dur * 1000 + 1000));
+        Meter m = new Meter(inf.ch, inf.rate);
+        Keep kk = new Keep(ranges, inf.rate);
+        kk.to(m).to(new Studio.WavNode(out, inf.rate));
+        wav(in, inf, part(p, 0.4, 1), new double[] { 0, 1 }, cancel).run(kk);
+        rep.put("count", cuts.length()); rep.put("saved", Math.round(saved * 10) / 10.0); rep.put("cuts", cuts);
+        return done(out, m, rep);
+    }
+
+    /** 4.11: breaths = the plain detector's candidates that Whisper hears no word in (the speech detector itself hears breaths
+       as speech, so it cannot decide). Without the speech-to-text model this is the plain tool. */
+    static JSONObject aiBreathsW(Context c, File in, Info inf, File out, JSONObject a, double str, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        Speech.Scan sc = Speech.scan(in, inf, part(p, 0, 0.3), cancel);
+        java.util.ArrayList<int[]> l = Speech.breaths(sc), ok = new java.util.ArrayList<>();
+        String model = c != null ? AsrModels.pick(c, a.optString("model", "")) : null;
+        if (model != null && !l.isEmpty()) {
+            int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
+            app.sesdefteri.asr.Transcriber tr = new app.sesdefteri.asr.Transcriber(null, AsrModels.dir(c, model).getAbsolutePath(), model, a.optString("lang", ""), threads);
+            RandomAccessFile r = new RandomAccessFile(in, "r");
+            try {
+                for (int i = 0; i < l.size(); i++) {
+                    if (cancel.get()) throw new InterruptedException("cancel");
+                    int[] b = l.get(i);
+                    long f0 = Math.max(0, (long) ((b[0] * Speech.FR - 0.1) * inf.rate)), f1 = Math.min(inf.frames, (long) ((b[1] * Speech.FR + 0.1) * inf.rate));
+                    float[][] x = readRegion(r, inf, f0, (int) (f1 - f0));
+                    float[][] mono = new float[1][x[0].length];
+                    for (int j = 0; j < mono[0].length; j++) { float v = 0; for (int ch = 0; ch < inf.ch; ch++) v += x[ch][j]; mono[0][j] = v / inf.ch; }
+                    app.sesdefteri.dsp.Resampler rs = new app.sesdefteri.dsp.Resampler(1, (double) inf.rate, 16000.0);
+                    Node.Collect col = new Node.Collect(1); rs.to(col); rs.push(mono, mono[0].length); rs.end();
+                    if (hesitation(tr.recognize(col.result()[0]))) ok.add(b);
+                    p.on(0.3 + 0.4 * (i + 1) / l.size());
+                }
+            } finally { r.close(); tr.release(); }
+        } else ok = l;
+        JSONObject rep = new JSONObject();
+        if (ok.isEmpty()) { rep.put("none", true); return same(a, rep); }
+        Meter m = new Meter(inf.ch, inf.rate);
+        GainRegions gr = new GainRegions(ok, sc.hop, -(8 + 10 * str), (int) (inf.rate * 0.015));
+        gr.to(m).to(new Studio.WavNode(out, inf.rate));
+        wav(in, inf, part(p, 0.7, 1), new double[] { 0, 1 }, cancel).run(gr);
+        rep.put("count", ok.size()); rep.put("checked", l.size());
+        return done(out, m, rep);
     }
 
     static JSONObject pauses(File in, Info inf, File out, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
@@ -824,6 +889,8 @@ final class Workspace {
 
     /** Whisper's text for a snippet: nothing, or only hesitation sounds */
     static boolean hesitation(String t) {
+        // 4.11: Whisper labels non-speech sounds instead of words: "[Müzik]", "(nefes)", "*öksürük*", "♪" are not speech
+        t = t.replaceAll("\\[[^\\]]*\\]?|\\([^)]*\\)?|\\*[^*]*\\*?|♪", " ");
         String[] w = t.toLowerCase(java.util.Locale.ROOT).replaceAll("[^\\p{L}\\s]", " ").trim().split("\\s+");
         for (String x : w) if (!x.isEmpty() && !HES.matcher(x).matches()) return false;
         return true;

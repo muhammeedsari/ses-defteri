@@ -238,7 +238,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.10.1';
+const VERSION = '4.11';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -2903,10 +2903,11 @@ function tlSpeed() {
 /** runs one processing step on the clip's file; the clip then points at the new file */
 async function tlEffect(c, op, extra) {
   if (TL.busy) return;
+  TL.lastRep = null;
   tlStop();
   let res;
   let b0 = null;
-  if ((op === 'cut' || op === 'aipauses') && extra && extra.keep) extra.keep = extra.keep.map(([a, b]) => [Math.max(a, c.in * 1000), Math.min(b, c.out * 1000)]).filter(([a, b]) => b - a > 5);
+  if ((op === 'cut' || op === 'aipauses') && extra && Array.isArray(extra.keep)) extra.keep = extra.keep.map(([a, b]) => [Math.max(a, c.in * 1000), Math.min(b, c.out * 1000)]).filter(([a, b]) => b - a > 5);
   else if ((op === 'trim' || op === 'pauses') && (c.in > 0.02 || c.out < c.dur - 0.02)) {   // 4.4: a trimmed clip: work on what is seen, the cut-off parts stay gone
     let sg; try { sg = await tlRunJob(t('op_' + op), 'tlRender', { clips: [{ path: c.path, at: 0, in: c.in, len: tlLen(c), g: 1, fi: 0, fo: 0, xi: 0, xo: 0, env: null, eq: null, bass: 0, treble: 0 }], dir: 'proj', limit: false }); } catch (e) { toast(errText(e), 5000); return; }
     b0 = tlSnap();
@@ -2926,6 +2927,7 @@ async function tlEffect(c, op, extra) {
   c.out = Math.min(c.out, nd); c.in = Math.min(c.in, c.out - 0.05);
   c.fx = (c.fx || []).concat([{ op, r: wsReport(op, res) || '' }]);
   if (same) tlDiff(c.id, old, res.path);
+  TL.lastRep = res.report || null;
   if (op === 'eq' && S.learnVoice && res.report && res.report.tone) addVoiceProfile(res.report.tone);
   tlCommit(before);
   toast(wsReport(op, res) || t('wsDone'), 3500);
@@ -4222,21 +4224,13 @@ async function tlAiGate(c) {
   if (!segs.length) { toast(t('aiNoSpeech'), 3500); return; }
   tlEffect(c, 'aigate', { map: segs.map(([a, b]) => [Math.max(0, a - 0.15), b + 0.1, 0]), rest: +v, ramp: 0.025 });
 }
-/** long thinking pauses get shorter, natural sentence gaps stay */
+/** long thinking pauses get shorter, natural sentence gaps stay: a pause counts only where both the speech detector and the
+   loudness agree nobody speaks (4.11), so soft sentence endings are never cut */
 async function tlAiPauses(c) {
   if (TL.busy) return;
   const segs = await tlVad(c, 0.25); if (!segs) return;
-  const MAX = 0.8, KEEP = 0.45, keep = []; let pos = c.in, n = 0, saved = 0;
-  for (let i = 1; i < segs.length; i++) {
-    const g0 = segs[i - 1][1], g1 = segs[i][0];
-    if (g1 - g0 <= MAX) continue;
-    const a = g0 + KEEP / 2, b = g1 - KEEP / 2;
-    keep.push([pos * 1000, a * 1000]); pos = b; n++; saved += b - a;
-  }
-  if (!n) { toast(t('fxNone', { x: t('op_aipauses') }), 3500); return; }
-  keep.push([pos * 1000, c.out * 1000]);
-  await tlEffect(c, 'aipauses', { keep });
-  toast(t('aiPausesDone', { n, s: nf1.format(saved) }), 4000);
+  await tlEffect(c, 'aipauses', { talk: segs, max: 0.8, keep: 0.45 });
+  const r = TL.lastRep; if (r && r.count) toast(t('aiPausesDone', { n: r.count, s: nf1.format(r.saved || 0) }), 4000);
 }
 /** every speaker to the same level (interviews: one loud, one quiet) */
 async function tlAiLevel(c) {
@@ -4253,12 +4247,11 @@ async function tlAiLevel(c) {
   await tlEffect(c, 'ailevel', { map, rest: 0, ramp: 0.08 });
   toast(t('aiLevelDone', { n: res.n }), 4000);
 }
-/** 4.10: breaths turned down only where the speech detector heard no words */
+/** 4.11: breath candidates of the plain tool, each one checked by Whisper: words are never turned down */
 async function tlAiBreaths(c) {
   if (TL.busy) return;
-  const segs = await tlVad(c, 0.15); if (!segs) return;
-  if (!segs.length) { toast(t('aiNoSpeech'), 3500); return; }
-  tlEffect(c, 'aibreaths', { talk: segs });
+  if (CAPS.asr && !hasAsr()) { if (await asrOffer()) toast(t('flaiReady'), 4000); return; }
+  tlEffect(c, 'aibreaths', flAi());
 }
 /** 4.10: music tracks dip only while somebody speaks (the detector decides, not the loudness: a cough or a clap does not count) */
 const tlTalkClips = () => TL.p.clips.filter(c => { const tr = TL.p.tracks[c.tr]; return tr && !tr.mute && !tr.duck && tlKind(c.tr) !== 'music'; });
