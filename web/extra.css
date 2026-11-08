@@ -447,8 +447,9 @@ body.ed .tl-top{margin-top:8px}
 .tc-score{--h:calc(var(--s) * 1.2);flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:700 12.5px var(--f-mono);color:hsl(var(--h) 60% 38%);background:hsl(var(--h) 70% 50% / .16)}
 .tc-go{flex:none;height:32px;padding:0 14px;border-radius:999px;background:var(--accent);color:#fff;font-weight:600;font-size:13px}
 .tc-go:disabled{opacity:.45}
-.tc-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
-.tc-tile{display:grid;justify-items:center;align-content:center;gap:4px;min-height:62px;padding:6px 2px;border-radius:12px;background:var(--surface-2);font-size:11px;line-height:1.15;text-align:center;color:var(--ink)}
+.tc-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}
+.tc-grid.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.tc-tile{display:grid;justify-items:center;align-content:center;gap:3px;min-height:54px;padding:5px 1px;border-radius:11px;background:var(--surface-2);font-size:10.5px;line-height:1.15;text-align:center;color:var(--ink)}
 .tc-tile .ic{width:20px;height:20px}
 .tc-tile span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
 .tc-tile:active{transform:scale(.96)}
@@ -461,7 +462,7 @@ body.ed .tl-top{margin-top:8px}
 .tc-rec{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .tc-rec .hint{border:0;padding:0;background:none;font-size:12.5px;flex:1;min-width:140px}
 .dr-card{max-height:88%}
-.dr-head{position:sticky;top:-1px;z-index:1;background:var(--surface);padding-bottom:8px}
+.dr-head{position:sticky;top:-22px;z-index:2;background:var(--surface);margin:-22px -18px 0;padding:22px 18px 10px}
 .dr-search{display:flex;align-items:center;gap:8px;height:42px;border:1px solid var(--line);border-radius:12px;padding:0 12px;color:var(--muted);margin-top:6px}
 .dr-search input{flex:1;min-width:0;border:0;background:none;font-size:15px;color:var(--ink);outline:none}
 .drawer{display:grid;gap:14px}
@@ -476,4 +477,70 @@ body.ed .tl-top{margin-top:8px}
 .hist{margin:10px 0 0;padding:0 0 0 22px;display:grid;gap:8px}
 .hist li b{display:block;font-size:14px}
 .hist li small{color:var(--muted);font-size:12.5px}
-@media (max-width:360px){.tc-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.dr-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:330px){.tc-tile{font-size:9.5px}.dr-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+/* 4.4: card groups */
+.tc-tile.cat{background:var(--ks);color:var(--ink)}
+.tc-tile.cat .ic{color:var(--kc)}
+.tc-tile.cat.hl{box-shadow:inset 0 0 0 2px var(--kc)}
+.tc-cat{display:flex;align-items:center;gap:4px}
+.tc-cat b{flex:1;color:var(--cc);font-size:14px}
+.tc-cat .icon-btn{width:36px;height:36px}
+/* 4.4: one thin bar on top: logo, tabs (only the open one named), settings */
+.top{padding-block:10px 2px;gap:8px}
+.top .brand{flex:none;gap:0}
+.top .brand>div:not(.logo){display:none}
+#count{display:none}
+.top .logo{width:32px;height:32px;border-radius:9px}
+.top .logo svg{width:22px;height:22px}
+.top .tabs{margin:0;flex:0 1 auto;min-width:0;border-radius:999px;padding:3px;gap:2px}
+.top .tabs button{flex:none;height:34px;border-radius:999px;padding:0 11px;font-size:13.5px;gap:6px}
+.top .tabs button:not([aria-selected="true"]) [data-t]{display:none}
+.top .tabs .ic{width:17px;height:17px}
+.top #setBtn{margin-inline-start:auto}
+.pghead{display:flex;align-items:flex-end;gap:8px;margin-top:12px;min-width:0}
+.pghead[hidden]{display:none}
+.pghead h2{font-family:var(--f-display);font-size:27px;font-weight:800;letter-spacing:-.02em;margin:0;line-height:1}
+.pgsum{color:var(--muted);font-size:12.5px;padding-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.pghead #importBtn{min-height:38px;width:38px;padding:0;border-radius:50%;flex:none}
+.pghead #importBtn [data-t]{display:none}
+.toolbar{padding-block:10px 6px;gap:8px}
+/* 4.4: plain numbers (no typewriter font), except the big recording clock */
+:root{--f-mono:var(--f-body)}
+.timecode{font-family:"IBM Plex Mono",ui-monospace,monospace}
+/* 4.4: tighter record rows: coloured round icon, title, one info line, small wave on the right */
+.rec-open{padding:9px 0 9px 12px;grid-template-columns:34px minmax(0,1fr) 58px;column-gap:10px;row-gap:1px;align-items:center}
+.rec-ic{grid-row:1/span 2;width:34px;height:34px;border-radius:50%;background:var(--c);color:#fff;display:grid;place-items:center}
+.rec-ic .ic{width:14px;height:14px}
+.rec-top,.rec-sub{grid-column:2}
+.rec-title{font-size:14.5px}
+.rec-sub{flex-wrap:nowrap;overflow:hidden;white-space:nowrap;gap:2px 8px;font-size:12px}
+.rec-open .mini-wave{grid-column:3;grid-row:1/span 2;width:58px;height:20px;margin:0}
+.rec-open .hit{grid-column:2/4}
+.rec .fav-btn{width:38px}
+.rec .fav-btn:not(.on){opacity:.45}
+.rec .rec-more{width:32px}
+.day{margin-top:10px}
+.day h3{margin-bottom:6px}
+/* 4.4: music rows */
+.song{padding:7px 10px 7px 8px;gap:11px}
+.song .art{width:44px;height:44px}
+.song-txt b{font-size:14.5px}
+.song-txt span{font-size:12.5px}
+.dup{font-style:normal;font-size:10.5px;font-weight:700;color:var(--accent);background:var(--accent-soft);border-radius:5px;padding:1px 5px;margin-inline-start:6px;vertical-align:1px}
+.album .art .ic{width:40px;height:40px}
+/* 4.4: the record button says "Record" and sits bottom-right */
+.dock .fab{justify-self:end;margin-inline-end:16px;width:auto;height:54px;border-radius:999px;background:var(--rec);border-color:transparent;color:#fff;display:flex;align-items:center;gap:9px;padding:0 20px 0 16px;box-shadow:0 8px 20px rgb(207 42 57 / .35)}
+.dock .fab span{width:18px;height:18px;background:#fff}
+.dock .fab b{font-size:15px;font-weight:700}
+/* 4.4: recorder: level word + bar, purpose cards fold into one line while recording */
+.lvl{display:inline-block;width:120px;height:6px;border-radius:3px;background:var(--stage-line);overflow:hidden;vertical-align:middle}
+.lvl i{display:block;height:100%;border-radius:3px;background:var(--stage-muted);transition:width .12s}
+.lvl.lvGood i{background:#3fbf7a}.lvl.lvQuiet i{background:#8e96a1}.lvl.lvLoud i{background:#e8b13f}.lvl.lvClip i{background:var(--stage-rec)}
+.lvt{font-family:var(--f-body);font-size:12.5px}
+.lvt.lvGood{color:#3fbf7a}.lvt.lvLoud{color:#e8b13f}.lvt.lvClip{color:var(--stage-rec)}
+#recLufs{display:none!important}
+.pu-card small{display:none}
+.rec-sum{display:none;text-align:center;color:var(--stage-muted);font-size:13px;margin:6px 0 0}
+.rec-sheet:not([data-state="idle"]) .rec-sum{display:block}
+.rec-sheet:not([data-state="idle"]) #purposeRow,.rec-sheet:not([data-state="idle"]) #recFx,.rec-sheet:not([data-state="idle"]) #roomBox,.rec-sheet:not([data-state="idle"]) #modeHint{display:none!important}

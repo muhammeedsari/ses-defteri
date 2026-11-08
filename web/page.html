@@ -795,8 +795,9 @@ body.ed .tl-top{margin-top:8px}
 .tc-score{--h:calc(var(--s) * 1.2);flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:700 12.5px var(--f-mono);color:hsl(var(--h) 60% 38%);background:hsl(var(--h) 70% 50% / .16)}
 .tc-go{flex:none;height:32px;padding:0 14px;border-radius:999px;background:var(--accent);color:#fff;font-weight:600;font-size:13px}
 .tc-go:disabled{opacity:.45}
-.tc-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
-.tc-tile{display:grid;justify-items:center;align-content:center;gap:4px;min-height:62px;padding:6px 2px;border-radius:12px;background:var(--surface-2);font-size:11px;line-height:1.15;text-align:center;color:var(--ink)}
+.tc-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}
+.tc-grid.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.tc-tile{display:grid;justify-items:center;align-content:center;gap:3px;min-height:54px;padding:5px 1px;border-radius:11px;background:var(--surface-2);font-size:10.5px;line-height:1.15;text-align:center;color:var(--ink)}
 .tc-tile .ic{width:20px;height:20px}
 .tc-tile span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
 .tc-tile:active{transform:scale(.96)}
@@ -809,7 +810,7 @@ body.ed .tl-top{margin-top:8px}
 .tc-rec{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .tc-rec .hint{border:0;padding:0;background:none;font-size:12.5px;flex:1;min-width:140px}
 .dr-card{max-height:88%}
-.dr-head{position:sticky;top:-1px;z-index:1;background:var(--surface);padding-bottom:8px}
+.dr-head{position:sticky;top:-22px;z-index:2;background:var(--surface);margin:-22px -18px 0;padding:22px 18px 10px}
 .dr-search{display:flex;align-items:center;gap:8px;height:42px;border:1px solid var(--line);border-radius:12px;padding:0 12px;color:var(--muted);margin-top:6px}
 .dr-search input{flex:1;min-width:0;border:0;background:none;font-size:15px;color:var(--ink);outline:none}
 .drawer{display:grid;gap:14px}
@@ -824,7 +825,73 @@ body.ed .tl-top{margin-top:8px}
 .hist{margin:10px 0 0;padding:0 0 0 22px;display:grid;gap:8px}
 .hist li b{display:block;font-size:14px}
 .hist li small{color:var(--muted);font-size:12.5px}
-@media (max-width:360px){.tc-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.dr-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:330px){.tc-tile{font-size:9.5px}.dr-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+/* 4.4: card groups */
+.tc-tile.cat{background:var(--ks);color:var(--ink)}
+.tc-tile.cat .ic{color:var(--kc)}
+.tc-tile.cat.hl{box-shadow:inset 0 0 0 2px var(--kc)}
+.tc-cat{display:flex;align-items:center;gap:4px}
+.tc-cat b{flex:1;color:var(--cc);font-size:14px}
+.tc-cat .icon-btn{width:36px;height:36px}
+/* 4.4: one thin bar on top: logo, tabs (only the open one named), settings */
+.top{padding-block:10px 2px;gap:8px}
+.top .brand{flex:none;gap:0}
+.top .brand>div:not(.logo){display:none}
+#count{display:none}
+.top .logo{width:32px;height:32px;border-radius:9px}
+.top .logo svg{width:22px;height:22px}
+.top .tabs{margin:0;flex:0 1 auto;min-width:0;border-radius:999px;padding:3px;gap:2px}
+.top .tabs button{flex:none;height:34px;border-radius:999px;padding:0 11px;font-size:13.5px;gap:6px}
+.top .tabs button:not([aria-selected="true"]) [data-t]{display:none}
+.top .tabs .ic{width:17px;height:17px}
+.top #setBtn{margin-inline-start:auto}
+.pghead{display:flex;align-items:flex-end;gap:8px;margin-top:12px;min-width:0}
+.pghead[hidden]{display:none}
+.pghead h2{font-family:var(--f-display);font-size:27px;font-weight:800;letter-spacing:-.02em;margin:0;line-height:1}
+.pgsum{color:var(--muted);font-size:12.5px;padding-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.pghead #importBtn{min-height:38px;width:38px;padding:0;border-radius:50%;flex:none}
+.pghead #importBtn [data-t]{display:none}
+.toolbar{padding-block:10px 6px;gap:8px}
+/* 4.4: plain numbers (no typewriter font), except the big recording clock */
+:root{--f-mono:var(--f-body)}
+.timecode{font-family:"IBM Plex Mono",ui-monospace,monospace}
+/* 4.4: tighter record rows: coloured round icon, title, one info line, small wave on the right */
+.rec-open{padding:9px 0 9px 12px;grid-template-columns:34px minmax(0,1fr) 58px;column-gap:10px;row-gap:1px;align-items:center}
+.rec-ic{grid-row:1/span 2;width:34px;height:34px;border-radius:50%;background:var(--c);color:#fff;display:grid;place-items:center}
+.rec-ic .ic{width:14px;height:14px}
+.rec-top,.rec-sub{grid-column:2}
+.rec-title{font-size:14.5px}
+.rec-sub{flex-wrap:nowrap;overflow:hidden;white-space:nowrap;gap:2px 8px;font-size:12px}
+.rec-open .mini-wave{grid-column:3;grid-row:1/span 2;width:58px;height:20px;margin:0}
+.rec-open .hit{grid-column:2/4}
+.rec .fav-btn{width:38px}
+.rec .fav-btn:not(.on){opacity:.45}
+.rec .rec-more{width:32px}
+.day{margin-top:10px}
+.day h3{margin-bottom:6px}
+/* 4.4: music rows */
+.song{padding:7px 10px 7px 8px;gap:11px}
+.song .art{width:44px;height:44px}
+.song-txt b{font-size:14.5px}
+.song-txt span{font-size:12.5px}
+.dup{font-style:normal;font-size:10.5px;font-weight:700;color:var(--accent);background:var(--accent-soft);border-radius:5px;padding:1px 5px;margin-inline-start:6px;vertical-align:1px}
+.album .art .ic{width:40px;height:40px}
+/* 4.4: the record button says "Record" and sits bottom-right */
+.dock .fab{justify-self:end;margin-inline-end:16px;width:auto;height:54px;border-radius:999px;background:var(--rec);border-color:transparent;color:#fff;display:flex;align-items:center;gap:9px;padding:0 20px 0 16px;box-shadow:0 8px 20px rgb(207 42 57 / .35)}
+.dock .fab span{width:18px;height:18px;background:#fff}
+.dock .fab b{font-size:15px;font-weight:700}
+/* 4.4: recorder: level word + bar, purpose cards fold into one line while recording */
+.lvl{display:inline-block;width:120px;height:6px;border-radius:3px;background:var(--stage-line);overflow:hidden;vertical-align:middle}
+.lvl i{display:block;height:100%;border-radius:3px;background:var(--stage-muted);transition:width .12s}
+.lvl.lvGood i{background:#3fbf7a}.lvl.lvQuiet i{background:#8e96a1}.lvl.lvLoud i{background:#e8b13f}.lvl.lvClip i{background:var(--stage-rec)}
+.lvt{font-family:var(--f-body);font-size:12.5px}
+.lvt.lvGood{color:#3fbf7a}.lvt.lvLoud{color:#e8b13f}.lvt.lvClip{color:var(--stage-rec)}
+#recLufs{display:none!important}
+.pu-card small{display:none}
+.rec-sum{display:none;text-align:center;color:var(--stage-muted);font-size:13px;margin:6px 0 0}
+.rec-sheet:not([data-state="idle"]) .rec-sum{display:block}
+.rec-sheet:not([data-state="idle"]) #purposeRow,.rec-sheet:not([data-state="idle"]) #recFx,.rec-sheet:not([data-state="idle"]) #roomBox,.rec-sheet:not([data-state="idle"]) #modeHint{display:none!important}
 </style>
 
 <div class="seltop" id="selTop" hidden></div>
@@ -844,6 +911,7 @@ body.ed .tl-top{margin-top:8px}
     <button class="icon-btn" id="setBtn" type="button" data-ta="settings"></button>
   </header>
 
+  <div class="pghead" id="pgHead"><h2 id="pgTitle"></h2><span class="pgsum" id="pgSum"></span><span class="spacer"></span></div>
   <div class="qa" id="qa" hidden></div>
   <div class="tabs" id="tabs" role="tablist" hidden>
     <button type="button" role="tab" data-tab="rec" aria-selected="true"><span id="tabRecIc"></span><span data-t="tabRec"></span></button>
@@ -1050,6 +1118,7 @@ body.ed .tl-top{margin-top:8px}
 <script src="i18n34.js"></script>
 <script src="i18n35.js"></script>
 <script src="i18n36.js"></script>
+<script src="i18n37.js"></script>
 <script>
 (() => {
 'use strict';
@@ -1060,7 +1129,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.3';
+const VERSION = '4.4';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1948,7 +2017,7 @@ function rowHTML(r) {
   const bz = BUSY.get(r.id);
   if (bz) sub += `<span class="busy-pill" data-busy="${esc(r.id)}">${esc(busyLabel(bz))}</span>`;
   return `<article class="rec${S.cur === r.id && !audio.paused ? ' playing' : ''}${SEL && SEL.has(r.id) ? ' picked' : ''}">
-    <button class="rec-open" type="button" data-open="${esc(r.id)}">
+    <button class="rec-open" type="button" data-open="${esc(r.id)}"><span class="rec-ic" style="--c:${c ? c.color : 'var(--muted)'}">${ic(S.cur === r.id && !audio.paused ? 'pause' : 'play')}</span>
       <span class="rec-top"><span class="rec-title">${esc(r.title)}</span>${r.sample ? `<span class="pill">${esc(t('sample'))}</span>` : ''}${r.cleaned ? `<span class="pill">${esc(t('clTag'))}</span>` : ''}</span>
       <span class="rec-sub">${sub}</span>${hitLine(r)}${miniWave(r)}
     </button>
@@ -2017,6 +2086,11 @@ function renderSummary() {
   const parts = all.length ? [t('nRecs', { n: all.length }), fmtLong(tot)].concat(size ? [fmtSize(size)] : []) : [t('summaryEmpty')];
   if (NATIVE && mus) parts.push(t('nSongs', { n: mus }));
   $('#summary').innerHTML = parts.map(x => `<span>${esc(x)}</span>`).join(' · ');
+  // 4.4: the title row of each tab carries its own numbers
+  const music = NATIVE && S.tab === 'music';
+  $('#pgTitle').textContent = t(music ? 'tabMusic' : 'tabRec');
+  $('#pgSum').textContent = music ? (mus ? t('nSongs', { n: mus }) : '') : all.length ? t('nRecs', { n: all.length }) + ' · ' + fmtLong(tot) : '';
+  $('#pgHead').hidden = S.tab === 'edit';
 }
 function renderTabs() {
   if (!NATIVE) return;
@@ -2032,20 +2106,21 @@ function renderTabs() {
   $('#q').placeholder = t(music ? 'searchMusic' : 'searchRec');
   $('#libNote').hidden = music || S.media || ls.get('libNoteX', false);
   tlQBar(); renderQa(); if (booted) coachMaybe();
+  $('#pgHead').hidden = edit;
 }
 function render() { renderTabs(); renderChips(); renderList(); renderSummary(); updateMini(); }
 
 $('#tabs').addEventListener('click', e => {
   const b = e.target.closest('[data-tab]'); if (!b) return;
   if (b.dataset.tab !== 'edit') tlStop();
-  selEnd(); S.tab = b.dataset.tab; ls.set('tab', S.tab); listLimit = 120; musicLimit = 150; render(); scrollTo(0, 0);
+  selEnd(); S.tab = b.dataset.tab; ls.set('tab', S.tab); listLimit = 120; musicLimit = 150; render(); scrollTo(0, 0); $('#chips').scrollLeft = 0;
 });
 $('#chips').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.hasAttribute('data-cats')) return openCategories();
   if (b.dataset.mv) { S.mview = b.dataset.mv; ls.set('mview', S.mview); musicLimit = 150; render(); return; }
   S.filter = b.dataset.f; ls.set('filter', S.filter); render();
-  b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  const on = $('#chips [aria-pressed="true"]'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 });
 $('#list').addEventListener('click', e => {
   if (e.target.closest('[data-more]')) { listLimit += 200; renderList(); return; }
@@ -2063,13 +2138,14 @@ const artistOf = s => (s.artist || '').trim() || t('unknownArtist');
 function hue(s) { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
 function artEl(s, id) {
   // the letter sits under the cover; the cover removes itself when the phone has none
-  const letter = esc(((s.album || s.title || '?').trim()[0] || '?').toLocaleUpperCase(LOC));
+  const letter = ic('note', 1.8);
   const img = s.cover ? `<img src="${s.cover}" alt="">` : NATIVE && s.albumId >= 0 ? `<img src="/__art/${s.albumId}" alt="" loading="lazy" onerror="this.remove()">` : '';
-  return `<span class="art"${id ? ` id="${id}"` : ''} style="background:hsl(${hue(s.album || s.title)} 30% 50% / .22)">${letter}${img}</span>`;
+  const hh = hue(s.album || s.title);
+  return `<span class="art"${id ? ` id="${id}"` : ''} style="background:linear-gradient(135deg,hsl(${hh} 70% 58%),hsl(${(hh + 40) % 360} 75% 52%));color:#fff">${letter}${img}</span>`;
 }
 function songRow(s, i, listKey) {
   return `<button class="song${S.cur === s.id ? ' on' : ''}${SEL && SEL.has(s.id) ? ' picked' : ''}" type="button" data-song="${i}" data-list="${listKey}">${artEl(s)}
-    <span class="song-txt"><b>${esc(s.title)}</b><span>${esc(artistOf(s))}${s.album ? ' · ' + esc(s.album) : ''}</span></span>
+    <span class="song-txt"><b>${esc(s.title)}${s.dupN > 1 ? `<i class="dup">×${s.dupN}</i>` : ''}</b><span>${esc(artistOf(s))}${s.album ? ' · ' + esc(s.album) : ''}</span></span>
     <span class="dur tc">${fmt(s.duration)}</span><span class="song-more" role="button" tabindex="0" data-smenu="${i}" data-list="${listKey}" aria-label="${esc(t('more'))}">${ic('dots')}</span></button>`;
 }
 const LISTS = { all: [], coll: [] };
@@ -2093,7 +2169,7 @@ function renderMusic() {
   const box = $('#music'), empty = $('#empty');
   empty.hidden = true;
   if (!S.media) { box.innerHTML = permCard(); return; }
-  const songs = songsFiltered();
+  let songs = songsFiltered();
   LISTS.all = songs;
   if (S.mview === 'lists') { box.innerHTML = playlistsHTML(); return; }
   if (!songs.length) {
@@ -2102,10 +2178,13 @@ function renderMusic() {
     empty.hidden = false; return;
   }
   if (S.mview === 'songs') {
+    const seen = new Map(), uniq = [];   // 4.4: one row for the same file found in several folders
+    for (const x of songs) { const k = norm(x.title) + '|' + Math.round(x.duration || 0); const f = seen.get(k); if (f) f.dupN = (f.dupN || 1) + 1; else { x.dupN = 1; seen.set(k, x); uniq.push(x); } }
+    LISTS.all = songs = uniq;
     const shown = songs.slice(0, musicLimit);
     box.innerHTML = `<div class="music-actions"><button class="btn sm primary" type="button" data-playall="all">${ic('play')}${esc(t('playAll'))}</button>
       <button class="btn sm" type="button" data-shuffle="all">${ic('shuffle')}${esc(t('shuffle'))}</button><span class="spacer"></span>
-      <span class="tc" style="color:var(--muted);font-size:13px">${esc(t('nSongs', { n: songs.length }))}</span><button class="sort-btn" type="button" data-msort aria-label="${esc(t('sortT'))}">${sortBtnHTML('music')}</button></div>
+      <button class="sort-btn" type="button" data-msort aria-label="${esc(t('sortT'))}">${sortBtnHTML('music')}</button></div>
       <div class="songs">${shown.map((s, i) => songRow(s, i, 'all')).join('')}</div>
       ${songs.length > shown.length ? `<button class="btn more" type="button" data-mmore>${esc(t('moreSongs', { n: songs.length - shown.length }))}</button>` : ''}`;
   } else if (S.mview === 'albums') {
@@ -3278,7 +3357,7 @@ function srtOf(segs) {
 }
 /* ---------- edit sound: every step is its own file you can play, compare and undo ---------- */
 /* ---------- "Edit sound": multitrack timeline ---------- */
-const TL_MAX = 6, TL_RULER = 26; let TL_ROW = 58;   // 4.3: one track gets a taller row
+const TL_MAX = 4, TL_RULER = 26, TL_ADD = 44; let TL_ROW = 58;   // 4.3: one track gets a taller row
 const TL = { p: null, sel: null, pos: 0, pps: 40, play: false, busy: null, undo: [], redo: [], raf: 0, cleanT: 0, rec: null, snap: ls.get('tlSnap', true), guide: null, env: false, meter: ls.get('tlMeter', false), mv: null };
 const tlNew = () => ({ tracks: [{ vol: 0, mute: false }], clips: [] });
 function tlLoad() {
@@ -3298,6 +3377,7 @@ function tlItem(c) {
 }
 /** record a change: the state before it goes on the undo stack */
 function tlCommit(before) {
+  tlUnstack();
   if (before === tlSnap()) return;
   TL.undo.push(before); if (TL.undo.length > 40) TL.undo.shift();
   TL.redo = [];
@@ -3385,11 +3465,27 @@ function tlTrimFit(c, m) {
   c.fi = Math.min(c.fi || 0, tlLen(c) / 2); c.fo = Math.min(c.fo || 0, tlLen(c) / 2);
 }
 /** first track where [a, b) is free, a new one if there is room, else the first */
-function tlFreeTrack(a, b, skipId, prefer) {
+function tlFree(a, b, skipId, prefer) {
   const free = i => !TL.p.clips.some(c => c.id !== skipId && c.tr === i && c.at < b - 0.001 && c.at + tlLen(c) > a + 0.001);
-  if (prefer != null && prefer < TL_MAX && free(prefer)) return prefer;
+  if (prefer != null && prefer < Math.max(TL_MAX, TL.p.tracks.length) && free(prefer)) return prefer;
   for (let i = 0; i < TL.p.tracks.length; i++) if (free(i)) return i;
-  return TL.p.tracks.length < TL_MAX ? TL.p.tracks.length : prefer != null ? prefer : 0;
+  return TL.p.tracks.length < TL_MAX ? TL.p.tracks.length : -1;
+}
+function tlFreeTrack(a, b, skipId, prefer) { const i = tlFree(a, b, skipId, prefer); return i >= 0 ? i : prefer != null ? prefer : 0; }
+/** 4.4: no two clips ever lie on top of each other: a clip that does (an effect made it longer, the tracks were full…) moves
+   to a free track, or after the last clip of the track that ends first when all 4 are full */
+function tlUnstack() {
+  const cs = TL.p.clips; let full = false;
+  for (let i = 1; i < cs.length; i++) {
+    const c = cs[i], a = c.at, b = a + tlLen(c);
+    if (!cs.slice(0, i).some(d => d.tr === c.tr && d.at < b - 0.001 && d.at + tlLen(d) > a + 0.001) || tlXfOk(c)) continue;
+    const tr = tlFree(a, b, c.id, c.tr);
+    if (tr >= 0) { c.tr = tr; tlEnsureTrack(tr); continue; }
+    let best = 0, be = Infinity;
+    for (let j = 0; j < TL.p.tracks.length; j++) { const e = cs.reduce((m, d) => d !== c && d.tr === j ? Math.max(m, d.at + tlLen(d)) : m, 0); if (e < be) { be = e; best = j; } }
+    c.tr = best; c.at = be; full = true;
+  }
+  if (full) toast(t('tlFull'), 4500);
 }
 function tlEnsureTrack(i) { while (TL.p.tracks.length <= i) TL.p.tracks.push({ vol: 0, mute: false }); }
 
@@ -3622,9 +3718,17 @@ async function tlEffect(c, op, extra) {
   if (TL.busy) return;
   tlStop();
   let res;
-  try { res = await tlRunJob(t('op_' + op), 'wsOp', Object.assign({ path: c.path, op }, extra || {})); } catch (e) { toast(errText(e), 5000); return; }
+  let b0 = null;
+  if (op === 'cut' && extra && extra.keep) extra.keep = extra.keep.map(([a, b]) => [Math.max(a, c.in * 1000), Math.min(b, c.out * 1000)]).filter(([a, b]) => b - a > 5);
+  else if ((op === 'trim' || op === 'pauses') && (c.in > 0.02 || c.out < c.dur - 0.02)) {   // 4.4: a trimmed clip: work on what is seen, the cut-off parts stay gone
+    let sg; try { sg = await tlRunJob(t('op_' + op), 'tlRender', { clips: [{ path: c.path, at: 0, in: c.in, len: tlLen(c), g: 1, fi: 0, fo: 0, xi: 0, xo: 0, env: null, eq: null, bass: 0, treble: 0 }], dir: 'proj', limit: false }); } catch (e) { toast(errText(e), 5000); return; }
+    b0 = tlSnap();
+    if (c.env) c.env = c.env.map(([x, d]) => [Math.round((x - c.in) * 1000) / 1000, d]).filter(([x]) => x >= 0);
+    Object.assign(c, { path: sg.path, dur: sg.dur / 1000, ch: sg.ch, in: 0 }); c.out = c.dur;
+  }
+  try { res = await tlRunJob(t('op_' + op), 'wsOp', Object.assign({ path: c.path, op }, extra || {})); } catch (e) { if (b0) { TL.p = JSON.parse(b0); drawTl(); } toast(errText(e), 5000); return; }
   if (res.same) { toast(res.report && res.report.none ? t('fxNone', { x: t('op_' + op) }) : t('wsSame'), 4000); return; }
-  const before = tlSnap(), nd = res.dur / 1000;
+  const before = b0 || tlSnap(), nd = res.dur / 1000;
   if (Math.abs(nd - c.dur) > 0.01) {
     if (op === 'speed') { const f = nd / c.dur; c.in *= f; c.out = Math.min(nd, c.out * f); c.fi *= f; c.fo *= f; if (c.env) c.env = c.env.map(([x, d]) => [x * f, d]); }
     else { c.in = 0; c.out = nd; delete c.env; }
@@ -3859,7 +3963,7 @@ function tlBusyUi() {
   $('#tlBusyT').textContent = t('wsBusy', { op: TL.busy.label, p: Math.round(TL.busy.p * 100) });
   $('#tlBusyBar').style.width = Math.round(TL.busy.p * 100) + '%';
 }
-function tlHeight() { tlLayout(); return TL_RULER + (TL.p.tracks.length + (TL.p.tracks.length < TL_MAX ? 1 : 0)) * TL_ROW; }
+function tlHeight() { tlLayout(); return TL_RULER + TL.p.tracks.length * TL_ROW + (TL.p.tracks.length < TL_MAX ? TL_ADD : 0); }
 function drawTl() {
   if (S.tab !== 'edit' || !TL.p) return;
   const cv = $('#tl'); if (!cv) return;
@@ -3870,8 +3974,8 @@ function drawTl() {
   const st = rulerStep(pps), sub = st / 5;
   ctx.font = `11px ${MONO}`; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
   const t0 = Math.max(0, TL.pos - cx / pps), t1 = TL.pos + (w - cx) / pps;
-  for (let s = Math.ceil(t0 / sub) * sub; s <= t1; s += sub) {
-    const x = X(s), major = Math.abs(s / st - Math.round(s / st)) < 1e-6;
+  for (let q = Math.ceil(t0 / sub - 1e-6); q * sub <= t1; q++) {
+    const s = Math.round(q * sub * 1000) / 1000, x = X(s), major = q % 5 === 0;
     ctx.fillStyle = COL.line; ctx.fillRect(x - 0.5, TL_RULER - (major ? 8 : 4), 1, major ? 8 : 4);
     if (major) { ctx.fillStyle = COL.muted; ctx.fillText(fmt(s), x, 3); }
   }
@@ -3884,8 +3988,8 @@ function drawTl() {
   if (rows < TL_MAX) {
     const y = TL_RULER + rows * TL_ROW;
     ctx.fillStyle = COL.muted; ctx.font = `12px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('+  ' + t('tkAdd'), (w + HD) / 2, y + TL_ROW / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = `11px ${MONO}`;
-    ctx.strokeStyle = COL.line; ctx.setLineDash([4, 4]); ctx.strokeRect(HD + 8.5, y + 6.5, w - HD - 17, Math.min(44, TL_ROW - 13)); ctx.setLineDash([]);
+    ctx.font = `12px ${SANS}`; ctx.fillText('+  ' + t('tkAdd'), (w + HD) / 2, y + TL_ADD / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = `11px ${MONO}`;
+    ctx.strokeStyle = COL.line; ctx.setLineDash([4, 4]); ctx.strokeRect(HD + 8.5, y + 6.5, w - HD - 17, TL_ADD - 13); ctx.setLineDash([]);
   }
   // metronome grid: bar lines stronger than beats
   const ck = TL.p.click;
@@ -3897,9 +4001,8 @@ function drawTl() {
     }
     ctx.globalAlpha = 1;
   }
-  const x0Start = X(0); if (x0Start > 0) { ctx.fillStyle = COL.line; ctx.globalAlpha = 0.25; ctx.fillRect(0, TL_RULER, x0Start, h - TL_RULER); ctx.globalAlpha = 1; }
   // clips
-  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.font = `600 11.5px ${MONO}`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.font = `600 10.5px ${SANS}`;
   for (const k of TL.p.clips) {
     const len = tlLen(k), x0 = X(k.at), x1 = X(k.at + len);
     if (x1 < 0 || x0 > w) continue;
@@ -3943,10 +4046,8 @@ function drawTl() {
       ctx.globalAlpha = tr.mute ? 0.35 : 1;
     }
     // label
-    ctx.save(); ctx.beginPath(); ctx.rect(Math.max(x0, 0) + 6, y, Math.max(0, Math.min(x1, w) - Math.max(x0, 0) - 12), hh); ctx.clip();
-    ctx.fillStyle = COL.ink;
-    ctx.fillText((k.name || '') + (k.gain ? '  ' + dbTxt(k.gain) : ''), Math.max(x0, 0) + 8, y + 4);
-    ctx.restore();
+    { const lx = Math.max(x0, HD) + (sel ? 14 : 7), lw = Math.min(x1, w) - lx - (sel ? 14 : 7);
+      if (lw > 14) { ctx.fillStyle = COL.ink; ctx.globalAlpha *= 0.85; ctx.fillText(fitTxt(ctx, (k.name || '') + (k.gain ? '  ' + dbTxt(k.gain) : ''), lw), lx, y + 4); ctx.globalAlpha = tr.mute ? 0.35 : 1; } }
     if (sel) {
       ctx.strokeStyle = COL.ink; ctx.lineWidth = 2; ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(x0 + 1, y + 1, x1 - x0 - 2, hh - 2, 7); else ctx.rect(x0 + 1, y + 1, x1 - x0 - 2, hh - 2);
@@ -3972,25 +4073,18 @@ function drawTl() {
     const pre = TL.rec.pre || 0, len = (performance.now() - TL.rec.t0) / 1000 - pre, row = Math.min(TL.p.tracks.length, TL_MAX - 1), y = TL_RULER + row * TL_ROW + 4;
     if (len > 0) { ctx.fillStyle = COL.rec; ctx.globalAlpha = 0.35; rr(ctx, X(TL.rec.at + pre), y, Math.max(2, len * pps), TL_ROW - 9, 7); ctx.globalAlpha = 1; }
   }
-  // 4.3: a header column per track: colour, name, speaker (tap the speaker to mute, the name for the menu)
+  // 4.4: a thin header per track: colour strip and kind icon (tap = track menu)
   if (HD) {
     ctx.fillStyle = COL.surface; ctx.fillRect(0, 0, HD, h);
     ctx.fillStyle = COL.line; ctx.fillRect(HD - 1, 0, 1, h);
     for (let i = 0; i < rows; i++) {
-      const y = TL_RULER + i * TL_ROW, tr = TL.p.tracks[i], KC = TK[tlKind(i)], mu = tr.mute;
-      ctx.globalAlpha = mu ? 0.45 : 1;
+      const y = TL_RULER + i * TL_ROW, tr = TL.p.tracks[i], KC = TK[tlKind(i)], mu = tr.mute, cy = y + TL_ROW / 2;
+      ctx.globalAlpha = mu ? 0.4 : 1;
       ctx.fillStyle = KC.c; ctx.fillRect(0, y + 3, 4, TL_ROW - 6);
-      ctx.font = `600 12px ${SANS}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.save(); ctx.beginPath(); ctx.rect(8, y, HD - 12, TL_ROW); ctx.clip();
-      ctx.fillText(tlTrackName(i), 10, y + 9); ctx.restore();
-      const sy = y + TL_ROW - 26, ink = mu ? COL.rec : COL.muted;
-      ctx.fillStyle = ink; ctx.strokeStyle = ink; ctx.lineWidth = 1.4;
-      ctx.beginPath(); ctx.moveTo(10, sy + 6); ctx.lineTo(13, sy + 6); ctx.lineTo(17, sy + 2.5); ctx.lineTo(17, sy + 14.5); ctx.lineTo(13, sy + 11); ctx.lineTo(10, sy + 11); ctx.closePath(); ctx.fill();
-      ctx.beginPath();
-      if (mu) { ctx.moveTo(20, sy + 5); ctx.lineTo(26, sy + 11); ctx.moveTo(26, sy + 5); ctx.lineTo(20, sy + 11); }
-      else { ctx.arc(18, sy + 8.5, 4, -0.9, 0.9); if (!tr.duck) { ctx.moveTo(21.8, sy + 2); ctx.arc(18, sy + 8.5, 7.5, -0.9, 0.9); } }
-      ctx.stroke();
-      if (tr.duck) { ctx.font = `600 9.5px ${SANS}`; ctx.fillText('duck', 30, sy + 3); }
+      ctx.fillStyle = KC.soft; rr(ctx, HD / 2 - 11, cy - 11, 24, 22, 6);
+      ctx.save(); ctx.translate(HD / 2 - 9, cy - 9); ctx.scale(0.75, 0.75);
+      ctx.strokeStyle = KC.c; ctx.lineWidth = 2; ctx.lineCap = ctx.lineJoin = 'round'; ctx.stroke(icPath(KC.ic)); ctx.restore();
+      if (mu) { ctx.strokeStyle = COL.ink; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(HD / 2 - 9, cy + 9); ctx.lineTo(HD / 2 + 11, cy - 9); ctx.stroke(); }
       ctx.globalAlpha = 1;
     }
   }
@@ -4043,11 +4137,7 @@ function drawWs() { drawTl(); }
     if (p.x < tlHdr()) {   // 4.3: the track header: speaker = mute, name = menu
       pts.delete(e.pointerId);
       if (row < 0 || row >= TL.p.tracks.length) return;
-      if (p.y - (TL_RULER + row * TL_ROW) > TL_ROW - 30) {
-        const tr = TL.p.tracks[row]; tr.mute = !tr.mute;
-        tlCommit(before);
-        toast(t(tr.mute ? 'tlMuted' : 'tlUnmuted', { n: tlTrackName(row) }));
-      } else tlTrackMenu(row);
+      tlTrackMenu(row);
       return;
     }
     const base = { x0: e.clientX, y0: e.clientY, moved: false, before, st0: ($('#tlScroll') || {}).scrollTop || 0 };
@@ -4171,6 +4261,8 @@ function tlAct(e) {
   tlDo(b.dataset.tl, b);
 }
 function tlDo(k, b) {
+  if (k.startsWith('cat:')) { const c = tlSel(); if (c) { TL.cat = k.slice(4); TL.catId = c.id; renderTlBar(); } return; }
+  if (k === 'catx') { TL.cat = null; renderTlBar(); return; }
   if (k.startsWith('op:')) { const c = tlSel(); if (c) tlFxRun(c, k.slice(3)); return; }
   if (k === 'more') tlMore();
   else if (k === 'all') tlAll();
@@ -5325,8 +5417,8 @@ function openRecorder() {
   R.state = 'idle'; R.levels = []; R.marks = []; R.acc = 0; R.win = []; R.warnClip = 0; R.callPaused = false;
   if (!R.purpose) R.purpose = ls.get('purpose', R.mode === 'music' ? 'music' : 'youtube');
   $('#roomRes').textContent = ''; $('#roomBtn').innerHTML = ic('wave') + esc(t('roomBtn'));
-  setMode(R.mode); updateRecUI(); showRecTime(0); $('#recPeak').textContent = '−∞ dB';
-  $('#recFoot').textContent = t(NATIVE ? 'recFootN' : 'recFootW');
+  setMode(R.mode); updateRecUI(); showRecTime(0); $('#recPeak').innerHTML = `<span class="lvl"><i style="width:0"></i></span><span class="lvt">${esc(t('lvNone'))}</span>`;
+  const nf = ls.get('recFootN', 0); $('#recFoot').textContent = nf < 3 ? t(NATIVE ? 'recFootN' : 'recFootW') : ''; ls.set('recFootN', nf + 1);
   openOverlay('rec'); updateMini();
   requestAnimationFrame(drawLive);
 }
@@ -5503,7 +5595,8 @@ function loopRec() {
     const lvl = m > 0 ? 20 * Math.log10(m) : -Infinity, now = performance.now();
     if (lvl > R.peakDb || now - R.peakAt > 900) { R.peakDb = lvl; R.peakAt = now; }
     if (++frame % 4 === 0) {
-      $('#recPeak').innerHTML = m >= 0.995 ? '<span class="clip">CLIP 0 dB</span>' : (R.peakDb < -60 || !isFinite(R.peakDb) ? '−∞ dB' : `${Math.round(R.peakDb).toString().replace('-', '−')} dB`);
+      const db = m >= 0.995 ? 0 : R.peakDb, lk = !isFinite(db) || db < -60 ? 'lvNone' : db < -36 ? 'lvQuiet' : db < -4 ? 'lvGood' : db < -0.5 ? 'lvLoud' : 'lvClip';
+      $('#recPeak').innerHTML = `<span class="lvl ${lk}"><i style="width:${Math.round(clamp(((isFinite(db) ? db : -60) + 60) / 60, 0, 1) * 100)}%"></i></span><span class="lvt ${lk}">${esc(t(lk))}</span>`;
     }
     drawLive();
   };
@@ -6503,7 +6596,7 @@ function coachRun(steps) {
 const QA = [['rec', 'mic', 'qaRec'], ['open', 'import', 'qaOpen'], ['edit', 'scissors', 'qaEdit'], ['video', 'film', 'qaVideo'], ['music', 'note', 'qaMusic']];
 function renderQa() {
   const q = $('#qa'); if (!q) return;
-  const on = NATIVE && S.tab === 'rec' && ls.get('qaOn', true);
+  const on = NATIVE && S.tab === 'rec' && ls.get('qaOn', true) && !recItems().length;
   q.hidden = !on;
   if (on && !q.childElementCount) q.innerHTML = QA.map(([k, i, l]) => `<button type="button" class="qa-${k}" data-qa="${k}">${ic(i, 2)}<b>${esc(t(l))}</b>${k === 'rec' ? `<small>${esc(t('qaRecD'))}</small>` : ''}</button>`).join('');
 }
@@ -6527,14 +6620,37 @@ Object.assign(P, {
   trebI: '<path d="M3 16h6c3 0 3-8 6-8s3 8 6 8"/>',
   fade: '<path d="M3 20 21 4M3 20h18"/>',
   sil: '<path d="M4 12h16M4 8v8M20 8v8"/>',
-  hp: '<path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z"/>'
+  hp: '<path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z"/>',
+  mergeI: '<rect x="3" y="8" width="7" height="8" rx="1.5"/><rect x="14" y="8" width="7" height="8" rx="1.5"/><path d="M10 12h4"/>',
+  dupI: '<rect x="3" y="8" width="8" height="8" rx="1.5"/><rect x="13" y="8" width="8" height="8" rx="1.5" stroke-dasharray="2 2"/>',
+  gapI: '<path d="M3 12h4M17 12h4M9 7v10M15 7v10"/>',
+  trimI: '<path d="M4 6v12M20 6v12M8 12h8M8 12l2-2M8 12l2 2M16 12l-2-2M16 12l-2 2"/>',
+  backI: '<path d="M15 5l-7 7 7 7"/>'
 });
+/* canvas copies of the line icons (for the track headers) */
+const IPC = {};
+function icPath(n) {
+  if (IPC[n]) return IPC[n];
+  const p = new Path2D(), m = P[n] || '';
+  m.replace(/<path d="([^"]+)"/g, (x, d) => { p.addPath(new Path2D(d)); return x; });
+  m.replace(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"(?: rx="([\d.]+)")?/g, (x, a, b, w, h, r) => { if (p.roundRect) p.roundRect(+a, +b, +w, +h, +(r || 0)); else p.rect(+a, +b, +w, +h); return x; });
+  m.replace(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/g, (x, a, b, r) => { p.moveTo(+a + +r, +b); p.arc(+a, +b, +r, 0, 7); return x; });
+  return IPC[n] = p;
+}
+/** text cut to a width with "…" */
+function fitTxt(ctx, s, w) {
+  if (ctx.measureText(s).width <= w) return s;
+  let lo = 0, hi = s.length;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (ctx.measureText(s.slice(0, m) + '…').width <= w) lo = m; else hi = m - 1; }
+  return lo ? s.slice(0, lo) + '…' : '';
+}
 /* what a track holds decides its colour, its name and which tools come first */
 const TK = {
   speech: { c: '#9b7bff', soft: 'rgba(155,123,255,.24)', ic: 'mic' },
   music: { c: '#3fbf7a', soft: 'rgba(63,191,122,.22)', ic: 'note' },
   fx: { c: '#e8913f', soft: 'rgba(232,145,63,.22)', ic: 'wave' },
-  other: { c: '#4aa3d8', soft: 'rgba(74,163,216,.22)', ic: 'mixer' }
+  other: { c: '#4aa3d8', soft: 'rgba(74,163,216,.22)', ic: 'mixer' },
+  ai: { c: '#7c4dff', soft: 'rgba(124,77,255,.18)', ic: 'spark' }
 };
 function tlKind(i) {
   const tr = TL.p.tracks[i] || {};
@@ -6542,18 +6658,29 @@ function tlKind(i) {
   const c = TL.p.clips.find(x => x.tr === i && x.kind);
   return c ? c.kind : 'speech';
 }
-const tlTrackName = i => (TL.p.tracks[i] || {}).name || t('tk_' + tlKind(i));
-const tlHdr = () => TL.p && TL.p.tracks.length > 1 ? 86 : 0;
+/** "Voice", or "Voice 2" when more tracks hold voice */
+function tlTrackName(i) {
+  const tr = TL.p.tracks[i] || {}; if (tr.name) return tr.name;
+  const k = tlKind(i), same = TL.p.tracks.map((x, j) => j).filter(j => !TL.p.tracks[j].name && tlKind(j) === k);
+  return t('tk_' + k) + (same.length > 1 ? ' ' + (same.indexOf(i) + 1) : '');
+}
+const tlHdr = () => TL.p && TL.p.tracks.length > 1 ? 32 : 0;
 const tlCx = w => { const h = tlHdr(); return h + Math.round((w - h) * 0.28); };
-function tlLayout() { TL_ROW = TL.p && TL.p.tracks.length <= 1 ? 104 : 62; }
+/** 4.4: the tracks share the box: one track fills it, four split it */
+function tlLayout() {
+  const n = TL.p ? Math.max(1, TL.p.tracks.length) : 1, sc = $('#tlScroll'), H = sc ? sc.clientHeight : 0;
+  TL_ROW = H > 120 ? Math.max(58, Math.floor((H - TL_RULER - (n < TL_MAX ? TL_ADD : 0) - 2) / n)) : n <= 1 ? 104 : 62;
+}
 /** tapping a track's name: what it holds, its name, its volume and ducking */
 async function tlTrackMenu(i) {
   const tr = TL.p.tracks[i]; if (!tr) return;
   const v = await chooseBox(tlTrackName(i), t('tkMenuD'), [
     ...['speech', 'music', 'fx', 'other'].map(k => ({ value: 'k:' + k, label: (tlKind(i) === k ? '✓ ' : '') + t('tk_' + k), desc: '' })),
+    { value: 'mute', label: t(tr.mute ? 'tkUnmute' : 'tkMute'), desc: '' },
     { value: 'name', label: t('tkRename'), desc: '' }, { value: 'set', label: t('tlTrack'), desc: t('tkSetD') }]);
   if (!v) return;
   const before = tlSnap();
+  if (v === 'mute') { tr.mute = !tr.mute; tlCommit(before); toast(t(tr.mute ? 'tlMuted' : 'tlUnmuted', { n: tlTrackName(i) })); return; }
   if (v.startsWith('k:')) { tr.kind = v.slice(2); tlCommit(before); return; }
   if (v === 'name') { const n = await promptBox(t('tkRename'), tlTrackName(i)); if (n) { tr.name = n; tlCommit(before); } return; }
   const sel = TL.sel; TL.sel = (TL.p.clips.find(x => x.tr === i) || {}).id || null; tlTrack(); TL.sel = sel;
@@ -6594,19 +6721,17 @@ function edFit() {
   requestAnimationFrame(() => {
     const top = b.getBoundingClientRect().top, mini = $('#mini');
     const dock = mini && !mini.hidden ? mini.getBoundingClientRect().height + 12 : 0;
-    b.style.height = Math.max(380, innerHeight - top - dock - 8) + 'px';
+    b.style.height = Math.max(380, innerHeight - top - dock - 4) + 'px';
     drawTl();
   });
 }
 addEventListener('resize', () => { if (S.tab === 'edit') edFit(); });
 
 const tile = (k, icn, lab, cls) => `<button type="button" class="tc-tile${cls ? ' ' + cls : ''}" data-tl="${k}"${TL.busy ? ' disabled' : ''}>${ic(icn)}<span>${esc(lab)}</span></button>`;
-const CARD_TILES = {
-  speech: [['clarify', 'spark', 'sh_clarify'], ['op:aidenoise', 'chip', 'sh_aiden'], ['op:denoise', 'wave', 'sh_denoise'], ['op:mouth', 'mouth', 'sh_mouth']],
-  music: [['eq5', 'mixer', 'sh_eq'], ['bass', 'bassI', 'sh_bass'], ['treble', 'trebI', 'sh_treble'], ['beats', 'beat', 'sh_beats']],
-  fx: [['fade', 'fade', 'sh_fade'], ['fx', 'spark', 'sh_fx'], ['eq5', 'mixer', 'sh_eq'], ['env', 'envl', 'sh_env']],
-  other: [['fade', 'fade', 'sh_fade'], ['eq5', 'mixer', 'sh_eq'], ['op:denoise', 'wave', 'sh_denoise'], ['env', 'envl', 'sh_env']]
-};
+/* 4.4: the card: 6 everyday tools, then the 6 tool groups (a group opens inside the card) */
+const CATS = [['grp_ai', 'ai', 'spark', 'cat_ai'], ['grp_clean', 'speech', 'wave', 'cat_clean'], ['grp_fix', 'fx', 'mouth', 'cat_fix'],
+  ['grp_vt', 'music', 'mixer', 'cat_vt'], ['grp_edit', 'other', 'trimI', 'cat_edit'], ['grp_fx', 'fx', 'note', 'cat_fx']];
+const CAT_FOR = { speech: 'grp_ai', music: 'grp_vt', fx: 'grp_fx', other: 'grp_clean' };
 function renderTlBar() {
   const bar = $('#tlBar'); if (!bar) return;
   const c = tlSel();
@@ -6632,13 +6757,18 @@ function renderTlBar() {
       ? `<div class="tc-sug"><span class="tc-score" style="--s:${dg.score}">${dg.score}</span><span class="tc-sug-t">${esc(dg.issues.slice(0, 2).map(x => x[1]).join(' · '))}</span><button type="button" class="tc-go" data-tl="smfix"${TL.busy ? ' disabled' : ''}>${esc(t('smFix'))}</button></div>`
       : `<div class="tc-sug ok"><span class="tc-score" style="--s:${dg.score}">${dg.score}</span><span class="tc-sug-t">${esc(t('smFine'))}</span></div>`)
     : `<div class="tc-sug"><span class="tc-sug-ic">${ic('spark')}</span><span class="tc-sug-t">${esc(t('smAsk'))}</span><button type="button" class="tc-go" data-tl="smart"${TL.busy ? ' disabled' : ''}>${esc(t('smScan'))}</button></div>`;
+  const grp = TL.cat && TL.catId === c.id ? tlGroups(c).find(g => g[0] === TL.cat) : null;
+  const body = grp
+    ? `<div class="tc-cat" style="--cc:${TK[grp[1]].c};--cs:${TK[grp[1]].soft}"><button type="button" class="icon-btn" data-tl="catx" aria-label="${esc(t('back'))}">${ic('backI')}</button><b>${esc(t(grp[0]))}</b><button type="button" class="icon-btn" data-tl="all" aria-label="${esc(t('drSearch'))}">${ic('search')}</button></div>
+      <div class="tc-grid g4" style="--kc:${TK[grp[1]].c};--ks:${TK[grp[1]].soft}">${grp[2].filter(Boolean).map(([k, i, l]) => tile(k, i, t(l), 'k')).join('')}</div>`
+    : `<div class="tc-grid">${tile('split', 'scissors', t('sh_split')) + tile('del', 'trash', t('sh_del'), 'del') + tile('copy', 'copy', t('sh_copy')) + tile('gain', 'vol', t('sh_vol')) + tile('speed', 'gauge', t('sh_speed')) + tile('fade', 'fade', t('sh_xf'))}</div>
+      <div class="tc-grid">${CATS.map(([g, k, i, l]) => `<button type="button" class="tc-tile cat${CAT_FOR[kind] === g ? ' hl' : ''}" style="--kc:${TK[k].c};--ks:${TK[k].soft}" data-tl="cat:${g}"${TL.busy ? ' disabled' : ''}>${ic(i)}<span>${esc(t(l))}</span></button>`).join('')}</div>`;
   bar.innerHTML = `<div class="tc-head"><span class="tc-ic" style="color:${K.c};background:${K.soft}">${ic(K.ic)}</span>
       <div class="tc-t"><b>${esc(t('tkClip_' + kind))}</b><small>${esc([fmt(tlLen(c)), c.gain ? dbTxt(c.gain) : '', nfx ? t('tcFx', { n: nfx }) : ''].filter(Boolean).join(' · '))}</small></div>
       ${nfx ? `<button type="button" class="tc-badge" data-tl="hist" aria-label="${esc(t('fxDone'))}">✦ ${nfx}</button>` : ''}
       ${c.prev ? `<button type="button" class="tc-ab" data-tl="ab">${ic('hp')}<span>${esc(t('tcAB'))}</span></button>` : ''}</div>
     ${sug}
-    <div class="tc-grid">${tile('split', 'scissors', t('sh_split')) + tile('del', 'trash', t('sh_del'), 'del') + tile('copy', 'copy', t('sh_copy')) + tile('gain', 'vol', t('sh_gain')) + tile('speed', 'gauge', t('sh_speed')) +
-      CARD_TILES[kind].map(([k, i, l]) => tile(k, i, t(l), 'k')).join('') + tile('all', 'grid', t('sh_all'))}</div>`;
+    ${body}`;
   bar.style.setProperty('--kc', K.c); bar.style.setProperty('--ks', K.soft);
 }
 /* the old short bar at the bottom is gone: the card has the same buttons */
@@ -6710,14 +6840,12 @@ function tlGroups(c) {
     ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
   const op = (x, i) => ['op:' + x, i, 'op_' + x];
   return [
-    ['grp_clean', 'speech', [['clarify', 'spark', 'op_clarify'], ['smart', 'spark', 'smScan'], op('aidenoise', 'chip'), CAPS.sep ? op('sepdenoise', 'chip') : null, op('denoise', 'wave'), op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
-    ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null]],
-    ['grp_vol', 'other', [['gain', 'vol', 'tlVol'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol')]],
-    ['grp_tone', 'music', [['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],
-    ['grp_trim', 'other', [op('trim', 'scissors'), op('pauses', 'sil'), op('fillers', 'speak'), op('silence', 'sil')]],
-    ['grp_fx', 'fx', [op('voicefx', 'spark'), ['vchg', 'speak', 'vcT'], op('autotune', 'note'), op('reverb', 'ear'), op('delay', 'wave')]],
-    ['grp_more', 'other', [['speed', 'gauge', 'tlSpeed'], ['sep', 'mixer', 'tlSep'], ['spk', 'people', 'tlSpk'], ['spec', 'spec', 'tlSpec'], ['beats', 'beat', 'tlBeats'], ['punch', 'mic', 'tlPunch'],
-      ['merge', 'copy', 'tlMerge'], ['dup', 'copy', 'tlDup'], ['cut', 'scissors', 'tlCut'], ['track', 'mixer', 'tlTrack']]]];
+    ['grp_ai', 'ai', [['smart', 'spark', 'smScan'], op('aidenoise', 'chip'), CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], ['spk', 'people', 'tlSpk']]],
+    ['grp_clean', 'speech', [['clarify', 'spark', 'op_clarify'], op('denoise', 'wave'), op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
+    ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null, ['spec', 'spec', 'tlSpec']]],
+    ['grp_vt', 'music', [['gain', 'vol', 'tlVol'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol'), ['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],
+    ['grp_edit', 'other', [op('trim', 'trimI'), op('pauses', 'gapI'), op('fillers', 'speak'), op('silence', 'sil'), ['speed', 'gauge', 'tlSpeed'], ['merge', 'mergeI', 'tlMerge'], ['dup', 'dupI', 'tlDup'], ['punch', 'mic', 'tlPunch'], ['beats', 'beat', 'tlBeats']]],
+    ['grp_fx', 'fx', [op('voicefx', 'spark'), ['vchg', 'speak', 'vcT'], op('autotune', 'note'), op('reverb', 'ear'), op('delay', 'wave')]]];
 }
 function tlAll() {
   const c = tlSel(), groups = tlGroups(c).map(([g, k, items]) => [g, k, items.filter(Boolean)]);
@@ -6745,6 +6873,20 @@ async function tlMore() {
     { value: 'fit', label: t('tlFit'), desc: '' }, { value: 'recset', label: t('tlRecSet'), desc: '' }, { value: 'all', label: t('sh_all'), desc: '' }, { value: 'new', label: t('tlNewP'), desc: '' }]);
   if (v) tlDo(v, null);
 }
+
+/* ---------- 4.4: one thin bar on top (logo, tabs, settings); the record button says what it does ---------- */
+(() => {
+  const hd = document.querySelector('header.top'), tb = $('#tabs'), ph = $('#pgHead'), ib = $('#importBtn');
+  if (hd && tb) hd.insertBefore(tb, $('#setBtn'));
+  if (ph && ib) ph.appendChild(ib);
+  // while recording the purpose cards fold into one line
+  const sh = $('#recSheet'), sum = document.createElement('p'); sum.className = 'rec-sum'; sum.id = 'recSum';
+  const fx = $('#recFx'); if (sh && fx) fx.parentNode.insertBefore(sum, fx);
+  if (sh) new MutationObserver(() => {
+    if (sh.dataset.state === 'idle') return;
+    sum.textContent = [t('pu_' + (R.purpose || 'youtube'))].concat(ls.get('recNs', false) ? [t('recNs')] : [], ls.get('recAec', false) ? [t('recAec')] : []).join(' · ');
+  }).observe(sh, { attributes: true, attributeFilter: ['data-state'] });
+})();
 
 /* ---------- boot ---------- */
 let booted = false;
@@ -6776,6 +6918,7 @@ function showLangPick() {
 async function boot() {
   if (needLang()) { showLangPick(); return; }
   applyStatic();
+  { const rb = $('#recBtn'), lb = rb.querySelector('b') || rb.appendChild(document.createElement('b')); lb.textContent = t('sh_rec'); }
   $('#importIc').innerHTML = ic('import'); $('#sortBtn').innerHTML = sortBtnHTML('rec'); $('#searchIc').innerHTML = ic('search'); $('#setBtn').innerHTML = ic('gear');
   $('#qClear').innerHTML = ic('close'); $('#micNoteX').innerHTML = ic('close'); $('#libNoteX').innerHTML = ic('close');
   $('#tabRecIc').innerHTML = ic('mic'); $('#tabMusicIc').innerHTML = ic('note'); $('#tabEditIc').innerHTML = ic('scissors');
