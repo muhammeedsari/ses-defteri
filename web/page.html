@@ -1131,6 +1131,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n39.js"></script>
 <script src="i18n40.js"></script>
 <script src="i18n41.js"></script>
+<script src="i18n42.js"></script>
 <script>
 (() => {
 'use strict';
@@ -1141,7 +1142,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.10';
+const VERSION = '4.10.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -6799,7 +6800,7 @@ function showIntro(again) {
   });
   document.body.appendChild(d); draw();
 }
-const NEWS = ['bg', 'tone', 'dn', 'mouth', 'skip', 'norm', 'ns'];
+const NEWS = ['ui', 'drag', 'studio', 'text', 'aitools', 'more', 'look'];
 function showNews() {
   const card = openModal(`<h3>${esc(t('newsT', { v: VERSION.split('.').slice(0, 2).join('.') }))}</h3><ul class="news">${NEWS.map(k => `<li>${esc(t('news_' + k))}</li>`).join('')}</ul>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('newsOk'))}</button></div>`, () => setTimeout(coachMaybe, 300));
@@ -6812,13 +6813,16 @@ function welcome() {
   if (!ls.get('introDone', false) && !last && !S.items.size) { showIntro(false); return; }
   ls.set('introDone', true);
   const mm = v => String(v).split('.').slice(0, 2).join('.');   // a fix release (4.0.1) does not show the card again
-  if (mm(last) !== mm(VERSION)) showNews(); else coachMaybe();
+  // 4.10.1: the card was out of date in 4.10, so it shows once more; the edit-screen hint is new too
+  const fix = !ls.get('news4101', false); ls.set('news4101', true);
+  if (fix) { const sn = ls.get('coach', {}); delete sn.edit; ls.set('coach', sn); }
+  if (mm(last) !== mm(VERSION) || (fix && last)) showNews(); else coachMaybe();
 }
 /* tips: the screen dims around one control with a short line; each screen once, all can be switched off */
 const COACH = {
   rec: [['#qa', 'co_qa'], ['#recBtn', 'co_rec'], ['#list .rec-open', 'co_long'], ['#sortBtn', 'co_sort']],
   music: [['#music .song[data-song]', 'co_song'], ['#music [data-msort]', 'co_sort']],
-  edit: [['.tl-recb', 'co_tlrec'], ['#editTab [data-tl="add"]', 'co_tladd'], ['#tl', 'co_tl'], ['#editTab [data-tl="export"]', 'co_tlexp']]
+  edit: [['#editTab [data-tl="add"]', 'co_tladd'], ['#tl', 'co_tl'], ['#editTab [data-tl="export"]', 'co_tlexp']]
 };
 function coachMaybe() {
   if (!NATIVE || ls.get('coachOff', false) || !ls.get('introDone', false)) return;
