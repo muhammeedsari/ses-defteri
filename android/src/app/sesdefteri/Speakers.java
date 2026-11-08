@@ -121,5 +121,64 @@ final class Speakers {
         return new JSONObject().put("segs", out).put("n", n).put("db", db);
     }
 
+    /** 4.9: where somebody speaks, by the small speech detector that ships with the app (Silero VAD).
+       a: {path, in, out, minSil}; result {segs: [[start, end]…]} in seconds of the file */
+    static JSONObject vad(Context c, JSONObject a, AudioTools.Progress p, final AtomicBoolean cancel) throws Exception {
+        File in = new File(a.getString("path"));
+        Workspace.Info inf = Workspace.info(in);
+        long from = Math.max(0, (long) (a.optDouble("in", 0) * inf.rate));
+        long to = Math.min(inf.frames, a.has("out") ? (long) (a.getDouble("out") * inf.rate) : inf.frames);
+        VadModelConfig vc = new VadModelConfig();
+        vc.sileroVadModelConfig.model = "asr/silero_vad.onnx";
+        vc.sileroVadModelConfig.threshold = (float) a.optDouble("th", 0.45);
+        vc.sileroVadModelConfig.minSilenceDuration = (float) a.optDouble("minSil", 0.25);
+        vc.sileroVadModelConfig.minSpeechDuration = 0.1f;
+        vc.sileroVadModelConfig.maxSpeechDuration = 30f;
+        vc.sileroVadModelConfig.windowSize = 512;
+        vc.sampleRate = RATE;
+        vc.numThreads = 1;
+        final Vad vad = new Vad(c.getAssets(), vc);
+        final JSONArray out = new JSONArray();
+        final double off = from / (double) inf.rate;
+        final float[] win = new float[512];
+        final int[] fill = { 0 };
+        Resampler rs = new Resampler(1, (double) inf.rate, (double) RATE);
+        rs.to(new app.sesdefteri.dsp.Node() {
+            void drain() throws Exception {
+                while (!vad.empty()) {
+                    SpeechSegment s = vad.front(); vad.pop();
+                    double st = s.start / (double) RATE;
+                    out.put(new JSONArray().put(r3(off + st)).put(r3(off + st + s.samples.length / (double) RATE)));
+                }
+            }
+            @Override public void push(float[][] b, int n) throws Exception {
+                for (int i = 0; i < n; i++) { win[fill[0]++] = b[0][i]; if (fill[0] == 512) { vad.acceptWaveform(win.clone()); fill[0] = 0; drain(); } }
+            }
+            @Override public void end() throws Exception {
+                if (fill[0] > 0) { float[] l = new float[512]; System.arraycopy(win, 0, l, 0, fill[0]); vad.acceptWaveform(l); }
+                vad.flush(); drain();
+            }
+        });
+        RandomAccessFile r = new RandomAccessFile(in, "r");
+        try {
+            final int BL = 1 << 15;
+            float[][] m = new float[1][BL];
+            for (long pos = from; pos < to; pos += BL) {
+                if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
+                int n = (int) Math.min(BL, to - pos);
+                float[][] b = Workspace.readRegion(r, inf, pos, n);
+                for (int i = 0; i < n; i++) { float s = 0; for (int ch = 0; ch < inf.ch; ch++) s += b[ch][i]; m[0][i] = s / inf.ch; }
+                rs.push(m, n);
+                p.on((pos - from) / (double) Math.max(1, to - from));
+            }
+            rs.end();
+        } finally {
+            r.close();
+            vad.release();
+        }
+        p.on(1);
+        return new JSONObject().put("segs", out);
+    }
+
     private static double r3(double v) { return Math.round(v * 1000) / 1000.0; }
 }

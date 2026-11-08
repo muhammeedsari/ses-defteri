@@ -1147,6 +1147,8 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.spectro(a);
                         } else if ("latency".equals(kind)) {
                             res = Timeline.latency(MainActivity.this, a, p, cancel);
+                        } else if ("vad".equals(kind)) {
+                            res = Speakers.vad(MainActivity.this, a, p, cancel);
                         } else if ("audiogram".equals(kind)) {
                             res = Audiogram.run(MainActivity.this, a, p, cancel);
                         } else if ("tlVideo".equals(kind)) {

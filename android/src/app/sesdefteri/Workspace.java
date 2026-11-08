@@ -158,6 +158,8 @@ final class Workspace {
         File in = new File(a.getString("path"));
         Info inf = info(in);
         String op = a.getString("op");
+        if ("aipauses".equals(op)) op = "cut";   // 4.9: the AI versions reuse the plain machinery with AI-found stretches
+        else if ("aigate".equals(op) || "ailevel".equals(op)) op = "gainmap";
         File out = new File(in.getParentFile(), "s" + System.nanoTime() + ".wav");
         JSONObject rep = new JSONObject();
         int ch = inf.ch, fs = inf.rate;
@@ -171,6 +173,13 @@ final class Workspace {
             if ("breaths".equals(op)) return breaths(in, inf, out, str, p, cancel);
             if ("declip".equals(op)) return declip(in, inf, out, p, cancel);
             if ("spaint".equals(op)) return spaint(in, inf, out, a, p, cancel);
+            if ("gainmap".equals(op)) {   // 4.9: a smooth gain per stretch: [[start s, end s, dB]…], 0 dB elsewhere (AI gate, speaker levelling)
+                Meter gm = new Meter(ch, fs);
+                GainMap g = new GainMap(ch, fs, a.getJSONArray("map"), a.optDouble("rest", 0), a.optDouble("ramp", 0.02));
+                g.to(gm).to(new Studio.WavNode(out, fs));
+                wav(in, inf, p, new double[] { 0, 1 }, cancel).run(g);
+                return done(out, gm, new JSONObject().put("count", a.getJSONArray("map").length()));
+            }
             Node head;
             Meter m;
             double[] slice = { 0.3, 1 };
@@ -516,6 +525,35 @@ final class Workspace {
     /* ---------- 1.9: shorter pauses, quieter breaths, repaired clipping ---------- */
 
     /** pauses longer than max become `keep` long (the middle is cut, the edges stay so speech keeps its rhythm) */
+    /** gain in dB per 10 ms from a list of stretches, glided with a short ramp; a limiter-free soft ceiling keeps boosts from clipping */
+    static final class GainMap extends Node {
+        final int ch, hop; final float[] tbl; final double k; double g = 1; long pos;
+        GainMap(int ch, int fs, JSONArray map, double rest, double ramp) throws Exception {
+            this.ch = ch; hop = Math.max(1, fs / 100);
+            double end = 0; for (int i = 0; i < map.length(); i++) end = Math.max(end, map.getJSONArray(i).getDouble(1));
+            tbl = new float[(int) (end * 100) + 2];
+            java.util.Arrays.fill(tbl, (float) Math.pow(10, rest / 20));
+            for (int i = 0; i < map.length(); i++) {
+                JSONArray x = map.getJSONArray(i);
+                float v = (float) Math.pow(10, Math.max(-60, Math.min(18, x.getDouble(2))) / 20);
+                for (int f = Math.max(0, (int) (x.getDouble(0) * 100)); f < Math.min(tbl.length, (int) Math.ceil(x.getDouble(1) * 100)); f++) tbl[f] = v;
+            }
+            this.restLin = (float) Math.pow(10, rest / 20);
+            k = 1 - Math.exp(-1 / (Math.max(0.002, ramp) * fs));
+        }
+        final float restLin;
+        @Override public void push(float[][] b, int n) throws Exception {
+            for (int i = 0; i < n; i++) {
+                int f = (int) ((pos + i) / hop);
+                double tgt = f < tbl.length ? tbl[f] : restLin;
+                g += (tgt - g) * k;
+                for (int c = 0; c < ch; c++) { double v = b[c][i] * g; b[c][i] = (float) (v > 0.9 ? 0.9 + 0.1 * Math.tanh((v - 0.9) / 0.1) : v < -0.9 ? -0.9 - 0.1 * Math.tanh((-v - 0.9) / 0.1) : v); }
+            }
+            pos += n;
+            if (next != null) next.push(b, n);
+        }
+    }
+
     static JSONObject pauses(File in, Info inf, File out, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         double max = Math.max(0.3, a.optDouble("max", 0.8)), keep = Math.min(max, Math.max(0.15, a.optDouble("keep", 0.45)));
         Speech.Scan sc = Speech.scan(in, inf, part(p, 0, 0.4), cancel);
