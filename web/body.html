@@ -220,6 +220,7 @@
 <script src="i18n33.js"></script>
 <script src="i18n34.js"></script>
 <script src="i18n35.js"></script>
+<script src="i18n36.js"></script>
 <script>
 (() => {
 'use strict';
@@ -230,7 +231,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.2.1';
+const VERSION = '4.3';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -582,14 +583,14 @@ const qItem = r => ({ id: r.id, src: r.src, title: r.title || '', artist: r.arti
 
 /* ---------- colors for canvas ---------- */
 let COL = {};
-let MONO = 'monospace';
+let MONO = 'monospace', SANS = 'sans-serif';
 function readColors() {
   const cs = getComputedStyle(document.documentElement);
   const g = n => cs.getPropertyValue(n).trim();
   COL = { accent: g('--accent'), wave: g('--wave'), mark: g('--mark'), ink: g('--ink'), line: g('--line'), muted: g('--muted'), rec: g('--rec'),
     accentSoft: g('--accent-soft'), recSoft: g('--rec-soft'), surface: g('--surface'),
     sInk: g('--stage-ink'), sLine: g('--stage-line'), sMark: g('--stage-mark'), sRec: g('--stage-rec') };
-  MONO = g('--f-mono') || 'monospace';
+  MONO = g('--f-mono') || 'monospace'; SANS = g('--f-body') || 'sans-serif';
 }
 readColors();
 const redrawAll = () => { readColors(); drawPlayer(); drawLive(); drawWs(); };
@@ -1194,6 +1195,7 @@ function renderTabs() {
   $('#tabs').querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === S.tab));
   const music = S.tab === 'music', edit = S.tab === 'edit';
   $('#list').hidden = music || edit; $('#music').hidden = !music; $('#editTab').hidden = !edit;
+  if (!edit) edFit();
   document.querySelector('.toolbar').hidden = edit;
   $('#listbar').hidden = music;
   const bb = $('#batchBtn'); bb.hidden = !NATIVE || S.tab !== 'rec'; bb.innerHTML = ic('spark') + esc(t('batch'));
@@ -2447,7 +2449,7 @@ function srtOf(segs) {
 }
 /* ---------- edit sound: every step is its own file you can play, compare and undo ---------- */
 /* ---------- "Edit sound": multitrack timeline ---------- */
-const TL_MAX = 6, TL_RULER = 26, TL_ROW = 58;
+const TL_MAX = 6, TL_RULER = 26; let TL_ROW = 58;   // 4.3: one track gets a taller row
 const TL = { p: null, sel: null, pos: 0, pps: 40, play: false, busy: null, undo: [], redo: [], raf: 0, cleanT: 0, rec: null, snap: ls.get('tlSnap', true), guide: null, env: false, meter: ls.get('tlMeter', false), mv: null };
 const tlNew = () => ({ tracks: [{ vol: 0, mute: false }], clips: [] });
 function tlLoad() {
@@ -2643,7 +2645,7 @@ async function tlAddFrom(r, atSec, skip) {
   try { res = await tlRunJob(t('tlAdding'), 'tlAdd', { src: r.src }); } catch (e) { toast(errText(e), 5000); return; }
   const before = tlSnap(), dur = res.dur / 1000, at = atSec != null ? atSec : TL.p.clips.length ? TL.pos : 0;
   const sk = Math.min(skip || 0, Math.max(0, dur - 0.1));
-  const c = { id: uid(), tr: tlFreeTrack(at, at + dur - sk), path: res.path, ch: res.ch, dur, in: sk, out: dur, at, gain: 0, fi: 0, fo: 0, name: r.title || '' };
+  const c = { id: uid(), tr: tlFreeTrack(at, at + dur - sk), path: res.path, ch: res.ch, dur, in: sk, out: dur, at, gain: 0, fi: 0, fo: 0, name: r.title || '', kind: kindOf(r) === 'music' || r.mode === 'music' ? 'music' : dur < 8 ? 'fx' : 'speech' };
   tlEnsureTrack(c.tr);
   TL.p.clips.push(c); TL.sel = c.id;
   if (!TL.p.name) TL.p.name = r.title || '';
@@ -2721,6 +2723,10 @@ async function tlFx() {
   const c = tlSel(); if (!c || TL.busy) return;
   const op = await chooseBox(t('tlFx'), t('tlFxD'), TL_FX.filter(x => ((x !== 'aidenoise' && x !== 'sepdenoise') || CAPS.sep) && (x !== 'stereo' || c.ch < 2)).map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
   if (!op) return;
+  return tlFxRun(c, op);
+}
+async function tlFxRun(c, op) {
+  if (!c || TL.busy) return;
   if (op === 'loud') {
     const v = await chooseBox(t('op_loud'), t('wsLoudD'), ['youtube', 'podcast', 'whatsapp'].map(x => ({ value: x, label: t('tg_' + x), desc: t('ex' + x[0].toUpperCase() + x.slice(1)) })));
     if (v) tlEffect(c, 'loud', { target: v });
@@ -3024,17 +3030,17 @@ function tlBusyUi() {
   $('#tlBusyT').textContent = t('wsBusy', { op: TL.busy.label, p: Math.round(TL.busy.p * 100) });
   $('#tlBusyBar').style.width = Math.round(TL.busy.p * 100) + '%';
 }
-function tlHeight() { return TL_RULER + (TL.p.tracks.length + (TL.p.tracks.length < TL_MAX ? 1 : 0)) * TL_ROW; }
+function tlHeight() { tlLayout(); return TL_RULER + (TL.p.tracks.length + (TL.p.tracks.length < TL_MAX ? 1 : 0)) * TL_ROW; }
 function drawTl() {
   if (S.tab !== 'edit' || !TL.p) return;
   const cv = $('#tl'); if (!cv) return;
   const H0 = tlHeight(); if (cv.style.height !== H0 + 'px') cv.style.height = H0 + 'px';
   const c = sizeCanvas(cv); if (!c) return;
-  const { ctx, w, h } = c, pps = TL.pps, cx = w / 2, X = tm => cx + (tm - TL.pos) * pps;
+  const { ctx, w, h } = c, pps = TL.pps, cx = tlCx(w), X = tm => cx + (tm - TL.pos) * pps, HD = tlHdr();
   // ruler
   const st = rulerStep(pps), sub = st / 5;
   ctx.font = `11px ${MONO}`; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
-  const t0 = Math.max(0, TL.pos - cx / pps), t1 = TL.pos + cx / pps;
+  const t0 = Math.max(0, TL.pos - cx / pps), t1 = TL.pos + (w - cx) / pps;
   for (let s = Math.ceil(t0 / sub) * sub; s <= t1; s += sub) {
     const x = X(s), major = Math.abs(s / st - Math.round(s / st)) < 1e-6;
     ctx.fillStyle = COL.line; ctx.fillRect(x - 0.5, TL_RULER - (major ? 8 : 4), 1, major ? 8 : 4);
@@ -3049,8 +3055,8 @@ function drawTl() {
   if (rows < TL_MAX) {
     const y = TL_RULER + rows * TL_ROW;
     ctx.fillStyle = COL.muted; ctx.font = `12px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('+', w / 2, y + TL_ROW / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = `11px ${MONO}`;
-    ctx.strokeStyle = COL.line; ctx.setLineDash([4, 4]); ctx.strokeRect(8.5, y + 6.5, w - 17, TL_ROW - 13); ctx.setLineDash([]);
+    ctx.fillText('+  ' + t('tkAdd'), (w + HD) / 2, y + TL_ROW / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = `11px ${MONO}`;
+    ctx.strokeStyle = COL.line; ctx.setLineDash([4, 4]); ctx.strokeRect(HD + 8.5, y + 6.5, w - HD - 17, Math.min(44, TL_ROW - 13)); ctx.setLineDash([]);
   }
   // metronome grid: bar lines stronger than beats
   const ck = TL.p.click;
@@ -3068,11 +3074,11 @@ function drawTl() {
   for (const k of TL.p.clips) {
     const len = tlLen(k), x0 = X(k.at), x1 = X(k.at + len);
     if (x1 < 0 || x0 > w) continue;
-    const y = TL_RULER + k.tr * TL_ROW + 4, hh = TL_ROW - 9, sel = k.id === TL.sel, tr = TL.p.tracks[k.tr] || {};
+    const y = TL_RULER + k.tr * TL_ROW + 4, hh = TL_ROW - 9, sel = k.id === TL.sel, tr = TL.p.tracks[k.tr] || {}, KC = TK[tlKind(k.tr)];
     ctx.globalAlpha = tr.mute ? 0.35 : 1;
-    ctx.fillStyle = COL.accentSoft; rr(ctx, x0, y, Math.max(2, x1 - x0), hh, 7);
+    ctx.fillStyle = KC.soft; rr(ctx, x0, y, Math.max(2, x1 - x0), hh, 7);
     const pk = S.peaks.get('f:' + k.path), mid = y + hh / 2 + 6, amp = (hh - 18) / 2;
-    ctx.fillStyle = COL.accent;
+    ctx.fillStyle = KC.c;
     const a = Math.max(x0 + 2, 0), z = Math.min(x1 - 2, w);
     for (let x = a; x < z; x += 3) {
       const s = k.in + (x - x0) / pps, v = pk ? level(pk, s, s + 3 / pps) : 0, bh = Math.max(1, v * amp * 2);
@@ -3081,7 +3087,7 @@ function drawTl() {
     if (k.chg && k.chg.length) {
       ctx.fillStyle = COL.rec;
       for (const [p0, p1] of k.chg) { const u = Math.max(x0 + (p0 - k.in) * pps, x0 + 2), v = Math.min(x0 + (p1 - k.in) * pps, x1 - 2); if (v > u) ctx.fillRect(u, y + hh - 4, Math.max(2, v - u), 3); }
-      ctx.fillStyle = COL.accent;
+      ctx.fillStyle = KC.c;
     }
     if (k.beats && k.beats.length) {
       ctx.fillStyle = COL.ink; ctx.globalAlpha = (tr.mute ? 0.35 : 1) * 0.55;
@@ -3137,20 +3143,27 @@ function drawTl() {
     const pre = TL.rec.pre || 0, len = (performance.now() - TL.rec.t0) / 1000 - pre, row = Math.min(TL.p.tracks.length, TL_MAX - 1), y = TL_RULER + row * TL_ROW + 4;
     if (len > 0) { ctx.fillStyle = COL.rec; ctx.globalAlpha = 0.35; rr(ctx, X(TL.rec.at + pre), y, Math.max(2, len * pps), TL_ROW - 9, 7); ctx.globalAlpha = 1; }
   }
-  // track badges: number + speaker, tap to mute / unmute
-  for (let i = 0; i < rows; i++) {
-    const y = TL_RULER + i * TL_ROW + 6, mu = TL.p.tracks[i].mute, du = TL.p.tracks[i].duck;
-    ctx.fillStyle = mu ? COL.rec : COL.surface; ctx.globalAlpha = 0.95; rr(ctx, 4, y, 42, 22, 6); ctx.globalAlpha = 1;
-    ctx.strokeStyle = mu ? COL.rec : COL.line; ctx.lineWidth = 1; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(4.5, y + 0.5, 41, 21, 6); else ctx.rect(4.5, y + 0.5, 41, 21); ctx.stroke();
-    const ink = mu ? '#fff' : COL.ink;
-    ctx.fillStyle = ink; ctx.font = `600 11px ${MONO}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText(String(i + 1), 10, y + 11.5);
-    // speaker
-    ctx.beginPath(); ctx.moveTo(23, y + 8.5); ctx.lineTo(26, y + 8.5); ctx.lineTo(30, y + 5); ctx.lineTo(30, y + 17); ctx.lineTo(26, y + 13.5); ctx.lineTo(23, y + 13.5); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = ink; ctx.lineWidth = 1.4; ctx.beginPath();
-    if (mu) { ctx.moveTo(33, y + 8); ctx.lineTo(39, y + 14); ctx.moveTo(39, y + 8); ctx.lineTo(33, y + 14); }
-    else { ctx.arc(31, y + 11, 4, -0.9, 0.9); if (!du) { ctx.moveTo(34.8, y + 4.5); ctx.arc(31, y + 11, 7.5, -0.9, 0.9); } }
-    ctx.stroke();
+  // 4.3: a header column per track: colour, name, speaker (tap the speaker to mute, the name for the menu)
+  if (HD) {
+    ctx.fillStyle = COL.surface; ctx.fillRect(0, 0, HD, h);
+    ctx.fillStyle = COL.line; ctx.fillRect(HD - 1, 0, 1, h);
+    for (let i = 0; i < rows; i++) {
+      const y = TL_RULER + i * TL_ROW, tr = TL.p.tracks[i], KC = TK[tlKind(i)], mu = tr.mute;
+      ctx.globalAlpha = mu ? 0.45 : 1;
+      ctx.fillStyle = KC.c; ctx.fillRect(0, y + 3, 4, TL_ROW - 6);
+      ctx.font = `600 12px ${SANS}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.save(); ctx.beginPath(); ctx.rect(8, y, HD - 12, TL_ROW); ctx.clip();
+      ctx.fillText(tlTrackName(i), 10, y + 9); ctx.restore();
+      const sy = y + TL_ROW - 26, ink = mu ? COL.rec : COL.muted;
+      ctx.fillStyle = ink; ctx.strokeStyle = ink; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(10, sy + 6); ctx.lineTo(13, sy + 6); ctx.lineTo(17, sy + 2.5); ctx.lineTo(17, sy + 14.5); ctx.lineTo(13, sy + 11); ctx.lineTo(10, sy + 11); ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      if (mu) { ctx.moveTo(20, sy + 5); ctx.lineTo(26, sy + 11); ctx.moveTo(26, sy + 5); ctx.lineTo(20, sy + 11); }
+      else { ctx.arc(18, sy + 8.5, 4, -0.9, 0.9); if (!tr.duck) { ctx.moveTo(21.8, sy + 2); ctx.arc(18, sy + 8.5, 7.5, -0.9, 0.9); } }
+      ctx.stroke();
+      if (tr.duck) { ctx.font = `600 9.5px ${SANS}`; ctx.fillText('duck', 30, sy + 3); }
+      ctx.globalAlpha = 1;
+    }
   }
   ctx.textBaseline = 'top';
   // markers (flags on the ruler) and the snap guide
@@ -3165,7 +3178,7 @@ function drawTl() {
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); ctx.setLineDash([]);
   }
   // playhead
-  ctx.fillStyle = COL.rec; ctx.fillRect(cx - 1, 0, 2, h);
+  ctx.fillStyle = COL.rec; ctx.fillRect(cx - 1, 0, 2, h);   // the playhead sits a little left of the middle (more room ahead)
   ctx.beginPath(); ctx.moveTo(cx - 6, 0); ctx.lineTo(cx + 6, 0); ctx.lineTo(cx, 8); ctx.closePath(); ctx.fill();
   const tt = $('#tlTime'); if (tt) tt.textContent = `${fmtT(TL.pos)} / ${fmt(tlEnd())}`;
 }
@@ -3179,12 +3192,13 @@ function drawWs() { drawTl(); }
   const local = e => { const rc = $('#tl').getBoundingClientRect(); return { x: e.clientX - rc.left, y: e.clientY - rc.top, w: rc.width }; };
   const rowAt = y => Math.floor((y - TL_RULER) / TL_ROW);
   const hit = (x, y, w) => {
-    const tm = TL.pos + (x - w / 2) / TL.pps, r = rowAt(y);
+    const tm = TL.pos + (x - tlCx(w)) / TL.pps, r = rowAt(y);
     for (let i = TL.p.clips.length - 1; i >= 0; i--) { const c = TL.p.clips[i]; if (c.tr === r && tm >= c.at && tm <= c.at + tlLen(c)) return c; }
     return null;
   };
   box.addEventListener('pointerdown', e => {
     if (!e.target.closest('#tl') || TL.busy) return;
+    tlLayout();
     e.preventDefault();
     try { e.target.setPointerCapture(e.pointerId); } catch (x) {}
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -3197,16 +3211,19 @@ function drawWs() { drawTl(); }
     if (pts.size > 2) return;
     const p = local(e), s = tlSel(), before = tlSnap();
     const row = rowAt(p.y);
-    if (p.x < 50 && row >= 0 && row < TL.p.tracks.length && p.y - (TL_RULER + row * TL_ROW) < 32) {
+    if (p.x < tlHdr()) {   // 4.3: the track header: speaker = mute, name = menu
       pts.delete(e.pointerId);
-      const tr = TL.p.tracks[row]; tr.mute = !tr.mute;
-      tlCommit(before);
-      toast(t(tr.mute ? 'tlMuted' : 'tlUnmuted', { n: row + 1 }));
+      if (row < 0 || row >= TL.p.tracks.length) return;
+      if (p.y - (TL_RULER + row * TL_ROW) > TL_ROW - 30) {
+        const tr = TL.p.tracks[row]; tr.mute = !tr.mute;
+        tlCommit(before);
+        toast(t(tr.mute ? 'tlMuted' : 'tlUnmuted', { n: tlTrackName(row) }));
+      } else tlTrackMenu(row);
       return;
     }
-    const base = { x0: e.clientX, y0: e.clientY, moved: false, before };
+    const base = { x0: e.clientX, y0: e.clientY, moved: false, before, st0: ($('#tlScroll') || {}).scrollTop || 0 };
     if (s && TL.env) {
-      const xa = p.w / 2 + (s.at - TL.pos) * TL.pps, y = TL_RULER + s.tr * TL_ROW + 4, hh = TL_ROW - 9;
+      const xa = tlCx(p.w) + (s.at - TL.pos) * TL.pps, y = TL_RULER + s.tr * TL_ROW + 4, hh = TL_ROW - 9;
       if (rowAt(p.y) === s.tr) {
         const i = (s.env || []).findIndex(([ps, db]) => Math.hypot(xa + (ps - s.in) * TL.pps - p.x, envY(db, y, hh) - p.y) < 24);
         if (i >= 0) {
@@ -3222,20 +3239,20 @@ function drawWs() { drawTl(); }
           }, 550);
           return;
         }
-        const tm = TL.pos + (p.x - p.w / 2) / TL.pps;
+        const tm = TL.pos + (p.x - tlCx(p.w)) / TL.pps;
         if (tm >= s.at && tm <= s.at + tlLen(s)) { g = Object.assign(base, { mode: 'scroll', c: s, pos0: TL.pos, tm, envAdd: { s: s.in + tm - s.at, db: envDb(p.y, y, hh) } }); return; }
       }
-      g = Object.assign(base, { mode: 'scroll', c: null, pos0: TL.pos, ruler: p.y < TL_RULER, tm: TL.pos + (p.x - p.w / 2) / TL.pps, keepSel: true });
+      g = Object.assign(base, { mode: 'scroll', c: null, pos0: TL.pos, ruler: p.y < TL_RULER, tm: TL.pos + (p.x - tlCx(p.w)) / TL.pps, keepSel: true });
       return;
     }
     if (s) {
-      const xa = p.w / 2 + (s.at - TL.pos) * TL.pps, xb = xa + tlLen(s) * TL.pps, inRow = rowAt(p.y) === s.tr;
+      const xa = tlCx(p.w) + (s.at - TL.pos) * TL.pps, xb = xa + tlLen(s) * TL.pps, inRow = rowAt(p.y) === s.tr;
       if (inRow && Math.abs(p.x - xa) < 22 && Math.abs(p.x - xa) <= Math.abs(p.x - xb)) { g = Object.assign(base, { mode: 'trimL', c: s, in0: s.in, at0: s.at }); return; }
       if (inRow && Math.abs(p.x - xb) < 22) { g = Object.assign(base, { mode: 'trimR', c: s, out0: s.out }); return; }
     }
     const c = hit(p.x, p.y, p.w);
     if (c && c === s) g = Object.assign(base, { mode: 'move', c, at0: c.at, tr0: c.tr });
-    else g = Object.assign(base, { mode: 'scroll', c, pos0: TL.pos, ruler: p.y < TL_RULER, tm: TL.pos + (p.x - p.w / 2) / TL.pps });
+    else g = Object.assign(base, { mode: 'scroll', c, pos0: TL.pos, ruler: p.y < TL_RULER, tm: TL.pos + (p.x - tlCx(p.w)) / TL.pps });
   });
   box.addEventListener('pointermove', e => {
     if (!pts.has(e.pointerId) || !g) return;
@@ -3251,14 +3268,14 @@ function drawWs() { drawTl(); }
     const d = dx / TL.pps, c = g.c;
     if (g.mode === 'envPt') {
       const env = c.env, i = g.i, lo = i > 0 ? env[i - 1][0] + 0.01 : c.in, hi = i < env.length - 1 ? env[i + 1][0] - 0.01 : c.out;
-      const p = local(e), tm = TL.pos + (p.x - p.w / 2) / TL.pps;
+      const p = local(e), tm = TL.pos + (p.x - tlCx(p.w)) / TL.pps;
       env[i] = [Math.round(clamp(c.in + tm - c.at, lo, hi) * 1000) / 1000, envDb(p.y, g.y, g.hh)];
       toast(envTxt(env[i][1]), 900);
       ls.set('proj', TL.p);
       if (TL.play) try { AND.tlUpdate(JSON.stringify(tlMix())); } catch (x) {}
       drawTl(); return;
     }
-    if (g.mode === 'scroll') TL.pos = clamp(g.pos0 - d, 0, Math.max(tlEnd(), 1));
+    if (g.mode === 'scroll') { TL.pos = clamp(g.pos0 - d, 0, Math.max(tlEnd(), 1)); const sc = $('#tlScroll'); if (sc) sc.scrollTop = g.st0 - dy; }
     else if (g.mode === 'move') {
       let at = Math.max(0, g.at0 + d);
       // snap to the playhead, the start and other clip edges
@@ -3322,8 +3339,16 @@ function drawWs() { drawTl(); }
 
 function tlAct(e) {
   const b = e.target.closest('[data-tl]'); if (!b || b.disabled) return;
-  const k = b.dataset.tl;
-  if (k === 'play') tlPlay();
+  tlDo(b.dataset.tl, b);
+}
+function tlDo(k, b) {
+  if (k.startsWith('op:')) { const c = tlSel(); if (c) tlFxRun(c, k.slice(3)); return; }
+  if (k === 'more') tlMore();
+  else if (k === 'all') tlAll();
+  else if (k === 'hist') tlHistory();
+  else if (k === 'smart') tlSmart();
+  else if (k === 'smfix') tlSmartFix();
+  else if (k === 'play') tlPlay();
   else if (k === 'undo') tlUndo(false);
   else if (k === 'redo') tlUndo(true);
   else if (k === 'export') tlExport();
@@ -3359,9 +3384,9 @@ function tlAct(e) {
   else if (k === 'merge') tlMerge();
   else if (k === 'eq5') tlEq();
   else if (k === 'bass' || k === 'treble') tlTone(k);
-  else if (k === 'snap') { TL.snap = !TL.snap; ls.set('tlSnap', TL.snap); b.classList.toggle('on', TL.snap); b.setAttribute('aria-pressed', TL.snap); toast(t(TL.snap ? 'snapOn' : 'snapOff')); }
+  else if (k === 'snap') { TL.snap = !TL.snap; ls.set('tlSnap', TL.snap); if (b) { b.classList.toggle('on', TL.snap); b.setAttribute('aria-pressed', TL.snap); } toast(t(TL.snap ? 'snapOn' : 'snapOff')); }
   else if (k === 'marker') tlAddMarker();
-  else if (k === 'meter') { TL.meter = !TL.meter; ls.set('tlMeter', TL.meter); b.classList.toggle('on', TL.meter); b.setAttribute('aria-pressed', TL.meter); const cv = $('#tlMeter'); if (cv) cv.hidden = !TL.meter; if (TL.meter) drawMeter(); }
+  else if (k === 'meter') { TL.meter = !TL.meter; ls.set('tlMeter', TL.meter); if (b) { b.classList.toggle('on', TL.meter); b.setAttribute('aria-pressed', TL.meter); } const cv = $('#tlMeter'); if (cv) cv.hidden = !TL.meter; if (TL.meter) drawMeter(); }
   else if (k === 'punch') tlPunch();
   else if (k === 'beats') tlBeats();
   else if (k === 'rec') tlRec();
@@ -3492,7 +3517,7 @@ async function tlSfx() {
   let res;
   try { res = await tlRunJob(t('tlAdding'), 'tlSfx', { id }); } catch (e) { toast(errText(e), 5000); return; }
   const before = tlSnap(), dur = res.dur / 1000, at = TL.p.clips.length ? TL.pos : 0;
-  const c = { id: uid(), tr: tlFreeTrack(at, at + dur), path: res.path, ch: res.ch, dur, in: 0, out: dur, at, gain: 0, fi: 0, fo: 0, name: t('sfx_' + id) };
+  const c = { id: uid(), tr: tlFreeTrack(at, at + dur), path: res.path, ch: res.ch, dur, in: 0, out: dur, at, gain: 0, fi: 0, fo: 0, name: t('sfx_' + id), kind: 'fx' };
   tlEnsureTrack(c.tr);
   TL.p.clips.push(c); TL.sel = c.id;
   tlCommit(before);
@@ -3543,7 +3568,7 @@ async function tlTts() {
       return;
     }
     const before = tlSnap(), dur = res.dur / 1000, at = TL.p.clips.length ? TL.pos : 0;
-    const c = { id: uid(), tr: tlFreeTrack(at, at + dur), path: res.path, ch: res.ch, dur, in: 0, out: dur, at, gain: 0, fi: 0, fo: 0, name };
+    const c = { id: uid(), tr: tlFreeTrack(at, at + dur), path: res.path, ch: res.ch, dur, in: 0, out: dur, at, gain: 0, fi: 0, fo: 0, name, kind: 'speech' };
     tlEnsureTrack(c.tr);
     TL.p.clips.push(c); TL.sel = c.id;
     tlCommit(before);
@@ -5071,13 +5096,14 @@ const pauseArgs = () => ({ pmax: S.pauseMax, pkeep: PAUSE_KEEP[S.pauseMax] || 0.
 const tlClip = () => ls.get('tlClip', null);
 function tlCopy(cut) {
   const c = tlSel(); if (!c) return;
-  ls.set('tlClip', { path: c.path, ch: c.ch, dur: c.dur, in: c.in, out: c.out, gain: c.gain || 0, fi: c.fi || 0, fo: c.fo || 0, eq: c.eq || null, bass: c.bass || 0, treble: c.treble || 0, env: c.env || null, fx: c.fx || [], name: c.name || '' });
+  ls.set('tlClip', { path: c.path, ch: c.ch, dur: c.dur, in: c.in, out: c.out, gain: c.gain || 0, fi: c.fi || 0, fo: c.fo || 0, eq: c.eq || null, bass: c.bass || 0, treble: c.treble || 0, env: c.env || null, fx: c.fx || [], name: c.name || '', kind: c.kind || tlKind(c.tr), at: c.at });
   if (cut) tlDelete(); else renderTlBar();
   toast(t(cut ? 'tlCutDone' : 'tlCopied'));
 }
 function tlPaste() {
   const cb = tlClip(); if (!cb || TL.busy) return;
-  const before = tlSnap(), at = TL.pos, len = cb.out - cb.in;
+  // 4.3: back at the time it was copied from (a layered copy lines up exactly); the playhead only when that is not known
+  const before = tlSnap(), at = cb.at != null ? cb.at : TL.pos, len = cb.out - cb.in;
   const c = Object.assign({}, cb, { id: uid(), at, tr: tlFreeTrack(at, at + len) });
   tlEnsureTrack(c.tr);
   TL.p.clips.push(c); TL.sel = c.id;
@@ -5660,6 +5686,236 @@ $('#qa').addEventListener('click', e => {
   else if (k === 'video') { try { AND.pickVideo(t('videoBusy')); } catch (x) {} }
   else { const tb = $(`#tabs [data-tab="${k}"]`); if (tb) tb.click(); }
 });
+
+/* ---------- 4.3: the edit screen, reworked: fixed top row and timeline, coloured named tracks,
+   one card for the selected clip (or the project) with labelled tiles, a smart check, all tools in one drawer ---------- */
+Object.assign(P, {
+  grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+  chip: '<rect x="6" y="6" width="12" height="12" rx="2.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>',
+  mouth: '<path d="M5 10c2 4 12 4 14 0"/><path d="M7 15c2 2 8 2 10 0"/>',
+  vol: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>',
+  bassI: '<path d="M3 16c3 0 3-8 6-8s3 8 6 8h6"/>',
+  trebI: '<path d="M3 16h6c3 0 3-8 6-8s3 8 6 8"/>',
+  fade: '<path d="M3 20 21 4M3 20h18"/>',
+  sil: '<path d="M4 12h16M4 8v8M20 8v8"/>',
+  hp: '<path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z"/>'
+});
+/* what a track holds decides its colour, its name and which tools come first */
+const TK = {
+  speech: { c: '#9b7bff', soft: 'rgba(155,123,255,.24)', ic: 'mic' },
+  music: { c: '#3fbf7a', soft: 'rgba(63,191,122,.22)', ic: 'note' },
+  fx: { c: '#e8913f', soft: 'rgba(232,145,63,.22)', ic: 'wave' },
+  other: { c: '#4aa3d8', soft: 'rgba(74,163,216,.22)', ic: 'mixer' }
+};
+function tlKind(i) {
+  const tr = TL.p.tracks[i] || {};
+  if (tr.kind && TK[tr.kind]) return tr.kind;
+  const c = TL.p.clips.find(x => x.tr === i && x.kind);
+  return c ? c.kind : 'speech';
+}
+const tlTrackName = i => (TL.p.tracks[i] || {}).name || t('tk_' + tlKind(i));
+const tlHdr = () => TL.p && TL.p.tracks.length > 1 ? 86 : 0;
+const tlCx = w => { const h = tlHdr(); return h + Math.round((w - h) * 0.28); };
+function tlLayout() { TL_ROW = TL.p && TL.p.tracks.length <= 1 ? 104 : 62; }
+/** tapping a track's name: what it holds, its name, its volume and ducking */
+async function tlTrackMenu(i) {
+  const tr = TL.p.tracks[i]; if (!tr) return;
+  const v = await chooseBox(tlTrackName(i), t('tkMenuD'), [
+    ...['speech', 'music', 'fx', 'other'].map(k => ({ value: 'k:' + k, label: (tlKind(i) === k ? '✓ ' : '') + t('tk_' + k), desc: '' })),
+    { value: 'name', label: t('tkRename'), desc: '' }, { value: 'set', label: t('tlTrack'), desc: t('tkSetD') }]);
+  if (!v) return;
+  const before = tlSnap();
+  if (v.startsWith('k:')) { tr.kind = v.slice(2); tlCommit(before); return; }
+  if (v === 'name') { const n = await promptBox(t('tkRename'), tlTrackName(i)); if (n) { tr.name = n; tlCommit(before); } return; }
+  const sel = TL.sel; TL.sel = (TL.p.clips.find(x => x.tr === i) || {}).id || null; tlTrack(); TL.sel = sel;
+}
+
+/* ----- the screen ----- */
+function renderEdit() {
+  const box = $('#editTab');
+  if (!box || S.tab !== 'edit') return;
+  if (!NATIVE) { box.innerHTML = `<div class="empty">${ic('scissors', 1.6)}<b>${esc(t('tabEdit'))}</b>${esc(t('wsNative'))}</div>`; return; }
+  if (!TL.p) tlLoad();
+  const empty = !TL.p.clips.length;
+  box.innerHTML = `<div class="tl-top">
+      <button class="icon-btn" type="button" data-tl="undo" aria-label="${esc(t('undo'))}"${TL.undo.length && !TL.busy ? '' : ' disabled'}>${ic('undo')}</button>
+      <button class="icon-btn tl-redo" type="button" data-tl="redo" aria-label="${esc(t('tlRedo'))}"${TL.redo.length && !TL.busy ? '' : ' disabled'}>${ic('undo')}</button>
+      <button class="ctl" type="button" data-tl="play" id="tlPlay" style="width:48px;height:48px"${empty ? ' disabled' : ''}>${ic(TL.play ? 'pause' : 'play')}</button>
+      <span class="tc" id="tlTime"></span><span class="spacer"></span>
+      <button class="btn primary sm" type="button" data-tl="export"${empty || TL.busy ? ' disabled' : ''}>${esc(t('tlExport'))}</button>
+      <button class="icon-btn" type="button" data-tl="more" aria-label="${esc(t('more'))}">${ic('dots')}</button></div>
+    <div class="tl-scroll" id="tlScroll">
+      <canvas class="tl-cv" id="tl" aria-label="${esc(t('tabEdit'))}"></canvas>
+      ${empty ? `<div class="tl-empty"><b>${esc(t('tlEmpty'))}</b><p>${esc(t('tlEmptyD'))}</p></div>` : ''}
+    </div>
+    <canvas class="tl-meter" id="tlMeter" aria-label="${esc(t('tlMeter'))}"${TL.meter ? '' : ' hidden'}></canvas>
+    <div id="tlBusy" hidden><p class="st-desc" style="display:flex;align-items:center;gap:8px"><b id="tlBusyT" style="flex:1"></b><button class="btn sm" type="button" id="tlBusyX">${esc(t('cancel'))}</button></p><div class="prog"><i id="tlBusyBar"></i></div></div>
+    <div class="tl-card" id="tlBar"></div>`;
+  renderTlBar(); tlBusyUi(); edFit();
+  for (const c of TL.p.clips) { const it = tlItem(c); if (!isComplete(S.peaks.get(it.id))) ensurePeaks(it, {}).then(drawTl, () => {}); }
+  requestAnimationFrame(drawTl);
+  if (TL.meter) requestAnimationFrame(drawMeter);
+}
+/** the edit tab never scrolls as a page: it fills the screen down to the dock, the tracks scroll inside */
+function edFit() {
+  const b = $('#editTab'); if (!b) return;
+  const on = S.tab === 'edit' && NATIVE && !b.hidden;
+  document.body.classList.toggle('ed', on);
+  if (!on) { b.style.height = ''; return; }
+  requestAnimationFrame(() => {
+    const top = b.getBoundingClientRect().top, mini = $('#mini');
+    const dock = mini && !mini.hidden ? mini.getBoundingClientRect().height + 12 : 0;
+    b.style.height = Math.max(380, innerHeight - top - dock - 8) + 'px';
+    drawTl();
+  });
+}
+addEventListener('resize', () => { if (S.tab === 'edit') edFit(); });
+
+const tile = (k, icn, lab, cls) => `<button type="button" class="tc-tile${cls ? ' ' + cls : ''}" data-tl="${k}"${TL.busy ? ' disabled' : ''}>${ic(icn)}<span>${esc(lab)}</span></button>`;
+const CARD_TILES = {
+  speech: [['clarify', 'spark', 'sh_clarify'], ['op:aidenoise', 'chip', 'sh_aiden'], ['op:denoise', 'wave', 'sh_denoise'], ['op:mouth', 'mouth', 'sh_mouth']],
+  music: [['eq5', 'mixer', 'sh_eq'], ['bass', 'bassI', 'sh_bass'], ['treble', 'trebI', 'sh_treble'], ['beats', 'beat', 'sh_beats']],
+  fx: [['fade', 'fade', 'sh_fade'], ['fx', 'spark', 'sh_fx'], ['eq5', 'mixer', 'sh_eq'], ['env', 'envl', 'sh_env']],
+  other: [['fade', 'fade', 'sh_fade'], ['eq5', 'mixer', 'sh_eq'], ['op:denoise', 'wave', 'sh_denoise'], ['env', 'envl', 'sh_env']]
+};
+function renderTlBar() {
+  const bar = $('#tlBar'); if (!bar) return;
+  const c = tlSel();
+  tlQBar();
+  if (TL.rec) { bar.innerHTML = `<div class="tc-rec"><button class="btn danger-fill" type="button" data-tl="rec">${ic('pause')} ${esc(t('tlRecStop'))} <span class="tc" id="tlRecT"></span></button><span class="hint">${esc(t('tlRecHint'))}</span></div>`; return; }
+  if (c && TL.env) {
+    bar.innerHTML = `<div class="tc-rec"><button class="btn primary" type="button" data-tl="envDone">${ic('check')}${esc(t('tlDone'))}</button>${(c.env || []).length ? `<button class="btn" type="button" data-tl="envReset">${ic('trash')}${esc(t('envReset'))}</button>` : ''}<span class="hint">${esc(t('envHint'))}</span></div>`;
+    return;
+  }
+  TL.env = false;
+  if (!c) {
+    const n = TL.p.tracks.length;
+    bar.innerHTML = `<div class="tc-head"><div class="tc-t"><b>${esc(TL.p.name || t('tlProject'))}</b><small>${esc(TL.p.clips.length ? t('tcProj', { n, d: fmt(tlEnd()) }) : t('tlEmptyD'))}</small></div></div>
+      <div class="tc-grid">${tile('rec', 'mic', t('sh_rec'), 'rec') + tile('add', 'import', t('sh_add')) + tile('sfx', 'bell', t('sh_sfx')) + tile('tts', 'speak', t('sh_tts')) +
+        (TL.p.clips.length ? tile('insSil', 'sil', t('sh_sil')) + tile('marker', 'flag', t('sh_marker')) + tile('metro', 'beat', t('sh_metro')) + tile('video', 'film', t('sh_video')) : '') +
+        (tlClip() ? tile('paste', 'paste', t('sh_paste')) : '') + tile('all', 'grid', t('sh_all'))}</div>`;
+    return;
+  }
+  const kind = tlKind(c.tr), K = TK[kind], nfx = (c.fx || []).length + (c.eq ? 1 : 0) + (c.bass ? 1 : 0) + (c.treble ? 1 : 0) + (c.env && c.env.length ? 1 : 0);
+  const dg = TL.dg && TL.dg.id === c.id && TL.dg.path === c.path ? TL.dg : null;
+  const sug = dg
+    ? (dg.fixes.length
+      ? `<div class="tc-sug"><span class="tc-score" style="--s:${dg.score}">${dg.score}</span><span class="tc-sug-t">${esc(dg.issues.slice(0, 2).map(x => x[1]).join(' · '))}</span><button type="button" class="tc-go" data-tl="smfix"${TL.busy ? ' disabled' : ''}>${esc(t('smFix'))}</button></div>`
+      : `<div class="tc-sug ok"><span class="tc-score" style="--s:${dg.score}">${dg.score}</span><span class="tc-sug-t">${esc(t('smFine'))}</span></div>`)
+    : `<div class="tc-sug"><span class="tc-sug-ic">${ic('spark')}</span><span class="tc-sug-t">${esc(t('smAsk'))}</span><button type="button" class="tc-go" data-tl="smart"${TL.busy ? ' disabled' : ''}>${esc(t('smScan'))}</button></div>`;
+  bar.innerHTML = `<div class="tc-head"><span class="tc-ic" style="color:${K.c};background:${K.soft}">${ic(K.ic)}</span>
+      <div class="tc-t"><b>${esc(t('tkClip_' + kind))}</b><small>${esc([fmt(tlLen(c)), c.gain ? dbTxt(c.gain) : '', nfx ? t('tcFx', { n: nfx }) : ''].filter(Boolean).join(' · '))}</small></div>
+      ${nfx ? `<button type="button" class="tc-badge" data-tl="hist" aria-label="${esc(t('fxDone'))}">✦ ${nfx}</button>` : ''}
+      ${c.prev ? `<button type="button" class="tc-ab" data-tl="ab">${ic('hp')}<span>${esc(t('tcAB'))}</span></button>` : ''}</div>
+    ${sug}
+    <div class="tc-grid">${tile('split', 'scissors', t('sh_split')) + tile('del', 'trash', t('sh_del'), 'del') + tile('copy', 'copy', t('sh_copy')) + tile('gain', 'vol', t('sh_gain')) + tile('speed', 'gauge', t('sh_speed')) +
+      CARD_TILES[kind].map(([k, i, l]) => tile(k, i, t(l), 'k')).join('') + tile('all', 'grid', t('sh_all'))}</div>`;
+  bar.style.setProperty('--kc', K.c); bar.style.setProperty('--ks', K.soft);
+}
+/* the old short bar at the bottom is gone: the card has the same buttons */
+function tlQBar() { const q = $('#tlQBar'); if (q) q.hidden = true; document.body.classList.remove('tlq'); }
+function tlFxList() { }
+
+/* ----- the "what was done" list, now a sheet behind the ✦ badge ----- */
+function tlHistory() {
+  const c = tlSel(); if (!c) return;
+  const rows = (c.fx || []).map(f => [t('op_' + f.op), f.r]);
+  if (c.eq) rows.push([t('tlEq'), c.eq.map((v, i) => EQ_BANDS[i] + ' ' + (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v)).join(' · ')]);
+  if (c.bass) rows.push([t('tlBass'), sdb(c.bass)]);
+  if (c.treble) rows.push([t('tlTreble'), sdb(c.treble)]);
+  if (c.gain) rows.push([t('tlVol'), dbTxt(c.gain)]);
+  if (c.env && c.env.length) rows.push([t('tlEnv'), t('envN', { n: c.env.length })]);
+  const card = openModal(`<h3>${esc(t('fxDone'))}</h3><p class="mtext">${esc(t('histD'))}</p>
+    <ol class="hist">${rows.map(([a, b]) => `<li><b>${esc(a)}</b>${b ? `<small>${esc(b)}</small>` : ''}</li>`).join('')}</ol>
+    <div class="modal-actions">${c.prev ? `<button class="btn" type="button" data-h="ab">${ic('hp')}${esc(t('tcAB'))}</button>` : ''}<span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
+  card.onclick = e => { if (e.target.closest('[data-x]')) closeModal(); else if (e.target.closest('[data-h="ab"]')) { closeModal(); tlAB(); } };
+}
+
+/* ----- smart check: the clean-up analysis on one clip, a 0–100 score, one tap to fix what it found ----- */
+function tlScore(d, music) {
+  let s = 100;
+  if (!music && d.snr < 35) s -= Math.min(30, (35 - d.snr) * 1.2);
+  if (d.clipped > 50) s -= 10;
+  if (d.hum > 6) s -= 8;
+  if (d.clicks >= 3) s -= 5;
+  if (!music && d.plosive >= 0.2) s -= 5;
+  if (!music && d.sib >= 1) s -= 4;
+  if (!music && d.eq >= 2) s -= 6;
+  if (!music && d.speech && d.lra > 8) s -= 5;
+  return Math.round(clamp(s, 15, 100));
+}
+async function tlSmart() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  tlStop();
+  let d;
+  try { d = await tlRunJob(t('smScan'), 'diagnose', Object.assign({ src: { path: c.path } }, pauseArgs())); } catch (e) { toast(errText(e), 5000); return; }
+  const music = tlKind(c.tr) === 'music', purpose = music ? 'music' : (ls.get('purpose', 'youtube') === 'music' ? 'youtube' : ls.get('purpose', 'youtube'));
+  const issues = clIssues(d, purpose).filter(([k, , on]) => k !== 'loud' && k !== 'trim' && k !== 'pauses' && on !== false);
+  TL.dg = { id: c.id, path: c.path, d, purpose, issues, fixes: issues.map(x => x[0]), score: tlScore(d, music) };
+  renderTlBar();
+}
+async function tlSmartFix() {
+  const c = tlSel(), dg = TL.dg; if (!c || !dg || dg.id !== c.id || TL.busy) return;
+  tlStop();
+  let res, add;
+  try {
+    res = await tlRunJob(t('smFixing'), 'clean', Object.assign(pauseArgs(), { path: dg.d.path, fixes: dg.fixes, strength: 1, target: purposeTarget(dg.purpose), ai: !!CAPS.sep && dg.purpose !== 'music' }, roomArgs(dg.d)));
+    add = await tlRunJob(t('smFixing'), 'tlAdd', { src: { path: res.path } });   // the result lives in the clean-up cache: copy it into the project
+  } catch (e) { toast(errText(e), 5000); return; }
+  const before = tlSnap(), nd = add.dur / 1000, old = c.path;
+  if (Math.abs(nd - c.dur) > 0.01) { c.in = 0; c.out = nd; delete c.env; }
+  Object.assign(c, { path: add.path, dur: nd, ch: add.ch, prev: old });
+  delete c.chg;
+  c.out = Math.min(c.out, nd); c.in = Math.min(c.in, c.out - 0.05);
+  c.fx = (c.fx || []).concat([{ op: 'smart', r: dg.fixes.map(k => t('op_' + k)).join(', ') }]);
+  TL.dg = null;
+  tlCommit(before);
+  toast(t('smDone', { n: dg.fixes.length }), 3500);
+}
+
+/* ----- every tool in one drawer: groups, big labelled squares, search ----- */
+function tlGroups(c) {
+  if (!c) return [
+    ['grp_add', 'speech', [['rec', 'mic', 'sh_rec'], ['add', 'import', 'sh_add'], ['sfx', 'bell', 'sh_sfx'], ['tts', 'speak', 'sh_tts'], ['insSil', 'sil', 'sh_sil'], ['paste', 'paste', 'sh_paste']]],
+    ['grp_arrange', 'other', [['marker', 'flag', 'sh_marker'], ['metro', 'beat', 'sh_metro'], ['fit', 'wave', 'tlFit'], ['video', 'film', 'sh_video']]],
+    ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
+  const op = (x, i) => ['op:' + x, i, 'op_' + x];
+  return [
+    ['grp_clean', 'speech', [['clarify', 'spark', 'op_clarify'], ['smart', 'spark', 'smScan'], op('aidenoise', 'chip'), CAPS.sep ? op('sepdenoise', 'chip') : null, op('denoise', 'wave'), op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
+    ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null]],
+    ['grp_vol', 'other', [['gain', 'vol', 'tlVol'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol')]],
+    ['grp_tone', 'music', [['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],
+    ['grp_trim', 'other', [op('trim', 'scissors'), op('pauses', 'sil'), op('fillers', 'speak'), op('silence', 'sil')]],
+    ['grp_fx', 'fx', [op('voicefx', 'spark'), ['vchg', 'speak', 'vcT'], op('autotune', 'note'), op('reverb', 'ear'), op('delay', 'wave')]],
+    ['grp_more', 'other', [['speed', 'gauge', 'tlSpeed'], ['sep', 'mixer', 'tlSep'], ['spk', 'people', 'tlSpk'], ['spec', 'spec', 'tlSpec'], ['beats', 'beat', 'tlBeats'], ['punch', 'mic', 'tlPunch'],
+      ['merge', 'copy', 'tlMerge'], ['dup', 'copy', 'tlDup'], ['cut', 'scissors', 'tlCut'], ['track', 'mixer', 'tlTrack']]]];
+}
+function tlAll() {
+  const c = tlSel(), groups = tlGroups(c).map(([g, k, items]) => [g, k, items.filter(Boolean)]);
+  const card = openModal(`<div class="dr-head"><h3>${esc(t(c ? 'drTools' : 'drProject'))}</h3>
+      <label class="dr-search">${ic('search')}<input type="search" id="drQ" placeholder="${esc(t('drSearch'))}" aria-label="${esc(t('drSearch'))}"></label></div>
+    <div class="drawer" id="drBody">${groups.map(([g, k, items]) => `<section class="dr-g" style="--kc:${TK[k].c};--ks:${TK[k].soft}"><h4>${esc(t(g))}</h4><div class="dr-grid">${items.map(([a, i, l]) =>
+      `<button type="button" class="dr-t" data-dr="${a}"${TL.busy ? ' disabled' : ''}><span class="dr-ic">${ic(i)}</span><span>${esc(t(l))}</span></button>`).join('')}</div></section>`).join('')}</div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('close'))}</button></div>`);
+  card.classList.add('dr-card');
+  const q = card.querySelector('#drQ');
+  q.oninput = () => {
+    const s = q.value.trim().toLocaleLowerCase(LOC);
+    card.querySelectorAll('.dr-t').forEach(b => { b.hidden = !!s && !b.textContent.toLocaleLowerCase(LOC).includes(s); });
+    card.querySelectorAll('.dr-g').forEach(g => { g.hidden = ![...g.querySelectorAll('.dr-t')].some(b => !b.hidden); });
+  };
+  card.onclick = e => {
+    if (e.target.closest('[data-x]')) { closeModal(); return; }
+    const b = e.target.closest('[data-dr]'); if (!b || b.disabled) return;
+    closeModal(); setTimeout(() => tlDo(b.dataset.dr, null), 60);
+  };
+}
+async function tlMore() {
+  const v = await chooseBox(t('more'), '', [
+    { value: 'snap', label: t(TL.snap ? 'snapOn' : 'snapOff'), desc: t('tlSnap') }, { value: 'meter', label: t('tlMeter'), desc: '' },
+    { value: 'fit', label: t('tlFit'), desc: '' }, { value: 'recset', label: t('tlRecSet'), desc: '' }, { value: 'all', label: t('sh_all'), desc: '' }, { value: 'new', label: t('tlNewP'), desc: '' }]);
+  if (v) tlDo(v, null);
+}
 
 /* ---------- boot ---------- */
 let booted = false;
