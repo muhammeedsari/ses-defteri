@@ -224,6 +224,7 @@
 <script src="i18n36.js"></script>
 <script src="i18n37.js"></script>
 <script src="i18n38.js"></script>
+<script src="i18n39.js"></script>
 <script>
 (() => {
 'use strict';
@@ -234,7 +235,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.4.1';
+const VERSION = '4.5';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -2462,7 +2463,7 @@ function srtOf(segs) {
 }
 /* ---------- edit sound: every step is its own file you can play, compare and undo ---------- */
 /* ---------- "Edit sound": multitrack timeline ---------- */
-const TL_MAX = 4, TL_RULER = 26, TL_ADD = 44; let TL_ROW = 58;   // 4.3: one track gets a taller row
+const TL_MAX = 4, TL_RULER = 26, TL_ADD = 58; let TL_ROW = 58;   // 4.3: one track gets a taller row
 const TL = { p: null, sel: null, pos: 0, pps: 40, play: false, busy: null, undo: [], redo: [], raf: 0, cleanT: 0, rec: null, snap: ls.get('tlSnap', true), guide: null, env: false, meter: ls.get('tlMeter', false), mv: null };
 const tlNew = () => ({ tracks: [{ vol: 0, mute: false }], clips: [] });
 function tlLoad() {
@@ -2686,7 +2687,7 @@ async function tlAddFrom(r, atSec, skip) {
   try { res = await tlRunJob(t('tlAdding'), 'tlAdd', { src: r.src }); } catch (e) { toast(errText(e), 5000); return; }
   const before = tlSnap(), dur = res.dur / 1000, at = atSec != null ? atSec : TL.p.clips.length ? TL.pos : 0;
   const sk = Math.min(skip || 0, Math.max(0, dur - 0.1));
-  const c = { id: uid(), tr: tlFreeTrack(at, at + dur - sk), path: res.path, ch: res.ch, dur, in: sk, out: dur, at, gain: 0, fi: 0, fo: 0, name: r.title || '', kind: kindOf(r) === 'music' || r.mode === 'music' ? 'music' : dur < 8 ? 'fx' : 'speech' };
+  const c = { id: uid(), tr: tlFreeTrack(at, at + dur - sk), path: res.path, ch: res.ch, dur, in: sk, out: dur, at, gain: 0, fi: 0, fo: 0, name: r.title || '', kind: tlIsMusic(r) ? 'music' : dur < 8 ? 'fx' : 'speech' };
   tlEnsureTrack(c.tr);
   TL.p.clips.push(c); TL.sel = c.id;
   if (!TL.p.name) TL.p.name = r.title || '';
@@ -3104,7 +3105,7 @@ function drawTl() {
   if (rows < TL_MAX) {
     const y = TL_RULER + rows * TL_ROW;
     ctx.fillStyle = COL.muted; ctx.font = `12px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `12px ${SANS}`; ctx.fillText('+  ' + t('tkAdd'), (w + HD) / 2, y + TL_ADD / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = `11px ${MONO}`;
+    ctx.font = `13.5px ${SANS}`; ctx.fillText('+  ' + t('tkAdd'), (w + HD) / 2, y + TL_ADD / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = `11px ${MONO}`;
     ctx.strokeStyle = COL.line; ctx.setLineDash([4, 4]); ctx.strokeRect(HD + 8.5, y + 6.5, w - HD - 17, TL_ADD - 13); ctx.setLineDash([]);
   }
   // metronome grid: bar lines stronger than beats
@@ -3394,7 +3395,32 @@ function tlAct(e) {
   const b = e.target.closest('[data-tl]'); if (!b || b.disabled) return;
   tlDo(b.dataset.tl, b);
 }
+/** 4.4.2: music or not: the music list, a recording made as music, an artist / album tag, or a name that says so */
+const MUSIC_RX = /m[uü]zik|music|song|[sş]ark[ıi]|caz|jazz|enstr[uü]man|instrum|beat|remix|melod|piano|piyano|gitar|guitar|orkestra|orchestra|klasik|classical|lofi|lo-fi|karaoke|cover|feat\.|ft\./i;
+function tlIsMusic(r) {
+  return kindOf(r) === 'music' || r.mode === 'music' || !!(r.artist || r.album) || MUSIC_RX.test((r.title || '') + ' ' + (r.name || ''));
+}
+/** 4.4.2: studio voice: one tap does noise, room, mouth, pops, sharp "s", clarity, tone and loudness together */
+const STUDIO = ['hum', 'denoise', 'dereverb', 'mouth', 'plosive', 'deess', 'clarify', 'eq', 'comp', 'loud'];
+async function tlStudio() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  tlStop();
+  let res, add;
+  try {
+    res = await tlRunJob(t('sh_studio'), 'clean', { path: c.path, fixes: STUDIO, strength: 1, target: purposeTarget('podcast'), ai: !!CAPS.sep });
+    add = await tlRunJob(t('sh_studio'), 'tlAdd', { src: { path: res.path } });
+  } catch (e) { toast(errText(e), 5000); return; }
+  const before = tlSnap(), nd = add.dur / 1000, old = c.path;
+  if (Math.abs(nd - c.dur) > 0.01) { c.in = 0; c.out = nd; delete c.env; }
+  Object.assign(c, { path: add.path, dur: nd, ch: add.ch, prev: old });
+  delete c.chg;
+  c.out = Math.min(c.out, nd); c.in = Math.min(c.in, c.out - 0.05);
+  c.fx = (c.fx || []).concat([{ op: 'studio', r: STUDIO.map(k => t('op_' + k)).join(', ') }]);
+  tlCommit(before);
+  toast(t('studioDone'), 3500);
+}
 function tlDo(k, b) {
+  if (k === 'studio') { tlStudio(); return; }
   if (k.startsWith('cat:')) { const c = tlSel(); if (c) { TL.cat = k.slice(4); TL.catId = c.id; renderTlBar(); } return; }
   if (k === 'catx') { TL.cat = null; renderTlBar(); return; }
   if (k.startsWith('op:')) { const c = tlSel(); if (c) tlFxRun(c, k.slice(3)); return; }
@@ -5985,7 +6011,7 @@ function tlGroups(c) {
     ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
   const op = (x, i) => ['op:' + x, i, 'op_' + x];
   return [
-    ['grp_ai', 'ai', [['smart', 'spark', 'smScan'], op('aidenoise', 'chip'), CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], ['spk', 'people', 'tlSpk']]],
+    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], CAPS.sep ? op('aidenoise', 'chip') : null, CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], ['spk', 'people', 'tlSpk']]],
     ['grp_clean', 'speech', [['clarify', 'spark', 'op_clarify'], op('denoise', 'wave'), op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
     ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null, ['spec', 'spec', 'tlSpec']]],
     ['grp_vt', 'music', [['gain', 'vol', 'tlVol'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol'), ['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],
