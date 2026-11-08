@@ -235,7 +235,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.7.2';
+const VERSION = '4.8';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -3487,6 +3487,7 @@ function tlDo(k, b) {
   if (k === 'stt') { tlStt(); return; }
   if (k === 'sep4') { tlSep('four'); return; }
   if (k === 'keyfind') { tlKeyFind(); return; }
+  if (k === 'capvid') { tlCapVideo(); return; }
   if (k === 'flai') { const c = tlSel(); if (!c) return; if (!hasAsr()) { asrOffer().then(ok => { if (ok) toast(t('flaiReady'), 4000); }); return; } tlFillers(c, true); return; }
   if (k === 'tedit') { tlTextEdit(); return; }
   if (k.startsWith('cat:')) { const c = tlSel(); if (c) { TL.cat = k.slice(4); TL.catId = c.id; renderTlBar(); } return; }
@@ -4194,6 +4195,31 @@ function quickRec() {
 window.__sdQuickRec = () => { try { if (AND.takeQuickRec()) quickRec(); } catch (e) {} };
 
 /** 2.6: the project's sound goes into a video (the picture is copied untouched) */
+/** 4.8: a captioned video of the whole project (vertical / square / wide): words as big captions over a moving level */
+async function tlCapVideo() {
+  if (!TL.p.clips.length || TL.busy) return;
+  if (!CAPS.asr) { toast(t('textNoAsr'), 4000); return; }
+  if (!hasAsr() && !(await asrOffer())) return;
+  const fm = await chooseBox(t('sh_capvid'), t('cvD'), [{ value: '720x1280', label: t('cv_v'), desc: 'Reels · Shorts · TikTok' }, { value: '720x720', label: t('cv_s'), desc: 'Instagram' }, { value: '1280x720', label: t('cv_h'), desc: 'YouTube' }]);
+  if (!fm) return;
+  tlStop();
+  const [w, h] = fm.split('x').map(Number);
+  try {
+    const mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips: tlMix() });
+    const tx = await tlRunJob(t('sh_stt'), 'transcribe', { src: { path: mix.path }, lang: S.textLang, model: S.asrModel });
+    const segs = [], MAX = w > h ? 70 : 48;   // long sentences become several short captions, time shared by length
+    for (const [a, b, text] of tx.segments || []) {
+      const ws = String(text).split(/\s+/).filter(Boolean), parts = []; let cur = '';
+      for (const x of ws) { if (cur && (cur + ' ' + x).length > MAX) { parts.push(cur); cur = x; } else cur = cur ? cur + ' ' + x : x; }
+      if (cur) parts.push(cur);
+      const tot = parts.reduce((m, x) => m + x.length, 0) || 1; let st = a;
+      for (const x of parts) { const en = st + (b - a) * x.length / tot; segs.push([st, en, x]); st = en; }
+    }
+    const color = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#6A45B0';
+    const res = await tlRunJob(t('sh_capvid'), 'audiogram', { path: mix.path, segs, w, h, title: TL.p.name || '', color: /^#[0-9a-f]{6}$/i.test(color) ? color : '#6A45B0', name: fileName(TL.p.name || t('tabEdit'), 'edit') });
+    if (await confirmBox({ title: t('vidDone'), text: t(res.gallery ? 'vidDoneD' : 'vidDoneOld'), ok: t('share'), cancel: t('ok') })) AND.share(JSON.stringify(res.src), res.name, 'video/mp4');
+  } catch (e) { toast(errText(e), 5000); }
+}
 async function tlVideo() {
   if (!TL.p.clips.length || TL.busy) return;
   tlStop();
@@ -5989,7 +6015,7 @@ function renderTlBar() {
     const n = TL.p.tracks.length;
     bar.innerHTML = `<div class="tc-head"><div class="tc-t"><b>${esc(TL.p.name || t('tlProject'))}</b><small>${esc(TL.p.clips.length ? t('tcProj', { n, d: fmt(tlEnd()) }) : t('tlEmptyD'))}</small></div></div>
       <div class="tc-grid">${tile('rec', 'mic', t('sh_rec'), 'rec') + tile('add', 'import', t('sh_add')) + tile('sfx', 'bell', t('sh_sfx')) + tile('tts', 'speak', t('sh_tts')) +
-        (TL.p.clips.length ? tile('insSil', 'sil', t('sh_sil')) + tile('marker', 'flag', t('sh_marker')) + tile('metro', 'beat', t('sh_metro')) + tile('video', 'film', t('sh_video')) : '') +
+        (TL.p.clips.length ? tile('insSil', 'sil', t('sh_sil')) + tile('marker', 'flag', t('sh_marker')) + tile('metro', 'beat', t('sh_metro')) + tile('video', 'film', t('sh_video')) + (CAPS.asr ? tile('capvid', 'textic', t('sh_capvid')) : '') : '') +
         (tlClip() ? tile('paste', 'paste', t('sh_paste')) : '') + tile('all', 'grid', t('sh_all'))}</div>`;
     return;
   }
@@ -6079,11 +6105,11 @@ async function tlSmartFix() {
 function tlGroups(c) {
   if (!c) return [
     ['grp_add', 'speech', [['rec', 'mic', 'sh_rec'], ['add', 'import', 'sh_add'], ['sfx', 'bell', 'sh_sfx'], ['tts', 'speak', 'sh_tts'], ['insSil', 'sil', 'sh_sil'], ['paste', 'paste', 'sh_paste']]],
-    ['grp_arrange', 'other', [['marker', 'flag', 'sh_marker'], ['metro', 'beat', 'sh_metro'], ['fit', 'wave', 'tlFit'], ['video', 'film', 'sh_video']]],
+    ['grp_arrange', 'other', [['marker', 'flag', 'sh_marker'], ['metro', 'beat', 'sh_metro'], ['fit', 'wave', 'tlFit'], ['video', 'film', 'sh_video'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
     ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
   const op = (x, i) => ['op:' + x, i, 'op_' + x];
   return [
-    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], ['clarify', 'spark', 'op_clarify'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk'], CAPS.asr ? ['flai', 'speak', 'sh_flai'] : null, ['tts', 'speak', 'sh_tts'], ['keyfind', 'beat', 'sh_key']]],
+    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], ['clarify', 'spark', 'op_clarify'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, CAPS.sep ? op('sepdenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk'], CAPS.asr ? ['flai', 'speak', 'sh_flai'] : null, ['tts', 'speak', 'sh_tts'], ['keyfind', 'beat', 'sh_key'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
     ['grp_clean', 'speech', [op('denoise', 'wave'), op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
     ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null, ['spec', 'spec', 'tlSpec']]],
     ['grp_vt', 'music', [['gain', 'vol', 'tlVol'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol'), ['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],

@@ -146,7 +146,7 @@ final class VideoMux {
     }
 
     /** Movies/Ses Defteri on Android 10+, the app's own Movies folder on 7–9 */
-    private static JSONObject publish(Context c, File from, String name) throws Exception {
+    static JSONObject publish(Context c, File from, String name) throws Exception {
         JSONObject src = new JSONObject();
         Uri u = null;
         File f = null;
