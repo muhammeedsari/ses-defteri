@@ -544,3 +544,5 @@ body.ed .tl-top{margin-top:8px}
 .rec-sum{display:none;text-align:center;color:var(--stage-muted);font-size:13px;margin:6px 0 0}
 .rec-sheet:not([data-state="idle"]) .rec-sum{display:block}
 .rec-sheet:not([data-state="idle"]) #purposeRow,.rec-sheet:not([data-state="idle"]) #recFx,.rec-sheet:not([data-state="idle"]) #roomBox,.rec-sheet:not([data-state="idle"]) #modeHint{display:none!important}
+/* 4.4.1: level bar with its word underneath, centred */
+#recPeak{display:inline-flex;flex-direction:column;align-items:center;gap:6px}

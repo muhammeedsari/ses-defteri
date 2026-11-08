@@ -93,13 +93,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         Object[] o = new Object[4];
         if (noFx && p == mp) { fx.put(p, o); return; }
         // 4.0.1: only the phone's standard equalizer. DynamicsProcessing took over the volume on some phones (volume keys stopped working)
-        if (eqDb != null) { boolean flat = true; for (double g : eqDb) if (Math.abs(g) > 0.05) flat = false; if (!flat) o[0] = sysEq(p.getAudioSessionId()); }
-        try {
-            if (bassStr > 0) { android.media.audiofx.BassBoost bb = new android.media.audiofx.BassBoost(1000, p.getAudioSessionId()); bb.setStrength((short) bassStr); bb.setEnabled(true); o[2] = bb; }
-        } catch (Exception ignored) { }
-        try {
-            if (virtStr > 0) { android.media.audiofx.Virtualizer v = new android.media.audiofx.Virtualizer(1000, p.getAudioSessionId()); v.setStrength((short) virtStr); v.setEnabled(true); o[3] = v; }
-        } catch (Exception ignored) { }
+        tone(p, o);
         try {
             double g = gainOf(it);
             if (g > 0.5 && Build.VERSION.SDK_INT >= 19) {
@@ -112,8 +106,51 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         fx.put(p, o);
     }
 
+    private boolean toneOn() {
+        if (bassStr > 0 || virtStr > 0) return true;   // the EQ then only makes room so the boost does not distort
+        if (eqDb != null) for (double g : eqDb) if (Math.abs(g) > 0.05) return true;
+        return false;
+    }
+
+    /** 4.4.1: EQ, bass and surround are made once per player and only retuned when a setting moves
+       (rebuilding them on every slider step made the sound stutter) */
+    private void tone(MediaPlayer p, Object[] o) {
+        int ses = p.getAudioSessionId();
+        try {
+            if (toneOn()) { if (o[0] == null) o[0] = sysEq(ses); else eqLevels((android.media.audiofx.Equalizer) o[0]); }
+            else if (o[0] != null) { ((android.media.audiofx.AudioEffect) o[0]).release(); o[0] = null; }
+        } catch (Exception ignored) { }
+        try {
+            if (bassStr > 0) {
+                if (o[2] == null) { android.media.audiofx.BassBoost bb = new android.media.audiofx.BassBoost(1000, ses); bb.setEnabled(true); o[2] = bb; }
+                ((android.media.audiofx.BassBoost) o[2]).setStrength((short) Math.min(800, bassStr));
+            } else if (o[2] != null) { ((android.media.audiofx.AudioEffect) o[2]).release(); o[2] = null; }
+        } catch (Exception ignored) { }
+        try {
+            if (virtStr > 0) {
+                if (o[3] == null) { android.media.audiofx.Virtualizer v = new android.media.audiofx.Virtualizer(1000, ses); v.setEnabled(true); o[3] = v; }
+                ((android.media.audiofx.Virtualizer) o[3]).setStrength((short) Math.min(800, virtStr));
+            } else if (o[3] != null) { ((android.media.audiofx.AudioEffect) o[3]).release(); o[3] = null; }
+        } catch (Exception ignored) { }
+    }
+
+    /** room for the boosts: the whole curve goes down by most of the biggest boost (and a bit for bass / surround) so nothing clips */
+    private double headroom() {
+        double m = 0;
+        if (eqDb != null) for (double g : eqDb) m = Math.max(m, g);
+        return m * 0.85 + Math.min(800, bassStr) / 1000.0 * 5 + Math.min(800, virtStr) / 1000.0 * 2;
+    }
+
+    private void eqLevels(android.media.audiofx.Equalizer e) {
+        short n = e.getNumberOfBands();
+        short[] range = e.getBandLevelRange();
+        double h = headroom();
+        for (short b = 0; b < n; b++) e.setBandLevel(b, (short) Math.max(range[0], Math.min(range[1], Math.round((gainAt(e.getCenterFreq(b) / 1000.0) - h) * 100))));
+    }
+
     /** gain at frequency f (Hz) from the drawn bands, straight lines on a log scale */
     private double gainAt(double f) {
+        if (eqDb == null) return 0;
         int n = eqFc.length;
         if (f <= eqFc[0]) return eqDb[0];
         if (f >= eqFc[n - 1]) return eqDb[n - 1];
@@ -125,9 +162,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     private Object sysEq(int session) {
         try {
             android.media.audiofx.Equalizer e = new android.media.audiofx.Equalizer(1000, session);   // high priority: the phone's sound packs must not take it over
-            short n = e.getNumberOfBands();
-            short[] range = e.getBandLevelRange();
-            for (short b = 0; b < n; b++) e.setBandLevel(b, (short) Math.max(range[0], Math.min(range[1], Math.round(gainAt(e.getCenterFreq(b) / 1000.0) * 100))));
+            eqLevels(e);
             e.setEnabled(true);
             return e;
         } catch (Exception ignored) {
@@ -321,8 +356,15 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
                 }
             }
         } catch (Exception ignored) { eqDb = null; }
-        if (mp != null) attachFx(mp, current());
-        if (nmp != null) attachFx(nmp, npos >= 0 ? queue.optJSONObject(order.get(npos)) : null);
+        retune(mp, current());
+        retune(nmp, npos >= 0 ? queue.optJSONObject(order.get(npos)) : null);
+    }
+
+    private void retune(MediaPlayer p, JSONObject it) {
+        if (p == null) return;
+        Object[] o = fx.get(p);
+        if (o == null || (noFx && p == mp)) { attachFx(p, it); return; }
+        tone(p, o);
     }
 
     synchronized void setXfade(int ms, boolean gap) {

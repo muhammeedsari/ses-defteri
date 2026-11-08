@@ -223,6 +223,7 @@
 <script src="i18n35.js"></script>
 <script src="i18n36.js"></script>
 <script src="i18n37.js"></script>
+<script src="i18n38.js"></script>
 <script>
 (() => {
 'use strict';
@@ -233,7 +234,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.4';
+const VERSION = '4.4.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -275,7 +276,7 @@ function applyStatic(root) {
 }
 
 /* ---------- theme ---------- */
-const THEME = { mode: ls.get('theme', null), accent: ls.get('accent', 'green') };
+const THEME = { mode: ls.get('theme', null), accent: ls.get('accent', 'violet') };
 if (THEME.mode == null) { THEME.mode = 'system'; if (AND && AND.themePref) { try { THEME.mode = AND.themePref() || 'system'; } catch (e) {} } }
 function applyTheme() {
   const root = document.documentElement;
@@ -1912,7 +1913,7 @@ function openEq() {
     <div class="modal-actions"><button class="btn" type="button" data-eqreset>${esc(t('eqReset'))}</button><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
   const cv = card.querySelector('#eqCv');
   card.querySelector('#eqNorm').onchange = ev => { S.normalize = ev.target.checked; ls.set('normalize', S.normalize); applyPlayerPrefs(); if (S.normalize) levelMatch(curRec()); };
-  const commit = () => { ls.set('eq2', e); clearTimeout(applyT); applyT = setTimeout(() => { applyPlayerPrefs(); plPrefLabels(); }, 90); };
+  const commit = () => { ls.set('eq2', e); clearTimeout(applyT); applyT = setTimeout(() => { if (NATIVE) try { AND.plEq(eqSend()); } catch (x) {} plPrefLabels(); }, 90); };
   const chips = () => {
     const u = ls.get('eqUser', []);
     card.querySelector('#eqChips').innerHTML = EQ10_PRE.map(([k]) => [k, eqPreName(k)]).concat(u.map(x => ['u:' + x.name, x.name])).concat(e.pre === 'custom' ? [['custom', t('eqp_custom')]] : [])
@@ -2468,6 +2469,8 @@ function tlLoad() {
   const p = ls.get('proj', null);
   TL.p = p && Array.isArray(p.tracks) && Array.isArray(p.clips) ? p : tlNew();
   if (!TL.p.tracks.length) TL.p.tracks.push({ vol: 0, mute: false });
+  if (TL.p.clips.length) for (let i = TL.p.tracks.length - 1; i >= 0 && TL.p.tracks.length > 1; i--)   // 4.4.1: empty tracks close up
+    if (!TL.p.clips.some(c => c.tr === i)) { TL.p.tracks.splice(i, 1); for (const c of TL.p.clips) if (c.tr > i) c.tr--; }
 }
 const tlLen = c => c.out - c.in;
 const tlEnd = () => TL.p.clips.reduce((m, c) => Math.max(m, c.at + tlLen(c)), 0);
@@ -2480,8 +2483,17 @@ function tlItem(c) {
   return it;
 }
 /** record a change: the state before it goes on the undo stack */
+/** 4.4.1: a track left empty by this change goes away and the tracks below move up (one clip = always the first track) */
+function tlPrune(before) {
+  let was; try { was = new Set(JSON.parse(before).clips.map(c => c.tr)); } catch (e) { return; }
+  for (let i = TL.p.tracks.length - 1; i >= 0 && TL.p.tracks.length > 1; i--) {
+    if (!was.has(i) || TL.p.clips.some(c => c.tr === i)) continue;
+    TL.p.tracks.splice(i, 1);
+    for (const c of TL.p.clips) if (c.tr > i) c.tr--;
+  }
+}
 function tlCommit(before) {
-  tlUnstack();
+  tlUnstack(); tlPrune(before);
   if (before === tlSnap()) return;
   TL.undo.push(before); if (TL.undo.length > 40) TL.undo.shift();
   TL.redo = [];
@@ -3107,6 +3119,7 @@ function drawTl() {
   }
   // clips
   ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.font = `600 10.5px ${SANS}`;
+  if (TL.lift) { const lc = TL.p.clips.find(x => x.id === TL.lift); if (lc) { ctx.fillStyle = TK[tlKind(lc.tr)].soft; ctx.globalAlpha = 0.5; ctx.fillRect(HD, TL_RULER + lc.tr * TL_ROW, w - HD, TL_ROW); ctx.globalAlpha = 1; } }
   for (const k of TL.p.clips) {
     const len = tlLen(k), x0 = X(k.at), x1 = X(k.at + len);
     if (x1 < 0 || x0 > w) continue;
@@ -3274,8 +3287,19 @@ function drawWs() { drawTl(); }
       if (inRow && Math.abs(p.x - xb) < 22) { g = Object.assign(base, { mode: 'trimR', c: s, out0: s.out }); return; }
     }
     const c = hit(p.x, p.y, p.w);
-    if (c && c === s) g = Object.assign(base, { mode: 'move', c, at0: c.at, tr0: c.tr });
-    else g = Object.assign(base, { mode: 'scroll', c, pos0: TL.pos, ruler: p.y < TL_RULER, tm: TL.pos + (p.x - tlCx(p.w)) / TL.pps });
+    g = Object.assign(base, { mode: 'scroll', c, pos0: TL.pos, ruler: p.y < TL_RULER, tm: TL.pos + (p.x - tlCx(p.w)) / TL.pps });
+    if (c) {   // 4.4.1: hold still on a clip, then drag: the clip lifts and moves (time and track)
+      const gg = g, id = e.pointerId;
+      gg.lp = setTimeout(() => {
+        if (g !== gg || gg.moved) return;
+        const q = pts.get(id) || { x: gg.x0, y: gg.y0 };
+        Object.assign(gg, { mode: 'move', at0: c.at, tr0: c.tr, x0: q.x, y0: q.y, moved: true });
+        if (TL.play) tlStop();
+        TL.sel = c.id; TL.lift = c.id;
+        try { AND.vibrate(25); } catch (x) {}
+        renderTlBar(); drawTl();
+      }, 380);
+    }
   });
   box.addEventListener('pointermove', e => {
     if (!pts.has(e.pointerId) || !g) return;
@@ -3326,6 +3350,7 @@ function drawWs() { drawTl(); }
     if (g.mode === 'pinch') { if (!pts.size) g = null; return; }
     const m = g; g = null;
     if (m.lp) clearTimeout(m.lp);
+    if (TL.lift && m.mode !== 'move') TL.lift = null;
     if (m.mode === 'envPt') { if (m.moved) tlCommit(m.before); return; }
     if (m.mode === 'scroll') {
       if (!m.moved) {
@@ -3340,18 +3365,23 @@ function drawWs() { drawTl(); }
           if (mk && Math.abs(TL.pos - mk.t) < 0.01) { tlDelMarker(mk); return; }
           TL.pos = clamp(mk ? mk.t : m.tm, 0, Math.max(tlEnd(), mk ? mk.t : 0)); if (TL.play) { tlStop(); tlPlay(); }
         }
-        else TL.sel = m.c ? m.c.id : null;
+        else TL.sel = m.c && TL.sel !== m.c.id ? m.c.id : null;
         renderTlBar(); drawTl();
       }
       return;
     }
     if (!m.moved) { if (m.mode === 'move') { TL.sel = null; renderTlBar(); drawTl(); } return; }
     if (m.mode === 'move') {
-      const c = m.c;
-      // never leave two clips on top of each other: move to the nearest free track, unless the edges just overlap (crossfade)
-      const ov = TL.p.clips.some(d => d !== c && d.tr === c.tr && d.at < c.at + tlLen(c) - 0.001 && d.at + tlLen(d) > c.at + 0.001);
-      if (ov && tlXfOk(c)) { if (!ls.get('xfSeen', false)) { ls.set('xfSeen', true); toast(t('tlXfMade'), 3500); } }
-      else c.tr = tlFreeTrack(c.at, c.at + tlLen(c), c.id, c.tr);
+      const c = m.c; TL.lift = null;
+      // never leave two clips on top of each other: the clips in the way swap to the track the dragged one came from;
+      // if they do not fit there, the dragged clip goes to a free track. Edges that just overlap make a crossfade.
+      const hitBy = (d, tr, skip) => TL.p.clips.some(x => !skip.includes(x) && x.tr === tr && x.at < d.at + tlLen(d) - 0.001 && x.at + tlLen(x) > d.at + 0.001);
+      const ov = TL.p.clips.filter(d => d !== c && d.tr === c.tr && d.at < c.at + tlLen(c) - 0.001 && d.at + tlLen(d) > c.at + 0.001);
+      if (ov.length && tlXfOk(c)) { if (!ls.get('xfSeen', false)) { ls.set('xfSeen', true); toast(t('tlXfMade'), 3500); } }
+      else if (ov.length) {
+        if (c.tr !== m.tr0 && ov.every(d => !hitBy(d, m.tr0, [c].concat(ov)))) ov.forEach(d => { d.tr = m.tr0; });
+        else c.tr = tlFreeTrack(c.at, c.at + tlLen(c), c.id, c.tr);
+      }
       tlEnsureTrack(c.tr);
     } else if (m.mode === 'trimL' || m.mode === 'trimR') tlTrimFit(m.c, m);
     tlCommit(m.before);
@@ -4510,7 +4540,12 @@ function setMode(m) {
   $('#modeSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', b.dataset.mode === m));
   $('#modeHint').textContent = modeHint(m); $('#modeHint').hidden = !modeHint(m);
 }
-$('#modeSeg').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b && R.state === 'idle') setMode(b.dataset.mode); });
+$('#modeSeg').addEventListener('click', e => {
+  const b = e.target.closest('[data-mode]'); if (!b || R.state !== 'idle') return;
+  setMode(b.dataset.mode);
+  const pu = b.dataset.mode === 'music' ? 'music' : R.purpose === 'music' ? ls.get('voicePu', 'youtube') : R.purpose;
+  if (pu && pu !== R.purpose) { R.purpose = pu; ls.set('purpose', pu); renderPurpose(); }
+});
 const elapsed = () => R.acc + (R.state === 'rec' ? (performance.now() - R.t0) / 1000 : 0);
 function pickMime() {
   const c = ['audio/webm;codecs=opus', 'audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'];
@@ -4751,7 +4786,7 @@ function renderPurpose() {
 $('#purposeRow').addEventListener('click', e => {
   if (e.target.closest('[data-puinfo]')) { purposeInfo(); return; }
   const b = e.target.closest('[data-purpose]'); if (!b || R.state !== 'idle') return;
-  R.purpose = b.dataset.purpose; ls.set('purpose', R.purpose);
+  R.purpose = b.dataset.purpose; ls.set('purpose', R.purpose); if (R.purpose !== 'music') ls.set('voicePu', R.purpose);
   setMode(R.purpose === 'music' ? 'music' : 'voice');
   renderPurpose();
 });
@@ -5781,9 +5816,15 @@ async function tlTrackMenu(i) {
   const v = await chooseBox(tlTrackName(i), t('tkMenuD'), [
     ...['speech', 'music', 'fx', 'other'].map(k => ({ value: 'k:' + k, label: (tlKind(i) === k ? '✓ ' : '') + t('tk_' + k), desc: '' })),
     { value: 'mute', label: t(tr.mute ? 'tkUnmute' : 'tkMute'), desc: '' },
+    ...(i > 0 ? [{ value: 'up', label: t('tkUp'), desc: '' }] : []), ...(i < TL.p.tracks.length - 1 ? [{ value: 'down', label: t('tkDown'), desc: '' }] : []),
     { value: 'name', label: t('tkRename'), desc: '' }, { value: 'set', label: t('tlTrack'), desc: t('tkSetD') }]);
   if (!v) return;
   const before = tlSnap();
+  if (v === 'up' || v === 'down') {
+    const j = v === 'up' ? i - 1 : i + 1, T = TL.p.tracks; [T[i], T[j]] = [T[j], T[i]];
+    for (const c of TL.p.clips) c.tr = c.tr === i ? j : c.tr === j ? i : c.tr;
+    tlCommit(before); return;
+  }
   if (v === 'mute') { tr.mute = !tr.mute; tlCommit(before); toast(t(tr.mute ? 'tlMuted' : 'tlUnmuted', { n: tlTrackName(i) })); return; }
   if (v.startsWith('k:')) { tr.kind = v.slice(2); tlCommit(before); return; }
   if (v === 'name') { const n = await promptBox(t('tkRename'), tlTrackName(i)); if (n) { tr.name = n; tlCommit(before); } return; }
@@ -6009,9 +6050,13 @@ function showLangPick() {
     <button class="btn primary" type="button" id="langGo">Continue · Devam</button></div>`;
   document.body.appendChild(d);
   let pick = 'en';
+  const say = () => { const L = (window.SD_I18N || {})[pick] || {}, E = (window.SD_I18N || {}).en || {};
+    d.querySelector('p').textContent = L.langChoose || E.langChoose || 'Choose your language'; d.querySelector('#langGo').textContent = L.langGo || E.langGo || 'Continue';
+    d.dir = pick === 'ar' ? 'rtl' : 'ltr'; };
+  say();
   d.addEventListener('click', e => {
     const b = e.target.closest('[data-lang]');
-    if (b) { pick = b.dataset.lang; d.querySelectorAll('[data-lang]').forEach(x => x.setAttribute('aria-checked', x === b)); return; }
+    if (b) { pick = b.dataset.lang; d.querySelectorAll('[data-lang]').forEach(x => x.setAttribute('aria-checked', x === b)); say(); return; }
     if (e.target.closest('#langGo')) {
       ls.set('lang', pick);
       if (AND && AND.setLang) { try { AND.setLang(pick); } catch (x) {} }
