@@ -8,7 +8,9 @@ Build (zig as the cross compiler, no NDK needed), for each ABI:
       -Istub -I$JAVA_HOME/include -I$JAVA_HOME/include/linux -Wl,-soname,libsdsep.so \
       -o arm64-v8a/libsdsep.so sdsep.c arm64-v8a/libsherpa-onnx-c-api.so
 
-(`stub/stdio.h` is an empty file; `c-api.h` comes from sherpa-onnx v1.13.8; use `arm-linux-androideabi` for armeabi-v7a.)
+(`stub/stdio.h` is an empty file; `c-api.h` comes from sherpa-onnx v1.13.8; use `arm-linux-androideabi` (zig 0.13: `arm-linux-android`) for armeabi-v7a.)
+
+Since 4.12 libsdsep.so also calls ONNX Runtime's C API directly (HD voice, `app.sesdefteri.Hd`): add `-s`, `-I<ort-include>` and `<abi>/libonnxruntime.so` to the link. Headers: `onnxruntime_c_api.h`, `onnxruntime_ep_c_api.h`, `onnxruntime_error_code.h` from onnxruntime v1.28.2 `include/onnxruntime/core/session/`; with zig they need a stub `stdlib.h` containing `#include <stddef.h>` and an empty `string.h`.
 
 # libsdmp3.so (MP3 export, arm64-v8a only)
 

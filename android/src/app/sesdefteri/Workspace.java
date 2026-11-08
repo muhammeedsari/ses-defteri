@@ -169,6 +169,7 @@ final class Workspace {
         try {
             if ("insert".equals(op)) return insert(c, in, inf, out, a, p, cancel);
             if ("aidenoise".equals(op)) return aiDenoise(c, in, inf, out, str, p, cancel);
+            if ("hd".equals(op)) return hd(c, in, inf, out, a, p, cancel);
             if ("gate".equals(op)) return gate(in, inf, out, str, p, cancel);
             if ("sepdenoise".equals(op)) return sepDenoise(c, in, inf, p, cancel);
             if ("pauses".equals(op)) return pauses(in, inf, out, a, p, cancel);
@@ -1008,6 +1009,35 @@ final class Workspace {
 
     /** noise removal with the voice-separation model: keeps the voice, drops everything else */
     /** DPDFNet speech denoiser (48 kHz mono model; other rates are converted there and back) */
+    /** 4.12 HD voice: the original up to its own top frequency, the AI's high band above it; 48 kHz out */
+    static JSONObject hd(Context c, File in, Info inf, File out, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        if (!Separator.available()) throw new IllegalStateException("sep-unavailable");
+        if (!Hd.ready(c)) throw new IllegalStateException("hd-model");
+        Analyzer.Analysis an = analyze(in, inf, part(p, 0, 0.1), cancel);
+        // anything at all up to 15.5 kHz: already full; the crossover sits where the voice's own top end fades (25 dB down)
+        double bw = Hd.bandwidth(an.ltasPower, inf.rate, an.fftSize, 25);
+        JSONObject rep = new JSONObject().put("from", Math.round(bw / 100) / 10.0);
+        double full = Hd.bandwidth(an.ltasPower, inf.rate, an.fftSize, 50);
+        if (full >= 15500) { rep.put("none", true).put("from", Math.round(full / 100) / 10.0); return same(a, rep); }
+        synchronized (Hd.class) {
+            File d = Hd.dir(c);
+            if (!Hd.open(new File(d, Hd.FILES[0]).getAbsolutePath(), new File(d, Hd.FILES[2]).getAbsolutePath(), Hd.threads())) throw new IllegalStateException("hd-model");
+            try {
+                Meter m = new Meter(inf.ch, Hd.RATE);
+                Node head = new Hd.Stage(inf.ch, Math.max(3000, bw)), tail = head;
+                if (inf.rate != Hd.RATE) { Resampler r = new Resampler(inf.ch, (double) inf.rate, (double) Hd.RATE); r.to(head); head = r; }
+                tail.to(m).to(new Studio.WavNode(out, Hd.RATE));
+                wav(in, inf, part(p, 0.1, 1), new double[] { 0, 1 }, cancel).run(head);
+                return done(out, m, rep);
+            } catch (Exception e) {
+                out.delete();
+                throw e;
+            } finally {
+                Hd.close();
+            }
+        }
+    }
+
     static JSONObject aiDenoise(Context c, File in, Info inf, File out, double str, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         Analyzer.Analysis b = analyze(in, inf, part(p, 0, 0.25), cancel);
         long h = Denoiser.open(c);

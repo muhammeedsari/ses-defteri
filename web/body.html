@@ -230,6 +230,7 @@
 <script src="i18n42.js"></script>
 <script src="i18n43.js"></script>
 <script src="i18n44.js"></script>
+<script src="i18n45.js"></script>
 <script>
 (() => {
 'use strict';
@@ -240,7 +241,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.11.2';
+const VERSION = '4.12';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -2194,6 +2195,7 @@ function errText(e) {
   if (m.includes('tts-none')) return t('ttsNone');
   if (m.includes('tts-empty')) return t('ttsEmpty');
   if (m.includes('dia-short')) return t('spkShort');
+  if (m.includes('hd-model')) return t('hdFail');
   if (m.includes('download-')) return t('spkNet');
   if (/No such file|FileNotFound|ENOENT/.test(m)) return t('errMissing');
   // keep a short hint for bug reports, but no file paths or Java class names
@@ -2917,7 +2919,7 @@ async function tlEffect(c, op, extra) {
     Object.assign(c, { path: sg.path, dur: sg.dur / 1000, ch: sg.ch, in: 0 }); c.out = c.dur;
   }
   try { res = await tlRunJob(t('op_' + op), 'wsOp', Object.assign({ path: c.path, op }, extra || {})); } catch (e) { if (b0) { TL.p = JSON.parse(b0); drawTl(); } toast(errText(e), 5000); return; }
-  if (res.same) { toast(res.report && res.report.none ? t('fxNone', { x: t('op_' + op) }) : t('wsSame'), 4000); return; }
+  if (res.same) { toast(res.report && res.report.none ? (op === 'hd' ? t('hdAlready', { f: nf1.format(res.report.from || 0) }) : t('fxNone', { x: t('op_' + op) })) : t('wsSame'), 4000); return; }
   const before = b0 || tlSnap(), nd = res.dur / 1000;
   const b4 = tlState(b0 ? (JSON.parse(b0).clips.find(x => x.id === c.id) || c) : c);
   if (Math.abs(nd - c.dur) > 0.01) {
@@ -3012,6 +3014,7 @@ function wsReport(op, st) {
     case 'voicefx': return t('vfx_' + (r.preset || 'radio'));
     case 'autotune': return t('rpw_autotune', { k: keyName(r.key || 0, r.scale) });
     case 'spaint': return t('rpw_spaint', { n: r.n || 0 });
+    case 'hd': return t('rpw_hd', { f: nf1.format(r.from || 0) });
   }
   return '';
 }
@@ -3515,8 +3518,20 @@ async function tlStudio() {
   tlDiff(c.id, old, add.path);
   toast(t('studioDone'), 3500);
 }
+/* ----- 4.12: HD voice: the AI brings back the high frequencies (model downloaded once, ~56 MB) ----- */
+async function tlHd() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  tlStop();
+  if (!CAPS.hd) {
+    if (!(await confirmBox({ title: t('hdGetQ'), text: t('hdGetD'), ok: t('spkGetOk') }))) return;
+    toast(t('bgNote'), 3500);
+    try { await bgStart('hdGet', 'dl:hd', t('hdGetting'), {}); CAPS.hd = true; } catch (e) { if (!String(e.message).includes('pause')) toast(errText(e), 5000); return; }
+  }
+  tlEffect(c, 'hd');
+}
 function tlDo(k, b) {
   if (k === 'studio') { tlStudio(); return; }
+  if (k === 'hd') { tlHd(); return; }
   if (k === 'stt') { tlStt(); return; }
   if (k === 'sep4') { tlSep('four'); return; }
   if (k === 'keyfind') { tlKeyFind(); return; }
@@ -6269,7 +6284,7 @@ function tlGroups(c) {
     ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
   const op = (x, i) => ['op:' + x, i, 'op_' + x];
   return [
-    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], ['clarify', 'spark', 'op_clarify'], ['aigate', 'sil', 'op_aigate'], ['aipauses', 'gapI', 'op_aipauses'], ['ailevel', 'people', 'op_ailevel'], ['aibreaths', 'speak', 'op_aibreaths'], ['aiduck', 'note', 'op_aiduck'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk'], CAPS.asr ? ['flai', 'speak', 'sh_flai'] : null, ['tts', 'speak', 'sh_tts'], ['keyfind', 'beat', 'sh_key'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
+    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], CAPS.sep ? ['hd', 'spec', 'op_hd'] : null, ['clarify', 'spark', 'op_clarify'], ['aigate', 'sil', 'op_aigate'], ['aipauses', 'gapI', 'op_aipauses'], ['ailevel', 'people', 'op_ailevel'], ['aibreaths', 'speak', 'op_aibreaths'], ['aiduck', 'note', 'op_aiduck'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk'], CAPS.asr ? ['flai', 'speak', 'sh_flai'] : null, ['tts', 'speak', 'sh_tts'], ['keyfind', 'beat', 'sh_key'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
     ['grp_clean', 'speech', [op('denoise', 'wave'), CAPS.sep ? ['op:sepdenoise', 'note', 'op_sepdenoise', 1] : null, op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
     ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null, ['spec', 'spec', 'tlSpec']]],
     ['grp_vt', 'music', [['gain', 'vol', 'tlVol'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol'), ['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],

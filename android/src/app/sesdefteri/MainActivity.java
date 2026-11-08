@@ -672,6 +672,7 @@ public class MainActivity extends Activity implements Player.Listener {
                 o.put("mp3", Mp3.available());
                 o.put("opus", Build.VERSION.SDK_INT >= 29);
                 o.put("spk", Speakers.ready(MainActivity.this));
+                o.put("hd", Hd.ready(MainActivity.this));
                 o.put("folder", MediaLib.scoped() ? "Music/Ses Defteri" : "Android/data/app.sesdefteri/files/Music/Ses Defteri");
             } catch (Exception ignored) { }
             return o.toString();
@@ -1135,6 +1136,8 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.diagnose(MainActivity.this, a, p, cancel);
                         } else if ("clean".equals(kind)) {
                             res = Workspace.clean(MainActivity.this, a, p, cancel);
+                        } else if ("hdGet".equals(kind)) {
+                            res = Hd.download(MainActivity.this, p, cancel);
                         } else if ("spkGet".equals(kind)) {
                             res = Speakers.download(MainActivity.this, p, cancel);
                         } else if ("tlSpk".equals(kind)) {

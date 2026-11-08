@@ -100,3 +100,67 @@ JNIEXPORT jfloatArray JNICALL Java_app_sesdefteri_Denoiser_run(JNIEnv *env, jcla
   (*env)->ReleaseFloatArrayElements(env, in, p, JNI_ABORT);
   return den_out(env, o);
 }
+
+/* ---- 4.12: HD voice (LavaSR: backbone + spectrogram head) straight through ONNX Runtime's C API ---- */
+#include "onnxruntime_c_api.h"
+
+static const OrtApi *ort;
+static OrtEnv *hdEnv;
+static OrtSession *hdB, *hdH;
+static OrtMemoryInfo *hdMem;
+
+static int ok(OrtStatus *s) { if (!s) return 1; ort->ReleaseStatus(s); return 0; }
+
+static void hd_free(void) {
+  if (!ort) return;
+  if (hdB) ort->ReleaseSession(hdB);
+  if (hdH) ort->ReleaseSession(hdH);
+  if (hdMem) ort->ReleaseMemoryInfo(hdMem);
+  if (hdEnv) ort->ReleaseEnv(hdEnv);
+  hdB = hdH = 0; hdMem = 0; hdEnv = 0;
+}
+
+JNIEXPORT void JNICALL Java_app_sesdefteri_Hd_close(JNIEnv *env, jclass cl) { hd_free(); }
+
+JNIEXPORT jboolean JNICALL Java_app_sesdefteri_Hd_open(JNIEnv *env, jclass cl, jstring backbone, jstring head, jint threads) {
+  hd_free();
+  if (!ort) ort = OrtGetApiBase()->GetApi(16);   /* everything used here exists since 1.16 */
+  if (!ort) return 0;
+  const char *b = (*env)->GetStringUTFChars(env, backbone, 0), *h = (*env)->GetStringUTFChars(env, head, 0);
+  OrtSessionOptions *o = 0;
+  int r = ok(ort->CreateEnv(ORT_LOGGING_LEVEL_ERROR, "sd", &hdEnv)) && ok(ort->CreateSessionOptions(&o))
+       && ok(ort->SetIntraOpNumThreads(o, threads)) && ok(ort->SetSessionGraphOptimizationLevel(o, ORT_ENABLE_ALL))
+       && ok(ort->CreateSession(hdEnv, b, o, &hdB)) && ok(ort->CreateSession(hdEnv, h, o, &hdH))
+       && ok(ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &hdMem));
+  if (o) ort->ReleaseSessionOptions(o);
+  (*env)->ReleaseStringUTFChars(env, backbone, b);
+  (*env)->ReleaseStringUTFChars(env, head, h);
+  if (!r) hd_free();
+  return r;
+}
+
+/* mel: float[80*frames] ([80][frames]); returns float[2*1025*frames]: real [1025][frames], then imaginary */
+JNIEXPORT jfloatArray JNICALL Java_app_sesdefteri_Hd_run(JNIEnv *env, jclass cl, jfloatArray mel, jint frames) {
+  if (!hdB || !hdH || frames < 1) return 0;
+  int64_t shape[3] = { 1, 80, frames };
+  float *m = (*env)->GetFloatArrayElements(env, mel, 0);
+  OrtValue *in = 0, *hid = 0, *out[2] = { 0, 0 };
+  const char *nMel[] = { "mel" }, *nHid[] = { "hidden" }, *nOut[] = { "real", "imag" };
+  jfloatArray res = 0;
+  if (ok(ort->CreateTensorWithDataAsOrtValue(hdMem, m, (size_t)80 * frames * 4, shape, 3, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &in))
+      && ok(ort->Run(hdB, 0, nMel, (const OrtValue *const *)&in, 1, nHid, 1, &hid))
+      && ok(ort->Run(hdH, 0, nHid, (const OrtValue *const *)&hid, 1, nOut, 2, out))) {
+    float *re = 0, *im = 0;
+    int n = 1025 * frames;
+    if (ok(ort->GetTensorMutableData(out[0], (void **)&re)) && ok(ort->GetTensorMutableData(out[1], (void **)&im))) {
+      res = (*env)->NewFloatArray(env, 2 * n);
+      if (res) { (*env)->SetFloatArrayRegion(env, res, 0, n, re); (*env)->SetFloatArrayRegion(env, res, n, n, im); }
+    }
+  }
+  if (in) ort->ReleaseValue(in);
+  if (hid) ort->ReleaseValue(hid);
+  if (out[0]) ort->ReleaseValue(out[0]);
+  if (out[1]) ort->ReleaseValue(out[1]);
+  (*env)->ReleaseFloatArrayElements(env, mel, m, JNI_ABORT);
+  return res;
+}
