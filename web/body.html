@@ -133,6 +133,7 @@
     </div>
     <canvas class="overview" id="plOverview" data-ta="overviewAria"></canvas>
     <div class="pl-times tc"><span id="plCur">0:00</span><span id="plDur">0:00</span></div>
+    <div class="lyr" id="plLyr" hidden><b></b><span></span></div>
     <div class="transport">
       <button class="ctl ghost" id="plPrev" type="button" data-ta="prev" hidden></button>
       <button class="ctl" id="plB10" type="button" data-ta="back10"></button>
@@ -242,6 +243,7 @@
 <script src="i18n53.js"></script>
 <script src="i18n54.js"></script>
 <script src="i18n55.js"></script>
+<script src="i18n56.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -253,7 +255,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.4';
+const VERSION = '5.5';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -476,7 +478,7 @@ const recItems = () => visibleItems().filter(it => kindOf(it) === 'rec');
 const musicItems = () => visibleItems().filter(it => kindOf(it) === 'music' && !(S.minSong && it.duration > 0 && it.duration < S.minSong));
 const META_KEYS = ['id', 'title', 'userTitle', 'created', 'duration', 'mime', 'size', 'categoryId', 'notes', 'bookmarks', 'fav', 'peaks',
   'source', 'mode', 'sample', 'fileName', 'kind', 'pos', 'src',
-  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose', 'trashed', 'lufs', 'cats', 'cover', 'uArtist'];
+  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose', 'trashed', 'lufs', 'cats', 'cover', 'uArtist', 'mkey', 'lyrics'];
 function metaOf(it) { const o = {}; for (const k of META_KEYS) if (it[k] !== undefined) o[k] = it[k]; return o; }
 const saveRec = r => db.put('recordings', metaOf(r)).catch(() => toast(t('saveFail')));
 function fromNative(n, meta) {
@@ -1900,7 +1902,7 @@ function openPractice(r) {
       <label class="switch"><input type="checkbox" id="prSnap"${PR.snap ? ' checked' : ''}><span>${esc(t('pracSnap'))}<small>${esc(t('pracSnapD'))}</small></span></label>
       <p class="rk-sec">${esc(t('pracSong'))}</p>
       <div class="pr-info"><span id="prKey">${r.mkey ? esc(r.mkey + (r.bpm ? ' · ' + r.bpm + ' BPM' : '')) : '—'}</span><button class="btn sm" type="button" data-pk>${esc(t('pracFind'))}</button></div>
-      <div class="pr-go">${CAPS.sep ? `<button class="btn" type="button" data-pst>${ic('mixer')}${esc(t('pracStems'))}</button>` : ''}<button class="btn" type="button" data-ptu>${ic('note')}${esc(t('tunT'))}</button><button class="btn" type="button" data-prg>${ic('mic')}${esc(t('rngT'))}</button></div></div>
+      <div class="pr-go">${CAPS.sep ? `<button class="btn" type="button" data-pkar>${ic('mic')}${esc(t('karT'))}</button>` : ''}${CAPS.sep && CAPS.asr ? `<button class="btn" type="button" data-plyr>${ic('textic')}${esc(t(r.lyrics ? (r.lyrOn === false ? 'lyrShow' : 'lyrHide') : 'lyrGet'))}</button>` : ''}${CAPS.sep ? `<button class="btn" type="button" data-pst>${ic('mixer')}${esc(t('pracStems'))}</button>` : ''}<button class="btn" type="button" data-ptu>${ic('note')}${esc(t('tunT'))}</button><button class="btn" type="button" data-prg>${ic('mic')}${esc(t('rngT'))}</button></div></div>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
   const lab = () => {
     card.querySelector('#prSv').textContent = speedLabel(S.rate || 1);
@@ -1941,9 +1943,76 @@ function openPractice(r) {
     }
     if (e.target.closest('[data-pst]')) { closeModal(); closeOverlay('player'); if (!audio.paused) audio.pause(); S.tab = 'edit'; ls.set('tab', 'edit'); render(); await tlAddFrom(r); if (tlSel()) tlSep('four'); return; }
     if (e.target.closest('[data-ptu]')) { closeModal(); openTuner(false); return; }
+    if (e.target.closest('[data-pkar]')) { closeModal(); karaoke(r); return; }
+    if (e.target.closest('[data-plyr]')) { closeModal(); if (r.lyrics) { r.lyrOn = r.lyrOn === false; if (!r.lyrOn) $('#plLyr').hidden = true; return; } if (await lyricsGet(r)) { r.lyrOn = true; toast(t('lyrOnT'), 3500); } return; }
     if (e.target.closest('[data-prg]')) { closeModal(); openTuner(true); }
   });
   card.querySelector('[data-x]').onclick = closeModal;
+}
+/* ---------- 5.5: lyrics (the vocals are separated first, then written down with their times) and karaoke ---------- */
+/** the line being sung at time x and the next one */
+function lyrShow(el, segs, x) {
+  if (!el) return;
+  if (!segs || !segs.length) { el.hidden = true; return; }
+  const i = segs.findIndex(s => s[1] > x - 0.2);
+  if (i < 0) { el.hidden = true; return; }
+  el.hidden = false;
+  const cur = segs[i][0] <= x + 0.3 ? segs[i] : null, nx = segs[cur ? i + 1 : i];
+  el.querySelector('b').textContent = cur ? cur[2] : '♪';
+  el.querySelector('span').textContent = nx ? nx[2] : '';
+}
+setInterval(() => { const el = $('#plLyr'); if (!el) return; const r = curRec(); if (r && r.lyrics && r.lyrOn !== false && !audio.paused) lyrShow(el, r.lyrics, audio.currentTime || 0); else if (!r || !r.lyrics || r.lyrOn === false) el.hidden = true; }, 300);
+/** separates the vocals of a song, writes them down with their times, keeps them with the song */
+async function lyricsGet(r) {
+  if (r.lyrics) return true;
+  if (!CAPS.asr) { toast(t('textNoAsr'), 4000); return false; }
+  if (!hasAsr() && !(await asrOffer())) return false;
+  let stop = false, job = null;
+  const card = openModal(`<h3>${esc(t('lyrGet'))}</h3><p class="mtext" id="lyStep">${esc(t('lyrSep'))}</p><div class="prog"><i id="lyBar" style="width:0%"></i></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button></div>`, () => { stop = true; if (job) try { AND.cancelJob(job); } catch (e) {} });
+  card.querySelector('[data-x]').onclick = closeModal;
+  const step = (kind, args, a, b) => { const j = runJob(kind, args, f => { const el = $('#lyBar'); if (el) el.style.width = Math.round((a + (b - a) * f) * 100) + '%'; }); job = j.jobId; return j; };
+  try {
+    const w = await step('wsInit', { src: r.src }, 0, 0.05);
+    const v = await step('wsOp', { path: w.path, op: 'sepdenoise' }, 0.05, 0.45);
+    if (stop) return false;
+    const el = $('#lyStep'); if (el) el.textContent = t('lyrTx');
+    const tx = await step('transcribe', { src: { path: v.path }, lang: S.textLang || '', model: S.asrModel || '' }, 0.45, 1);
+    if (stop) return false;
+    r.lyrics = (tx.segments || []).map(([a, b, x]) => [Math.round(a * 100) / 100, Math.round(b * 100) / 100, x]);
+    await saveRec(r);
+    closeModal();
+    if (!r.lyrics.length) { delete r.lyrics; toast(t('lyrNone'), 4000); return false; }
+    return true;
+  } catch (e) { if (!stop) { closeModal(); toast(errText(e), 5000); } return false; }
+  finally { runJob('wsClean', { keep: [] }).catch(() => {}); }
+}
+/** karaoke in one go: a new project with the song's music, its vocals off (or quiet, as a guide), the lyrics under the
+    timeline; then the record button sings over it */
+async function karaoke(r) {
+  if (!r || !NATIVE || !r.src || !CAPS.sep || TL.busy) return;
+  if (!TL.p) tlLoad();
+  if (TL.p.clips.length && !(await confirmBox({ title: t('karT'), text: t('karNewQ'), ok: t('tlNewP') }))) return;
+  const guide = await chooseBox(t('karGuide'), t('karGuideD'), [{ value: 'off', label: t('karGuideOff'), desc: '' }, { value: 'low', label: t('karGuideLow'), desc: t('karGuideLowD') }]);
+  if (!guide) return;
+  closeOverlay('player'); if (!audio.paused) audio.pause();
+  S.tab = 'edit'; ls.set('tab', 'edit');
+  { const b0 = tlSnap(); TL.p = tlNew(); TL.sel = null; TL.pos = 0; tlCommit(b0); }
+  render();
+  await tlAddFrom(r);
+  if (!tlSel()) return;
+  const ids = await tlSep('two', true); if (!ids) return;
+  const voc = TL.p.clips.find(x => x.id === ids[0][0]); if (!voc) return;
+  const b1 = tlSnap();
+  voc.gain = guide === 'low' ? -14 : -60;
+  let segs = r.lyrics;
+  if (!segs && CAPS.asr && hasAsr()) {
+    try { const tx = await tlRunJob(t('lyrTx'), 'transcribe', { src: { path: voc.path }, lang: S.textLang || '', model: S.asrModel || '' }); segs = (tx.segments || []).map(([a, b, x]) => [a, b, x]); if (segs.length) { r.lyrics = segs; saveRec(r); } } catch (e) {}
+  }
+  if (segs && segs.length) TL.p.lyrics = segs.map(([a, b, x]) => [voc.at + a - voc.in, voc.at + b - voc.in, x]);
+  TL.p.name = t('karName', { t: r.title || '' }); TL.pos = 0;
+  tlCommit(b1); render();
+  toast(t(segs && segs.length ? 'karReady' : 'karReadyNoLyr'), 6000);
 }
 /** the tuner (note, cents, Hz) or the vocal range test (lowest and highest note held for a moment) */
 async function openTuner(range) {
@@ -3263,6 +3332,7 @@ function renderEdit() {
       <button class="btn primary sm" type="button" data-tl="export"${empty || TL.busy ? ' disabled' : ''}>${esc(t('tlExport'))}</button></div>
     <canvas class="tl-cv" id="tl" aria-label="${esc(t('tabEdit'))}"></canvas>
     <canvas class="tl-meter" id="tlMeter" aria-label="${esc(t('tlMeter'))}"${TL.meter ? '' : ' hidden'}></canvas>
+    <div class="lyr" id="tlLyr"${TL.p.lyrics && TL.p.lyrics.length ? '' : ' hidden'}><b></b><span></span></div>
     <div id="tlBusy" hidden><p class="st-desc" style="display:flex;align-items:center;gap:8px"><b id="tlBusyT" style="flex:1"></b><button class="btn sm" type="button" id="tlBusyX">${esc(t('cancel'))}</button></p><div class="prog"><i id="tlBusyBar"></i></div></div>
     <div class="tl-bar" id="tlBar"></div>
     <div class="tl-fx" id="tlFxList" hidden></div>
@@ -3312,6 +3382,7 @@ function tlBusyUi() {
 }
 function tlHeight() { tlLayout(); return TL_RULER + TL.p.tracks.length * TL_ROW + (TL.p.tracks.length < TL_MAX ? TL_ADD : 0); }
 function drawTl() {
+  if (TL.p) lyrShow($('#tlLyr'), TL.p.lyrics, TL.pos);
   if (S.tab !== 'edit' || !TL.p) return;
   const cv = $('#tl'); if (!cv) return;
   const H0 = tlHeight(); if (cv.style.height !== H0 + 'px') cv.style.height = H0 + 'px';
@@ -4033,7 +4104,7 @@ $('#tlQBar').addEventListener('click', tlAct);
 
 /* ----- voice separation, beats, recording onto the timeline ----- */
 /* 3.8: split into voice + music, or four parts (voice, drums, bass, the rest); then a small mixer for the parts */
-async function tlSep(pick) {
+async function tlSep(pick, quiet) {
   const c = tlSel(); if (!c || TL.busy) return;
   if (!CAPS.sep) { toast(t('sepNo'), 4000); return; }
   const how = pick || await chooseBox(t('tlSep'), t('sepD'), [{ value: 'two', label: t('sep2'), desc: t('sep2D') }, { value: 'four', label: t('sep4'), desc: t('sep4D') }]);
@@ -4056,6 +4127,7 @@ async function tlSep(pick) {
     ids.push([d.id, lab]);
   });
   tlCommit(before);
+  if (quiet) return ids;
   toast(t('sepDone'), 3000);
   stemMixer(ids);
 }
@@ -6627,6 +6699,7 @@ function renderEdit() {
       ${empty ? `<div class="tl-empty"><b>${esc(t('tlEmpty'))}</b><p>${esc(t('tlEmptyD'))}</p></div>` : ''}
     </div>
     <canvas class="tl-meter" id="tlMeter" aria-label="${esc(t('tlMeter'))}"${TL.meter ? '' : ' hidden'}></canvas>
+    <div class="lyr" id="tlLyr"${TL.p.lyrics && TL.p.lyrics.length ? '' : ' hidden'}><b></b><span></span></div>
     <div id="tlBusy" hidden><p class="st-desc" style="display:flex;align-items:center;gap:8px"><b id="tlBusyT" style="flex:1"></b><button class="btn sm" type="button" id="tlBusyX">${esc(t('cancel'))}</button></p><div class="prog"><i id="tlBusyBar"></i></div></div>
     <div class="tl-card" id="tlBar"></div>`;
   renderTlBar(); tlBusyUi(); edFit();
