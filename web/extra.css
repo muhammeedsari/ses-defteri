@@ -569,3 +569,6 @@ html:not(.tech) .pu-card small{display:none}
 .rk-sw{margin:0;flex:none}
 .rk .slider{margin:2px 0}
 #rkAdd{margin-top:4px}
+.rk-sec{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:6px 2px 4px}
+.rk-hv{border-style:dashed}
+#modalCard.busy .rk,#modalCard.busy #rkAdd{opacity:.5;pointer-events:none}

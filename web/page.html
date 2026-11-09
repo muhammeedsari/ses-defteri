@@ -917,6 +917,9 @@ html:not(.tech) .pu-card small{display:none}
 .rk-sw{margin:0;flex:none}
 .rk .slider{margin:2px 0}
 #rkAdd{margin-top:4px}
+.rk-sec{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:6px 2px 4px}
+.rk-hv{border-style:dashed}
+#modalCard.busy .rk,#modalCard.busy #rkAdd{opacity:.5;pointer-events:none}
 </style>
 
 <div class="seltop" id="selTop" hidden></div>
@@ -1158,6 +1161,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n49.js"></script>
 <script src="i18n50.js"></script>
 <script src="i18n51.js"></script>
+<script src="i18n52.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -1169,7 +1173,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.0';
+const VERSION = '5.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -3521,7 +3525,7 @@ function tlUndo(redo) {
   tlChanged();
 }
 function tlClean() {
-  const keep = new Set(), cb = tlClip(), add = c => { keep.add(c.path); if (c.prev) keep.add(c.prev); for (const f of c.fx || []) if (f.b) keep.add(f.b.path); };
+  const keep = new Set(), cb = tlClip(), add = c => { keep.add(c.path); if (c.prev) keep.add(c.prev); if (c.src) keep.add(c.src); for (const h of c.hc || []) keep.add(h.path); for (const f of c.fx || []) if (f.b) keep.add(f.b.path); };
   TL.p.clips.forEach(add);
   if (cb) keep.add(cb.path);
   for (const s of TL.undo.concat(TL.redo)) try { JSON.parse(s).clips.forEach(add); } catch (e) {}
@@ -3531,7 +3535,7 @@ function tlClean() {
 function tlMix() {
   const tr = TL.p.tracks;
   return TL.p.clips.filter(c => tr[c.tr] && !tr[c.tr].mute).map(c => { const [xi, xo] = tlXf(c); return { path: c.path, at: c.at, in: c.in, len: tlLen(c),
-    g: Math.pow(10, ((c.gain || 0) + (tr[c.tr].vol || 0)) / 20), pan: c.pan || 0, fx: c.rk && c.rk.length ? c.rk : null, fi: c.fi || 0, fo: c.fo || 0, xi, xo, env: tlEnvMix(c), duck: tr[c.tr].duck ? (tr[c.tr].duckDb || -12) : 0, eq: c.eq || null, bass: c.bass || 0, treble: c.treble || 0,
+    g: Math.pow(10, ((c.gain || 0) + (tr[c.tr].vol || 0)) / 20), pan: c.pan || 0, fx: c.rk && c.rk.some(f => RACK[f.k]) ? c.rk.filter(f => RACK[f.k]) : null, fi: c.fi || 0, fo: c.fo || 0, xi, xo, env: tlEnvMix(c), duck: tr[c.tr].duck ? (tr[c.tr].duckDb || -12) : 0, eq: c.eq || null, bass: c.bass || 0, treble: c.treble || 0,
     talk: TL.p.aiDuck && !tr[c.tr].duck && c.vad && c.vad.path === c.path ? c.vad.segs : null }; }).concat(TL.p.master && TL.p.master.on && !TL.abOff ? [{ master: TL.p.master }] : []);
 }
 /* ----- 2.6: volume line (points kept in the file's own time, so trimming and splitting keep them in place) ----- */
@@ -3850,10 +3854,12 @@ function tlSpeed() {
 /** runs one processing step on the clip's file; the clip then points at the new file */
 async function tlEffect(c, op, extra) {
   if (TL.busy) return;
+  if (HEAVY.includes(op) && !(extra && extra.direct)) return tlHeavyAdd(c, op, extra || {});   // 5.1: kept as a setting
   TL.lastRep = null;
   tlStop();
   let res;
   let b0 = null;
+  if (hvHas(c)) { b0 = tlSnap(); hvBake(c); }   // a cut / speed / … works on the sound as heard: computed effects become part of it
   if ((op === 'cut' || op === 'aipauses') && extra && Array.isArray(extra.keep)) extra.keep = extra.keep.map(([a, b]) => [Math.max(a, c.in * 1000), Math.min(b, c.out * 1000)]).filter(([a, b]) => b - a > 5);
   else if ((op === 'trim' || op === 'pauses') && (c.in > 0.02 || c.out < c.dur - 0.02)) {   // 4.4: a trimmed clip: work on what is seen, the cut-off parts stay gone
     let sg; try { sg = await tlRunJob(t('op_' + op), 'tlRender', { clips: [{ path: c.path, at: 0, in: c.in, len: tlLen(c), g: 1, fi: 0, fo: 0, xi: 0, xo: 0, env: null, eq: null, bass: 0, treble: 0 }], dir: 'proj', limit: false }); } catch (e) { toast(errText(e), 5000); return; }
@@ -3862,6 +3868,7 @@ async function tlEffect(c, op, extra) {
     Object.assign(c, { path: sg.path, dur: sg.dur / 1000, ch: sg.ch, in: 0 }); c.out = c.dur;
   }
   try { res = await tlRunJob(t('op_' + op), 'wsOp', Object.assign({ path: c.path, op }, extra || {})); } catch (e) { if (b0) { TL.p = JSON.parse(b0); drawTl(); } toast(errText(e), 5000); return; }
+  if (res.same && b0) { TL.p = JSON.parse(b0); drawTl(); }
   if (res.same) { toast(res.report && res.report.none ? (op === 'hd' ? t('hdAlready', { f: nf1.format(res.report.from || 0) }) : t('fxNone', { x: t('op_' + op) })) : t('wsSame'), 4000); return; }
   const before = b0 || tlSnap(), nd = res.dur / 1000;
   const b4 = tlState(b0 ? (JSON.parse(b0).clips.find(x => x.id === c.id) || c) : c);
@@ -4474,7 +4481,52 @@ const RACK = {
   double: [['mix', 0, 100, 5, 70, '%']],
   lofi: [['mix', 0, 100, 5, 80, '%']]
 };
-const rkVal = (u, v) => u === '%' ? '%' + v : u === 'ms' ? v + ' ms' : nf1.format(v) + ' sn';
+// 5.1: computed effects: worked out once on the clip's own sound, kept, and worked out again only from a changed one on
+const HEAVY = ['aidenoise', 'denoise', 'clarify', 'dereverb', 'deess', 'autotune', 'hd'];
+const LVL = ['strength', 0.6, 1.4, 0.4, 1, 'lvl'];
+const HV = { aidenoise: [LVL], denoise: [LVL], clarify: [LVL], dereverb: [LVL], deess: [LVL], autotune: [['style', 'sel', ['natural', 'strong', 'robot'], 'natural']], hd: [] };
+const RKDEF = k => RACK[k] || HV[k] || [];
+const hvHas = c => (c.rk || []).some(f => HEAVY.includes(f.k));
+const hvAvail = k => (k !== 'aidenoise' || CAPS.sep) && (k !== 'hd' || CAPS.hd);
+/** the sound was changed by something else since the effects were worked out (or a cut is coming): they stay in it for good */
+function hvBake(c) {
+  if (!hvHas(c)) return;
+  c.rk = c.rk.filter(f => !HEAVY.includes(f.k)); if (!c.rk.length) delete c.rk;
+  delete c.src; delete c.hc; delete c.hcOut;
+  toast(t('hvBaked'), 4000);
+}
+const hvStale = c => c.hcOut && c.path !== c.hcOut;
+/** works the computed effects out in order; steps already done (same sound, same settings) are reused */
+async function tlHeavyRun(c) {
+  if (hvStale(c)) hvBake(c);
+  if (!c.src) c.src = c.path;
+  const hs = (c.rk || []).filter(f => HEAVY.includes(f.k) && f.on !== false), hc = c.hc || [], used = [];
+  let cur = c.src, ch = c.ch;
+  for (const f of hs) {
+    const args = Object.assign({}, f.v, { op: f.k, direct: true }), key = cur + '|' + JSON.stringify(args);
+    let hit = hc.find(x => x.key === key);
+    if (!hit) {
+      const res = await tlRunJob(t('op_' + f.k), 'wsOp', Object.assign({ path: cur }, args));
+      hit = { key, path: res.same ? cur : res.path, ch: res.ch || ch };
+    }
+    used.push(hit); cur = hit.path; ch = hit.ch || ch;
+  }
+  const old = c.path;
+  c.hc = used.concat(hc.filter(x => !used.includes(x))).slice(0, used.length + 6);   // a few spare steps make switching back quick
+  Object.assign(c, { path: cur, ch, hcOut: cur });
+  if (!hvHas(c)) { c.path = c.src; delete c.src; delete c.hc; delete c.hcOut; }
+  if (old !== c.path) tlDiff(c.id, old, c.path);
+}
+async function tlHeavyAdd(c, k, v) {
+  tlStop();
+  const before = tlSnap();
+  if (hvStale(c)) hvBake(c);
+  c.rk = (c.rk || []).concat([{ k, on: true, v: Object.assign({ strength: 1 }, v) }]);
+  try { await tlHeavyRun(c); } catch (e) { TL.p = JSON.parse(before); tlChanged(); toast(errText(e), 5000); return; }
+  tlCommit(before);
+  toast(t('hvAdded', { x: t('op_' + k) }), 4000);
+}
+const rkVal = (u, v) => u === 'lvl' ? t(v < 0.8 ? 'clLight' : v > 1.2 ? 'clStrong' : 'clBalanced') : u === '%' ? '%' + v : u === 'ms' ? v + ' ms' : nf1.format(v) + ' sn';
 function tlRackAdd(c, k) {
   const before = tlSnap();
   c.rk = (c.rk || []).concat([{ k, on: true, v: Object.fromEntries(RACK[k].map(p => [p[0], p[4]])) }]);
@@ -4482,39 +4534,62 @@ function tlRackAdd(c, k) {
 }
 function tlRack(c, before0) {
   const before = before0 || tlSnap(); let ok = false;
+  if (hvStale(c)) hvBake(c);
   const card = openModal(`<h3>${esc(t('sh_rack'))}</h3><p class="mtext">${esc(t('rkD'))}</p><div class="modal-body" id="rkBody"></div>
     <div class="modal-actions"><button class="icon-btn" type="button" data-rp aria-label="${esc(t('hListen'))}">${ic('play')}</button><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`,
     () => { if (!ok) { TL.p = JSON.parse(before); tlChanged(); } });
   const live = () => { ls.set('proj', TL.p); if (TL.play) try { AND.tlUpdate(JSON.stringify(tlMix())); } catch (e) {} drawTl(); };
+  const row = (f, i, fx) => {
+    const hv = HEAVY.includes(f.k), same = j => fx[j] && HEAVY.includes(fx[j].k) === hv;
+    return `<div class="rk${hv ? ' rk-hv' : ''}"><div class="rk-h"><b class="rk-n">${esc(t('op_' + f.k))}</b><label class="switch rk-sw" aria-label="${esc(t('op_' + f.k))}"><input type="checkbox" data-ron="${i}"${f.on !== false ? ' checked' : ''}><span></span></label><button class="icon-btn sm" type="button" data-rup="${i}"${same(i - 1) ? '' : ' disabled'} aria-label="${esc(t('tkUp'))}">↑</button><button class="icon-btn sm" type="button" data-rdn="${i}"${same(i + 1) ? '' : ' disabled'} aria-label="${esc(t('tkDown'))}">↓</button><button class="icon-btn sm" type="button" data-rdel="${i}" aria-label="${esc(t('delete'))}">${ic('trash')}</button></div>
+        ${RKDEF(f.k).map(([p, a, b, st, d, u]) => a === 'sel'
+          ? `<div class="slider"><span>${esc(t('rk_' + p))}</span><select data-rs="${i}:${p}" class="sel-full">${b.map(x => `<option value="${x}"${(f.v[p] || st) === x ? ' selected' : ''}>${esc(t('at_' + x))}</option>`).join('')}</select></div>`
+          : `<div class="slider"><span>${esc(t('rk_' + p))}</span><input type="range" data-rv="${i}:${p}" min="${a}" max="${b}" step="${st}" value="${f.v[p] != null ? f.v[p] : d}"><span class="tc">${esc(rkVal(u, f.v[p] != null ? f.v[p] : d))}</span></div>`).join('')}</div>`;
+  };
   const draw = () => {
-    const fx = c.rk || [];
-    card.querySelector('#rkBody').innerHTML = (fx.length ? fx.map((f, i) => `<div class="rk"><div class="rk-h"><b class="rk-n">${esc(t('op_' + f.k))}</b><label class="switch rk-sw" aria-label="${esc(t('op_' + f.k))}"><input type="checkbox" data-ron="${i}"${f.on !== false ? ' checked' : ''}><span></span></label><button class="icon-btn sm" type="button" data-rup="${i}"${i ? '' : ' disabled'} aria-label="${esc(t('tkUp'))}">↑</button><button class="icon-btn sm" type="button" data-rdn="${i}"${i < fx.length - 1 ? '' : ' disabled'} aria-label="${esc(t('tkDown'))}">↓</button><button class="icon-btn sm" type="button" data-rdel="${i}" aria-label="${esc(t('delete'))}">${ic('trash')}</button></div>
-        ${RACK[f.k].map(([p, a, b, st, d, u]) => `<div class="slider"><span>${esc(t('rk_' + p))}</span><input type="range" data-rv="${i}:${p}" min="${a}" max="${b}" step="${st}" value="${f.v[p] != null ? f.v[p] : d}"><span class="tc">${esc(rkVal(u, f.v[p] != null ? f.v[p] : d))}</span></div>`).join('')}</div>`).join('') : `<p class="mtext">${esc(t('rkEmpty'))}</p>`)
-      + `<select id="rkAdd" class="sel-full"><option value="">+ ${esc(t('rkAdd'))}</option>${Object.keys(RACK).map(k => `<option value="${k}">${esc(t('op_' + k))}</option>`).join('')}</select>`;
+    const fx = c.rk || [], hv = fx.map((f, i) => [f, i]).filter(([f]) => HEAVY.includes(f.k)), lv = fx.map((f, i) => [f, i]).filter(([f]) => !HEAVY.includes(f.k));
+    card.querySelector('#rkBody').innerHTML = (fx.length ? (hv.length ? `<p class="rk-sec">${esc(t('rkHeavy'))}</p>` + hv.map(([f, i]) => row(f, i, fx)).join('') : '')
+        + (lv.length ? `<p class="rk-sec">${esc(t('rkLive'))}</p>` + lv.map(([f, i]) => row(f, i, fx)).join('') : '') : `<p class="mtext">${esc(t('rkEmpty'))}</p>`)
+      + `<p class="mtext" id="rkSt" hidden></p><select id="rkAdd" class="sel-full"><option value="">+ ${esc(t('rkAdd'))}</option><optgroup label="${esc(t('rkLive'))}">${Object.keys(RACK).map(k => `<option value="${k}">${esc(t('op_' + k))}</option>`).join('')}</optgroup><optgroup label="${esc(t('rkHeavy'))}">${HEAVY.filter(hvAvail).map(k => `<option value="${k}">${esc(t('op_' + k))}</option>`).join('')}</optgroup></select>`;
+  };
+  // a computed effect changed: worked out again (the dialog waits, showing how far it is)
+  const heavy = async () => {
+    const st = card.querySelector('#rkSt'); card.classList.add('busy'); st.hidden = false;
+    const tick = setInterval(() => { if (TL.busy) st.textContent = t('hvWorking', { p: Math.round((TL.busy.p || 0) * 100) }); }, 250);
+    try { await tlHeavyRun(c); } catch (e) { toast(errText(e), 5000); }
+    clearInterval(tick); card.classList.remove('busy'); draw(); live();
   };
   draw();
   card.addEventListener('input', e => {
     const r = e.target.dataset.rv; if (!r) return;
-    const [i, p] = r.split(':'), f = c.rk[+i], u = RACK[f.k].find(x => x[0] === p)[5];
-    f.v[p] = +e.target.value; e.target.nextElementSibling.textContent = rkVal(u, f.v[p]); live();
+    const [i, p] = r.split(':'), f = c.rk[+i], u = RKDEF(f.k).find(x => x[0] === p)[5];
+    f.v[p] = +e.target.value; e.target.nextElementSibling.textContent = rkVal(u, f.v[p]);
+    if (!HEAVY.includes(f.k)) live();
   });
   card.addEventListener('change', e => {
+    if (TL.busy) return;
     const el = e.target;
-    if (el.id === 'rkAdd' && el.value) { c.rk = (c.rk || []).concat([{ k: el.value, on: true, v: Object.fromEntries(RACK[el.value].map(p => [p[0], p[4]])) }]); draw(); live(); }
-    else if (el.dataset.ron != null) { c.rk[+el.dataset.ron].on = el.checked; live(); }
+    if (el.id === 'rkAdd' && el.value) {
+      const k = el.value, hv = HEAVY.includes(k);
+      c.rk = (c.rk || []).concat([{ k, on: true, v: hv ? (k === 'autotune' ? { style: 'natural' } : k === 'hd' ? {} : { strength: 1 }) : Object.fromEntries(RACK[k].map(p => [p[0], p[4]])) }]);
+      draw(); if (hv) heavy(); else live();
+    } else if (el.dataset.ron != null) { const f = c.rk[+el.dataset.ron]; f.on = el.checked; if (HEAVY.includes(f.k)) heavy(); else live(); }
+    else if (el.dataset.rs) { const [i, p] = el.dataset.rs.split(':'); c.rk[+i].v[p] = el.value; heavy(); }
+    else if (el.dataset.rv) { const f = c.rk[+el.dataset.rv.split(':')[0]]; if (HEAVY.includes(f.k)) heavy(); }
   });
   card.addEventListener('click', e => {
-    const b = e.target.closest('[data-rup],[data-rdn],[data-rdel],[data-rp]'); if (!b) return;
+    const b = e.target.closest('[data-rup],[data-rdn],[data-rdel],[data-rp]'); if (!b || TL.busy) return;
     if (b.dataset.rp != null) { if (TL.play) tlStop(); else tlPlay(tlMix(), Math.max(TL.pos, c.at)); return; }
     const fx = c.rk;
-    if (b.dataset.rdel != null) fx.splice(+b.dataset.rdel, 1);
-    else { const i = +(b.dataset.rup != null ? b.dataset.rup : b.dataset.rdn), j = b.dataset.rup != null ? i - 1 : i + 1; [fx[i], fx[j]] = [fx[j], fx[i]]; }
+    let hv;
+    if (b.dataset.rdel != null) { hv = HEAVY.includes(fx[+b.dataset.rdel].k); fx.splice(+b.dataset.rdel, 1); }
+    else { const i = +(b.dataset.rup != null ? b.dataset.rup : b.dataset.rdn), j = b.dataset.rup != null ? i - 1 : i + 1; hv = HEAVY.includes(fx[i].k); [fx[i], fx[j]] = [fx[j], fx[i]]; }
     if (!fx.length) delete c.rk;
-    draw(); live();
+    draw(); if (hv) heavy(); else live();
   });
   live();
   card.querySelector('[data-x]').onclick = closeModal;
-  card.querySelector('[data-ok]').onclick = () => { ok = true; closeModal(); tlCommit(before); };
+  card.querySelector('[data-ok]').onclick = () => { if (TL.busy) return; ok = true; closeModal(); tlCommit(before); };
 }
 /* mastering: one style for the whole mix, heard live; "before" switches it off for a moment to compare */
 const MASTERS = ['natural', 'warm', 'tape', 'loud'];
