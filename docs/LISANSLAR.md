@@ -1,4 +1,8 @@
-# Lisans kontrolü (5.11, Kasım 2026)
+# Lisans kontrolü (5.11, Kasım 2026; 5.12 güncellemesi)
+
+**5.12:** Piper okuma sesleri (yapay zekâ sesi) uygulamadan çıkarıldı; metin okuma yalnız telefonun kendi sesiyle (Android TextToSpeech) yapılıyor, Arapça dahil. Telefonda kalan indirilmiş sesler ilk açılışta silinir.
+
+**Açık konu:** espeak-ng kodu hâlâ sherpa-onnx kütüphanelerinin (libsherpa-onnx-jni.so, libsherpa-onnx-c-api.so) içinde derli; kullanılmasa da APK'da duruyor. Tamamen çıkması için sherpa-onnx'in `SHERPA_ONNX_ENABLE_TTS=OFF` ile Android NDK kullanılarak yeniden derlenmesi gerekiyor.
 
 Google Play öncesi uygulamanın içerdiği ve indirdiği her parçanın lisansı. "Ticari" = ücretli sürüm / reklam / şirket adına dağıtım.
 

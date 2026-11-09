@@ -1203,7 +1203,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.11';
+const VERSION = '5.12';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -5237,37 +5237,24 @@ async function tlSfx() {
 /* ----- 3.4: text to speech: the phone's own voice, or a natural voice downloaded once ----- */
 async function tlTts() {
   if (TL.busy) return;
-  let st = {}; try { st = await runJob('ttsStatus', {}); } catch (e) {}
-  const lang0 = ls.get('ttsLang', LANG), eng0 = ls.get('ttsEng', 'ai');
+  const lang0 = ls.get('ttsLang', LANG);   // 5.12: the phone's own voice only (the AI voices were removed for licence reasons)
   const card = openModal(`<h3>${esc(t('tlTts'))}</h3><p class="mtext">${esc(t('ttsD'))}</p>
     <textarea id="ttsText" class="tts-text" rows="6" placeholder="${esc(t('ttsPh'))}">${esc(ls.get('ttsText', ''))}</textarea>
     <div class="set-sub"><span>${esc(t('ttsLang'))}</span><select id="ttsLang" class="sel-full">${LANGS.map(([k, n]) => `<option value="${k}"${k === lang0 ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
-    <div class="set-sub"><span>${esc(t('ttsVoice'))}</span><select id="ttsEng" class="sel-full">${['phone', 'ai'].map(k => `<option value="${k}"${k === eng0 ? ' selected' : ''}>${esc(t('tts_' + k))}</option>`).join('')}</select></div>
-    <p class="hint" id="ttsNote"></p>
+    <p class="hint">${esc(t('ttsPhoneD'))}</p>
     <div class="slider"><span>${esc(t('ttsSpeed'))}</span><input type="range" id="ttsSpd" min="0.6" max="1.6" step="0.05" value="${ls.get('ttsSpd', 1)}"><span class="tc" id="ttsSpdV"></span></div>
-    <div class="modal-actions"><button class="btn sm danger" type="button" id="ttsDel" hidden>${esc(t('ttsDel'))}</button><span class="spacer"></span>
+    <div class="modal-actions"><span class="spacer"></span>
       <button class="btn" type="button" id="ttsSave">${esc(t('ttsSave'))}</button><button class="btn primary" type="button" id="ttsAdd">${esc(t('ttsAdd'))}</button></div>`);
-  const $c = q => card.querySelector(q), mb = l => l === 'zh' ? 67 : 21;
-  const note = () => {
-    const l = $c('#ttsLang').value, ai = $c('#ttsEng').value === 'ai';
-    $c('#ttsNote').textContent = ai ? (st[l] ? t('ttsHave') : t('ttsNeed', { n: mb(l) })) : t('ttsPhoneD');
-    $c('#ttsDel').hidden = !(ai && st[l]);
-    $c('#ttsSpdV').textContent = '×' + nf1.format(+$c('#ttsSpd').value);
-  };
-  $c('#ttsLang').onchange = $c('#ttsEng').onchange = $c('#ttsSpd').oninput = note; note();
-  $c('#ttsDel').onclick = async () => { try { st = await runJob('ttsDelete', { lang: $c('#ttsLang').value }); } catch (e) {} note(); };
+  const $c = q => card.querySelector(q);
+  const note = () => { $c('#ttsSpdV').textContent = '×' + nf1.format(+$c('#ttsSpd').value); };
+  $c('#ttsSpd').oninput = note; note();
   const go = async save => {
-    const text = $c('#ttsText').value.trim(), lang = $c('#ttsLang').value, engine = $c('#ttsEng').value, speed = +$c('#ttsSpd').value;
+    const text = $c('#ttsText').value.trim(), lang = $c('#ttsLang').value, speed = +$c('#ttsSpd').value;
     if (!text) { toast(t('ttsEmpty')); return; }
-    ls.set('ttsText', text); ls.set('ttsLang', lang); ls.set('ttsEng', engine); ls.set('ttsSpd', speed);
+    ls.set('ttsText', text); ls.set('ttsLang', lang); ls.set('ttsSpd', speed);
     closeModal(); tlStop();
-    if (engine === 'ai' && !st[lang]) {
-      if (!(await confirmBox({ title: t('ttsGetQ'), text: t('ttsGetD', { n: mb(lang) }), ok: t('spkGetOk') }))) return;
-      toast(t('bgNote'), 3500);
-      try { st = await bgStart('ttsGet', 'dl:tts-' + lang, t('ttsGetting'), { lang }); } catch (e) { if (!String(e.message).includes('pause')) toast(errText(e), 5000); return; }
-    }
     let res;
-    try { res = await tlRunJob(t('ttsBusy'), 'ttsSpeak', { text, lang, engine, speed }); } catch (e) { toast(errText(e), 6000); return; }
+    try { res = await tlRunJob(t('ttsBusy'), 'ttsSpeak', { text, lang, speed }); } catch (e) { toast(errText(e), 6000); return; }
     const name = text.replace(/\s+/g, ' ').slice(0, 40);
     if (save) {
       try {

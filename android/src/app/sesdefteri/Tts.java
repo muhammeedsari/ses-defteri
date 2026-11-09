@@ -5,10 +5,6 @@ import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 
-import app.sesdefteri.dsp.Resampler;
-
-import com.k2fsa.sherpa.onnx.*;
-
 import org.json.JSONObject;
 
 import java.io.File;
@@ -23,154 +19,30 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 3.4 text to speech. "phone": the phone's own voice (Android TextToSpeech, nothing to download).
- * "ai": a natural Piper voice per language (sherpa-onnx VITS, ≈21 MB, downloaded once from GitHub as .tar.bz2 and
- * unpacked on the phone; the espeak-ng pronunciation data is shared by all voices). The result is a project clip.
+ * 3.4 text to speech with the phone's own voice (Android TextToSpeech, nothing to download). The result is a project clip.
+ * 5.12: the Piper voices were removed for licence reasons (espeak-ng is GPL-3.0).
  */
 final class Tts {
     private Tts() { }
 
-    static final String GH = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-";
-    static final String[] LANGS = { "tr", "en", "de", "fr", "es", "pt", "ru", "ar", "zh" };
-
-    static String voice(String lang) {
-        switch (lang) {
-            case "tr": return "tr_TR-fettah-medium-int8";   // 5.9: CC0 (the old DFKI voice was non-commercial)
-            case "de": return "de_DE-thorsten-medium-int8";
-            case "fr": return "fr_FR-siwis-medium-int8";
-            case "es": return "es_ES-davefx-medium-int8";
-            case "pt": return "pt_BR-faber-medium-int8";
-            case "ru": return "ru_RU-dmitri-medium-int8";   // 5.11: CC0 (irina: licence unknown)
-            case "ar": return "ar_JO-kareem-medium-int8";
-            case "zh": return "zh_CN-chaowen-medium-int8";   // 5.11: CC0 (huayan: licence unknown)
-            default: return "en_US-ljspeech-medium-int8";   // 5.11: public domain (lessac: research-only data)
-        }
+    /** 5.12: the downloadable AI voices are gone (their pronunciation library is GPL); what they left on the phone goes too */
+    static void cleanup(Context c) {
+        final File d = new File(c.getFilesDir(), "tts");
+        if (d.isDirectory()) new Thread(new Runnable() { @Override public void run() { deleteTree(d); } }).start();
+    }
+    private static void deleteTree(File f) {
+        File[] fs = f.listFiles();
+        if (fs != null) for (File x : fs) deleteTree(x);
+        f.delete();
     }
 
-    static File root(Context c) { File d = new File(c.getFilesDir(), "tts"); d.mkdirs(); return d; }
-    static File dir(Context c, String lang) {
-        // 5.9 / 5.11: voices replaced for their licences: the old one goes, the new one is downloaded on request
-        String now = "tr".equals(lang) ? "tr-fettah" : "en".equals(lang) || "ru".equals(lang) || "zh".equals(lang) ? lang + "-2" : null;
-        if (now == null) return new File(root(c), lang);
-        File old = new File(root(c), lang);
-        if (old.isDirectory()) { deleteAll(old.listFiles()); old.delete(); }
-        return new File(root(c), now);
-    }
-    static File espeak(Context c) { return new File(root(c), "espeak-ng-data"); }
-
-    static boolean ready(Context c, String lang) {
-        File d = dir(c, lang);
-        return new File(d, "model.onnx").isFile() && new File(d, "tokens.txt").isFile() && new File(espeak(c), ".ok").isFile();
-    }
-
-    static JSONObject status(Context c) throws Exception {
-        JSONObject o = new JSONObject();
-        for (String l : LANGS) o.put(l, ready(c, l));
-        return o;
-    }
-
-    static JSONObject download(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
-        final String lang = a.optString("lang", "en");
-        final Context ctx = c;
-        String url = GH + voice(lang) + ".tar.bz2";
-        File arc = new File(root(c), lang + ".tar.bz2");
-        long n = AsrModels.size(url);
-        if (!arc.isFile() || arc.length() != n) {
-            final AudioTools.Progress pp = p;
-            AsrModels.fetch(url, arc, n, 0, n, new AudioTools.Progress() { @Override public void on(double f) { pp.on(f * 0.85); } }, cancel);
-        }
-        p.on(0.86);
-        final boolean haveEs = new File(espeak(c), ".ok").isFile();
-        final File d = dir(c, lang);
-        d.mkdirs();
-        InputStream in = new FileInputStream(arc);
-        try {
-            Untar.extract(in, new Untar.Place() {
-                @Override public File to(String name) {
-                    int es = name.indexOf("espeak-ng-data/");
-                    if (es >= 0) return haveEs ? null : new File(espeak(ctx), name.substring(es + 15));
-                    String base = name.substring(name.lastIndexOf('/') + 1);
-                    if (base.endsWith(".onnx")) return new File(d, "model.onnx");
-                    if (base.equals("tokens.txt")) return new File(d, "tokens.txt");
-                    return null;
-                }
-            });
-        } finally {
-            in.close();
-        }
-        if (!haveEs) new FileOutputStream(new File(espeak(c), ".ok")).close();
-        arc.delete();
-        if (!ready(c, lang)) throw new IllegalStateException("tts-model");
-        return status(c);
-    }
-
-    static JSONObject delete(Context c, JSONObject a) throws Exception {
-        File[] fs = dir(c, a.optString("lang", "")).listFiles();
-        if (fs != null) for (File f : fs) f.delete();
-        boolean any = false;
-        for (String l : LANGS) any |= ready(c, l);
-        if (!any) { File[] es = espeak(c).listFiles(); deleteAll(es); }
-        return status(c);
-    }
-
-    private static void deleteAll(File[] fs) {
-        if (fs == null) return;
-        for (File f : fs) { if (f.isDirectory()) deleteAll(f.listFiles()); f.delete(); }
-    }
-
-    /** a: {text, lang, engine: phone|ai, speed}. Returns a project clip {path, dur, ch} */
+    /** a: {text, lang, speed}. Returns a project clip {path, dur, ch} */
     static JSONObject speak(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         String text = a.getString("text").trim();
         if (text.isEmpty()) throw new IllegalStateException("tts-empty");
         String lang = a.optString("lang", "en");
         float speed = (float) Math.max(0.5, Math.min(2, a.optDouble("speed", 1)));
-        return "ai".equals(a.optString("engine")) ? ai(c, text, lang, speed, p, cancel) : phone(c, text, lang, speed, p, cancel);
-    }
-
-    private static JSONObject ai(Context c, String text, String lang, float speed, final AudioTools.Progress p, final AtomicBoolean cancel) throws Exception {
-        if (!ready(c, lang)) throw new IllegalStateException("tts-model");
-        File d = dir(c, lang);
-        OfflineTtsConfig cfg = new OfflineTtsConfig();
-        cfg.model.vits.model = new File(d, "model.onnx").getAbsolutePath();
-        cfg.model.vits.tokens = new File(d, "tokens.txt").getAbsolutePath();
-        cfg.model.vits.dataDir = espeak(c).getAbsolutePath();
-        cfg.model.numThreads = Math.max(1, Device.threads(4) / 2 + 1);
-        OfflineTts tts = new OfflineTts(cfg);
-        GeneratedAudio g;
-        final int total = Math.max(1, text.length());
-        final int[] made = { 0 };
-        try {
-            final int rate0 = tts.sampleRate();
-            g = tts.generate(text, 0, speed, new OfflineTts.Callback() {
-                @Override public Integer invoke(float[] s) {
-                    made[0] += s.length;
-                    // about 14 characters a second of speech: a rough progress
-                    p.on(Math.min(0.9, made[0] / (double) rate0 * 14 / total));
-                    return cancel != null && cancel.get() ? 0 : 1;
-                }
-            });
-        } finally {
-            tts.release();
-        }
-        if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
-        if (g == null || g.samples == null || g.samples.length == 0) throw new IllegalStateException("tts-fail");
-        float[][] y = Resampler.resample(new float[][] { g.samples }, (double) g.sampleRate, (double) Timeline.RATE);
-        return clip(c, y);
-    }
-
-    static JSONObject clip(Context c, float[][] y) throws Exception {
-        float pk = 0;
-        for (float v : y[0]) pk = Math.max(pk, Math.abs(v));
-        if (pk > 0.98f) for (int i = 0; i < y[0].length; i++) y[0][i] *= 0.98f / pk;
-        File out = new File(Timeline.dir(c), "c" + System.nanoTime() + ".wav");
-        Studio.WavNode w = new Studio.WavNode(out, Timeline.RATE);
-        w.push(y, y[0].length);
-        w.end();
-        JSONObject o = new JSONObject();
-        o.put("path", out.getAbsolutePath());
-        o.put("dur", y[0].length * 1000.0 / Timeline.RATE);
-        o.put("ch", 1);
-        return o;
+        return phone(c, text, lang, speed, p, cancel);
     }
 
     /* ---------- the phone's own voice ---------- */

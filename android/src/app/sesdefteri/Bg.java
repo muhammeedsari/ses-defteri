@@ -151,7 +151,7 @@ final class Bg {
     }
 
     private static void submit(final Task t) {
-        boolean dl = t.kind.endsWith("Download") || "ttsGet".equals(t.kind) || "spkGet".equals(t.kind) || "hdGet".equals(t.kind) || "tagGet".equals(t.kind) || "uvrGet".equals(t.kind);
+        boolean dl = t.kind.endsWith("Download") || "spkGet".equals(t.kind) || "hdGet".equals(t.kind) || "tagGet".equals(t.kind) || "uvrGet".equals(t.kind);
         (dl ? net : cpu).execute(new Runnable() {
             @Override public void run() { work(t); }
         });
@@ -179,7 +179,6 @@ final class Bg {
             JSONObject res;
             JSONObject a = new JSONObject(t.args.toString());
             if ("asrDownload".equals(t.kind)) res = AsrModels.download(app, a, p, cancel);
-            else if ("ttsGet".equals(t.kind)) res = Tts.download(app, a, p, cancel);
             else if ("spkGet".equals(t.kind)) res = Speakers.download(app, p, cancel);
             else if ("hdGet".equals(t.kind)) res = Hd.download(app, p, cancel);
             else if ("tagGet".equals(t.kind)) res = Sounds.download(app, p, cancel);

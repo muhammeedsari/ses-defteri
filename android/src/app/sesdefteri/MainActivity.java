@@ -89,6 +89,7 @@ public class MainActivity extends Activity implements Player.Listener {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         Bg.init(this);   // 4.1: downloads / speech-to-text left running (or stopped by the system) go on
+        Tts.cleanup(this);   // 5.12: AI voices removed
         hookCrashes(getApplicationContext());
         Player.I.init(this, this);
         web = new WebView(this);
@@ -1127,12 +1128,6 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.op(MainActivity.this, a, p, cancel);
                         } else if ("ttsSpeak".equals(kind)) {
                             res = Tts.speak(MainActivity.this, a, p, cancel);
-                        } else if ("ttsGet".equals(kind)) {
-                            res = Tts.download(MainActivity.this, a, p, cancel);
-                        } else if ("ttsDelete".equals(kind)) {
-                            res = Tts.delete(MainActivity.this, a);
-                        } else if ("ttsStatus".equals(kind)) {
-                            res = Tts.status(MainActivity.this);
                         } else if ("tlSfx".equals(kind)) {
                             res = Timeline.sfx(MainActivity.this, a);
                         } else if ("tlAdd".equals(kind)) {
