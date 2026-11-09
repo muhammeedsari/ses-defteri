@@ -1200,6 +1200,8 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Studio.transcribe(MainActivity.this, tsrc, a.optString("lang", ""), p, cancel);
                         } else if ("musicKey".equals(kind)) {
                             res = Studio.musicKey(MainActivity.this, a.getJSONObject("src"), p, cancel);
+                        } else if ("songMap".equals(kind)) {
+                            res = Studio.songMap(MainActivity.this, a.getJSONObject("src"), p, cancel);
                         } else if ("beats".equals(kind)) {
                             res = Studio.beats(MainActivity.this, a.getJSONObject("src"), p, cancel);
                         } else {

@@ -134,6 +134,7 @@
     <canvas class="overview" id="plOverview" data-ta="overviewAria"></canvas>
     <div class="pl-times tc"><span id="plCur">0:00</span><span id="plDur">0:00</span></div>
     <div class="lyr" id="plLyr" hidden><b></b><span></span></div>
+    <div class="chd" id="plChd" hidden><b></b><span></span><small></small></div>
     <div class="transport">
       <button class="ctl ghost" id="plPrev" type="button" data-ta="prev" hidden></button>
       <button class="ctl" id="plB10" type="button" data-ta="back10"></button>
@@ -245,6 +246,7 @@
 <script src="i18n55.js"></script>
 <script src="i18n56.js"></script>
 <script src="i18n57.js"></script>
+<script src="i18n58.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -256,7 +258,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.6';
+const VERSION = '5.7';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -479,7 +481,7 @@ const recItems = () => visibleItems().filter(it => kindOf(it) === 'rec');
 const musicItems = () => visibleItems().filter(it => kindOf(it) === 'music' && !(S.minSong && it.duration > 0 && it.duration < S.minSong));
 const META_KEYS = ['id', 'title', 'userTitle', 'created', 'duration', 'mime', 'size', 'categoryId', 'notes', 'bookmarks', 'fav', 'peaks',
   'source', 'mode', 'sample', 'fileName', 'kind', 'pos', 'src',
-  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose', 'trashed', 'lufs', 'cats', 'cover', 'uArtist', 'mkey', 'lyrics'];
+  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose', 'trashed', 'lufs', 'cats', 'cover', 'uArtist', 'mkey', 'lyrics', 'smap'];
 function metaOf(it) { const o = {}; for (const k of META_KEYS) if (it[k] !== undefined) o[k] = it[k]; return o; }
 const saveRec = r => db.put('recordings', metaOf(r)).catch(() => toast(t('saveFail')));
 function fromNative(n, meta) {
@@ -1903,6 +1905,8 @@ function openPractice(r) {
       <label class="switch"><input type="checkbox" id="prSnap"${PR.snap ? ' checked' : ''}><span>${esc(t('pracSnap'))}<small>${esc(t('pracSnapD'))}</small></span></label>
       <p class="rk-sec">${esc(t('pracSong'))}</p>
       <div class="pr-info"><span id="prKey">${r.mkey ? esc(r.mkey + (r.bpm ? ' · ' + r.bpm + ' BPM' : '')) : '—'}</span><button class="btn sm" type="button" data-pk>${esc(t('pracFind'))}</button></div>
+      <div class="pr-info"><span>${esc(t('smT'))}</span><button class="btn sm" type="button" data-psm>${esc(t(r.smap ? (r.chOn === false ? 'smShow' : 'smHide') : 'pracFind'))}</button></div>
+      <div class="ex-chips" id="prSec"></div>
       <div class="pr-go">${CAPS.sep ? `<button class="btn" type="button" data-pkar>${ic('mic')}${esc(t('karT'))}</button>` : ''}${CAPS.sep && CAPS.asr ? `<button class="btn" type="button" data-plyr>${ic('textic')}${esc(t(r.lyrics ? (r.lyrOn === false ? 'lyrShow' : 'lyrHide') : 'lyrGet'))}</button>` : ''}${CAPS.sep ? `<button class="btn" type="button" data-pst>${ic('mixer')}${esc(t('pracStems'))}</button>` : ''}<button class="btn" type="button" data-ptu>${ic('note')}${esc(t('tunT'))}</button><button class="btn" type="button" data-prg>${ic('mic')}${esc(t('rngT'))}</button></div></div>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
   const lab = () => {
@@ -1911,6 +1915,8 @@ function openPractice(r) {
     card.querySelector('#prAB').textContent = AB.on ? t('abLoop', { a: fmt(AB.a), b: fmt(AB.b || 0) }) : AB.a != null ? 'A ' + fmt(AB.a) : '';
   };
   lab();
+  const secs = () => { card.querySelector('#prSec').innerHTML = r.smap ? smSections(r.smap).map(([a, b, nm], i) => `<button class="chip" type="button" data-psec="${i}">${esc(nm)} <small class="tc">${fmt(a)}</small></button>`).join('') : ''; };
+  secs();
   card.addEventListener('input', e => {
     if (e.target.id === 'prS') { S.rate = +e.target.value; audio.defaultPlaybackRate = S.rate; audio.playbackRate = S.rate; ls.set('rate', S.rate); $('#plSpeed').innerHTML = `<span class="tc">${speedLabel(S.rate)}</span>`; }
     if (e.target.id === 'prP') { PR.pitch = +e.target.value; try { AND.plPitch(PR.pitch); } catch (x) {} }
@@ -1942,6 +1948,21 @@ function openPractice(r) {
       } catch (x) { kb.textContent = '—'; toast(errText(x), 4000); }
       return;
     }
+    const sc = e.target.closest('[data-psec]');
+    if (sc) {   // 5.7: a section becomes the A-B loop
+      const [a0, b0] = r.smap.sec[+sc.dataset.psec];
+      abReset(); AB.a = a0; AB.b = b0; AB.on = true; try { AND.plLoop(Math.round(a0 * 1000), Math.round(b0 * 1000)); } catch (x) {}
+      seek(a0); if (audio.paused) play();
+      abLabel(); lab(); return;
+    }
+    const sm = e.target.closest('[data-psm]');
+    if (sm) {
+      if (r.smap) { r.chOn = r.chOn === false; sm.textContent = t(r.chOn ? 'smHide' : 'smShow'); if (!r.chOn) $('#plChd').hidden = true; return; }
+      sm.disabled = true; sm.textContent = t('pracWork');
+      try { const m = await runJob('songMap', { src: r.src }); r.smap = { ch: m.ch || [], sec: m.sec || [] }; r.chOn = true; await saveRec(r); sm.textContent = t('smHide'); secs(); toast(t('smOnT'), 3500); }
+      catch (x) { sm.textContent = t('pracFind'); toast(errText(x), 4000); }
+      sm.disabled = false; return;
+    }
     if (e.target.closest('[data-pst]')) { closeModal(); closeOverlay('player'); if (!audio.paused) audio.pause(); S.tab = 'edit'; ls.set('tab', 'edit'); render(); await tlAddFrom(r); if (tlSel()) tlSep('four'); return; }
     if (e.target.closest('[data-ptu]')) { closeModal(); openTuner(false); return; }
     if (e.target.closest('[data-pkar]')) { closeModal(); karaoke(r); return; }
@@ -1950,6 +1971,25 @@ function openPractice(r) {
   });
   card.querySelector('[data-x]').onclick = closeModal;
 }
+/* ---------- 5.7: chords and song sections ---------- */
+/** sections with their names: "Verse 2", "Chorus 1", … */
+function smSections(m) {
+  const n = {};
+  return (m.sec || []).map(([a, b, k]) => { n[k] = (n[k] || 0) + 1; const many = m.sec.filter(x => x[2] === k).length > 1; return [a, b, t('sec_' + k) + (many ? ' ' + n[k] : '')]; });
+}
+setInterval(() => {
+  const el = $('#plChd'); if (!el) return;
+  const r = curRec(), m = r && r.smap;
+  if (!m || r.chOn === false || !m.ch.length) { el.hidden = true; return; }
+  if (audio.paused) return;
+  const x = (audio.currentTime || 0) + 0.1, ch = m.ch;
+  let i = ch.length - 1; while (i > 0 && ch[i][0] > x) i--;
+  const nx = ch.slice(i + 1).find(c => c[1]), sec = smSections(m).find(([a, b]) => x >= a && x < b);
+  el.hidden = false;
+  el.querySelector('b').textContent = ch[i][1] || '—';
+  el.querySelector('span').textContent = nx ? '→ ' + nx[1] : '';
+  el.querySelector('small').textContent = sec ? sec[2] : '';
+}, 150);
 /* ---------- 5.5: lyrics (the vocals are separated first, then written down with their times) and karaoke ---------- */
 /** the line being sung at time x and the next one */
 function lyrShow(el, segs, x) {

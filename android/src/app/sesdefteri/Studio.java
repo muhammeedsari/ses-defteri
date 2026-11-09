@@ -209,6 +209,25 @@ final class Studio {
             .put("bpm", Math.round(b.bpm)).put("bconf", Math.round(b.confidence * 100) / 100.0);
     }
 
+    /** 5.7: chords and sections of a song (dsp/SongMap), on the song's own beats */
+    static JSONObject songMap(Context c, JSONObject src, AudioTools.Progress prog, AtomicBoolean cancel) throws Exception {
+        Fmt f = probe(c, src);
+        app.sesdefteri.dsp.SongMap sm = new app.sesdefteri.dsp.SongMap(f.rate);
+        Analyzer an = new Analyzer(f.ch, f.rate);
+        sm.to(an);
+        source(c, src, f, prog, new double[][] { { 0, 1 } }, cancel).run(sm);
+        Analyzer.Analysis a = an.finish();
+        Beats b = Beats.track(a.onset, a.onsetRate);
+        double shift = a.fftSize / 2.0 / a.fs;
+        double[] bt = new double[b.confidence >= 0.35 ? b.times.length : 0];
+        for (int i = 0; i < bt.length; i++) bt[i] = Math.max(0, b.times[i] + shift);
+        app.sesdefteri.dsp.SongMap.Result r = sm.finish(bt, a.samples / (double) a.fs);
+        JSONArray ch = new JSONArray(), sec = new JSONArray();
+        for (Object[] o : r.chords) ch.put(new JSONArray().put(o[0]).put(o[1]));
+        for (Object[] o : r.sections) sec.put(new JSONArray().put(o[0]).put(o[1]).put(o[2]).put(o[3]));
+        return new JSONObject().put("ch", ch).put("sec", sec);
+    }
+
     /* ---------- speech to text ---------- */
 
     static JSONObject transcribe(Context c, JSONObject src, String lang, final AudioTools.Progress prog, AtomicBoolean cancel) throws Exception {
