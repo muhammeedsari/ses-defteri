@@ -50,13 +50,32 @@ final class Separator {
         return f;
     }
 
+    static final String UVR_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/UVR-MDX-NET-Inst_HQ_5.onnx";
+    static File uvrFile(Context c) { return c != null ? new File(new File(c.getFilesDir(), "uvr"), "UVR-MDX-NET-Inst_HQ_5.onnx") : new File(System.getProperty("sd.uvr", "")); }
+    static boolean uvrReady(Context c) { return uvrFile(c).isFile(); }
+    /** about 2 GB of memory in use while it works: offered on phones with 6 GB or more only */
+    static boolean uvrFits(Context c) {
+        android.app.ActivityManager am = (android.app.ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
+        android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+        am.getMemoryInfo(mi);
+        return mi.totalMem >= (6L << 30) - (512L << 20) && !Device.lite;
+    }
+    static JSONObject uvrDownload(Context c, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        File f = uvrFile(c);
+        f.getParentFile().mkdirs();
+        long n = AsrModels.size(UVR_URL);
+        if (!f.isFile() || f.length() != n) AsrModels.fetch(UVR_URL, f, n, 0, n, p, cancel);
+        return new JSONObject().put("ready", true);
+    }
+
     static JSONObject split(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         if (!available()) throw new IllegalStateException("sep-unavailable");
         File in = new File(a.getString("path"));
         Workspace.Info inf = Workspace.info(in);
         p.on(0.01);
-        File vm = model(c, "vocals.fp16.onnx"), am = model(c, "accompaniment.fp16.onnx");
-        boolean four = a.optBoolean("four", false);
+        boolean four = a.optBoolean("four", false), hq = a.optBoolean("hq", false) && uvrReady(c);
+        // 5.6 "high quality": UVR MDX-Net (vocals / instrumental), downloaded once; otherwise the built-in Spleeter
+        File vm = hq ? uvrFile(c) : model(c, "vocals.fp16.onnx"), am = hq ? null : model(c, "accompaniment.fp16.onnx");
         File[] out = run(in, inf, vm, am, four ? Workspace.part(p, 0, 0.75) : p, cancel);
         JSONObject res = new JSONObject();
         res.put("voc", clip(out[0]));
@@ -83,14 +102,16 @@ final class Separator {
     /** writes vocals and accompaniment next to the input; returns both files */
     static File[] run(File in, Workspace.Info inf, File vm, File am, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         int threads = Device.threads(4);
-        long h = create(vm.getAbsolutePath(), am.getAbsolutePath(), threads);
+        final boolean uvr = am == null;
+        long h = create(vm.getAbsolutePath(), uvr ? "" : am.getAbsolutePath(), threads);
         if (h == 0) throw new IllegalStateException("sep-model");
         File dir = in.getParentFile();
         File vo = new File(dir, "v" + System.nanoTime() + ".wav"), ao = new File(dir, "a" + System.nanoTime() + ".wav");
         RandomAccessFile r = new RandomAccessFile(in, "r");
         try {
             final int rate = inf.rate, ch = inf.ch;
-            final long N = inf.frames, CH = 30L * rate, CTX = rate;   // 30 s pieces
+            final long N = inf.frames, CH = (uvr ? 10L : 30L) * rate, CTX = rate;   // 30 s pieces (UVR: 10 s, it needs far more memory)
+            final int[] order = uvr ? new int[] { 1, 0 } : new int[] { 0, 1 };   // UVR gives the instrumental first
             Node[] sink = new Node[2];
             Studio.WavNode[] wn = { new Studio.WavNode(vo, rate), new Studio.WavNode(ao, rate) };
             Resampler[] rs = new Resampler[2];
@@ -129,9 +150,9 @@ final class Separator {
                     for (int i = 0; i < have; i++) {
                         if (ch == 1) {
                             float v = 0;
-                            for (int k = 0; k < sc; k++) v += y[t * sc + k][from + i];
+                            for (int k = 0; k < sc; k++) v += y[order[t] * sc + k][from + i];
                             o[0][i] = v / sc;
-                        } else for (int k = 0; k < 2; k++) o[k][i] = y[t * sc + Math.min(k, sc - 1)][from + i];
+                        } else for (int k = 0; k < 2; k++) o[k][i] = y[order[t] * sc + Math.min(k, sc - 1)][from + i];
                     }
                     for (int k = 0; k < ch; k++) for (int i = 0; i < m; i++) { float v = o[k][i]; o[k][i] = v > 1 ? 1 : v < -1 ? -1 : v; }
                     sink[t].push(o, m);

@@ -677,6 +677,8 @@ public class MainActivity extends Activity implements Player.Listener {
                 o.put("spk", Speakers.ready(MainActivity.this));
                 o.put("hd", Hd.ready(MainActivity.this));
                 o.put("tag", Sounds.ready(MainActivity.this));
+                o.put("uvr", Separator.uvrReady(MainActivity.this));
+                o.put("uvrOk", Separator.uvrFits(MainActivity.this));
                 android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
                 android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
                 am.getMemoryInfo(mi);

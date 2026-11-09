@@ -249,6 +249,22 @@ final class Workspace {
                     tees.set(after);
                     break;
                 }
+                case "musicdenoise": {
+                    // 5.6: noise under music: gentler (at most 10 dB, less over-subtraction) and without the tracking that would
+                    // take a held note for noise; the AI denoiser is made for voices and smears instruments
+                    Analyzer.Analysis an = analyze(in, inf, p, cancel);
+                    double nr = Math.max(3, Math.min(10, (Math.max(4, Math.min(12, (42 - an.snr) * 0.4 + 4))) * str));
+                    Spectral s = new Spectral(ch, fs).noise(an.noisePower, nr, 0.7);
+                    Analyzer after = new Analyzer(ch, fs);
+                    m = new Meter(ch, fs);
+                    s.to(new Tee(after)).to(m);
+                    head = s;
+                    rep.put("reduction", Math.round(nr));
+                    rep.put("before", Math.round(an.noiseDb));
+                    rep.put("_after", true);
+                    tees.set(after);
+                    break;
+                }
                 case "hum": {
                     Analyzer.Analysis an = analyze(in, inf, p, cancel);
                     double[] hr = an.humRatioDb;

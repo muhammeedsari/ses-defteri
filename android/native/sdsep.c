@@ -11,9 +11,8 @@ JNIEXPORT jlong JNICALL Java_app_sesdefteri_Separator_create(JNIEnv *env, jclass
   const char *a = (*env)->GetStringUTFChars(env, acc, 0);
   SherpaOnnxOfflineSourceSeparationConfig cfg;
   memset(&cfg, 0, sizeof cfg);
-  cfg.model.spleeter.vocals = v;
-  cfg.model.spleeter.accompaniment = a;
-  cfg.model.uvr.model = "";
+  if (a[0]) { cfg.model.spleeter.vocals = v; cfg.model.spleeter.accompaniment = a; cfg.model.uvr.model = ""; }
+  else { cfg.model.spleeter.vocals = ""; cfg.model.spleeter.accompaniment = ""; cfg.model.uvr.model = v; }   /* 5.6: no accompaniment model = UVR */
   cfg.model.num_threads = threads;
   cfg.model.debug = 0;
   cfg.model.provider = "cpu";

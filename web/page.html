@@ -1182,6 +1182,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n54.js"></script>
 <script src="i18n55.js"></script>
 <script src="i18n56.js"></script>
+<script src="i18n57.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -1193,7 +1194,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.5';
+const VERSION = '5.6';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -3969,7 +3970,7 @@ function tlTrack() {
     { id: 'td', value: !!tr.duck, html: `<label class="switch"><input type="checkbox" id="td"${tr.duck ? ' checked' : ''}><span>${esc(t('tlDuck'))}<small>${esc(t('tlDuckD'))}</small></span></label>` },
     { id: 'tdd', label: t('tlDuckAmt'), min: -30, max: -3, step: 1, value: tr.duckDb || -12, fmt: dbTxt }], v => { tr.vol = v.tv; tr.mute = v.tm; tr.duck = v.td; tr.duckDb = v.tdd; });
 }
-const TL_FX = ['clarify', 'voicefx', 'autotune', 'fillers', 'aidenoise', 'sepdenoise', 'denoise', 'gate', 'dereverb', 'hum', 'clicks', 'mouth', 'plosive', 'deess', 'declip', 'breaths', 'channels', 'stereo', 'eq', 'level', 'comp', 'loud', 'reverb', 'delay', 'eightd', 'widen', 'double', 'lofi', 'reverse', 'trim', 'pauses', 'silence'];
+const TL_FX = ['clarify', 'voicefx', 'autotune', 'fillers', 'aidenoise', 'sepdenoise', 'denoise', 'musicdenoise', 'gate', 'dereverb', 'hum', 'clicks', 'mouth', 'plosive', 'deess', 'declip', 'breaths', 'channels', 'stereo', 'eq', 'level', 'comp', 'loud', 'reverb', 'delay', 'eightd', 'widen', 'double', 'lofi', 'reverse', 'trim', 'pauses', 'silence'];
 async function tlFx() {
   const c = tlSel(); if (!c || TL.busy) return;
   const op = await chooseBox(t('tlFx'), t('tlFxD'), TL_FX.filter(x => ((x !== 'aidenoise' && x !== 'sepdenoise') || CAPS.sep) && (x !== 'stereo' || c.ch < 2)).map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
@@ -3995,8 +3996,10 @@ async function tlFxRun(c, op) {
   if (op === 'silence') return tlSilence(c);
   if (op === 'fillers') return tlFillers(c);
   if (op === 'denoise') {
-    const v = await chooseBox(t('op_denoise'), t('fxd_denoise'), [{ value: 'auto', label: t('dnAuto'), desc: t('dnAutoD') }, { value: 'here', label: t('dnHere'), desc: t('dnHereD') }]);
+    const mu = { value: 'music', label: t('op_musicdenoise'), desc: t('fxd_musicdenoise') }, ch = [{ value: 'auto', label: t('dnAuto'), desc: t('dnAutoD') }, { value: 'here', label: t('dnHere'), desc: t('dnHereD') }];
+    const v = await chooseBox(t('op_denoise'), t('fxd_denoise'), tlIsMusic(c) ? [mu].concat(ch) : ch.concat(mu));   // 5.6: music first for a song
     if (!v) return;
+    if (v === 'music') return tlEffect(c, 'musicdenoise', {});
     if (v === 'auto') return tlEffect(c, 'denoise', {});
     const k = TL.pos - c.at;
     if (k < 0 || k > tlLen(c) - 0.3) { toast(t('dnHereOut'), 4500); return; }
@@ -4143,7 +4146,7 @@ function wsReport(op, st) {
   const r = st.report || {}, n = nf1.format;
   switch (op) {
     case 'cut': return t('rpw_cut', { d: fmt(st.dur / 1000) });
-    case 'denoise': case 'aidenoise': case 'sepdenoise': return t('rpw_denoise', { b: r.before, a: r.after, r: r.reduction });
+    case 'denoise': case 'musicdenoise': case 'aidenoise': case 'sepdenoise': return t('rpw_denoise', { b: r.before, a: r.after, r: r.reduction });
     case 'hum': return t('rpw_hum', { hz: r.hz });
     case 'trim': return t('rpw_trim', { a: n(r.start || 0), b: n(r.end || 0) });
     case 'clicks': case 'mouth': return t('rpClicks', { n: r.count || 0 });
@@ -4687,9 +4690,9 @@ const RACK = {
   lofi: [['mix', 0, 100, 5, 80, '%']]
 };
 // 5.1: computed effects: worked out once on the clip's own sound, kept, and worked out again only from a changed one on
-const HEAVY = ['aidenoise', 'denoise', 'clarify', 'dereverb', 'deess', 'autotune', 'hd'];
+const HEAVY = ['aidenoise', 'denoise', 'musicdenoise', 'clarify', 'dereverb', 'deess', 'autotune', 'hd'];
 const LVL = ['strength', 0.6, 1.4, 0.4, 1, 'lvl'];
-const HV = { aidenoise: [LVL], denoise: [LVL], clarify: [LVL], dereverb: [LVL], deess: [LVL], autotune: [['style', 'sel', ['natural', 'strong', 'robot'], 'natural']], hd: [] };
+const HV = { aidenoise: [LVL], denoise: [LVL], musicdenoise: [LVL], clarify: [LVL], dereverb: [LVL], deess: [LVL], autotune: [['style', 'sel', ['natural', 'strong', 'robot'], 'natural']], hd: [] };
 const RKDEF = k => RACK[k] || HV[k] || [];
 const hvHas = c => (c.rk || []).some(f => HEAVY.includes(f.k));
 const hvAvail = k => (k !== 'aidenoise' || CAPS.sep) && (k !== 'hd' || CAPS.hd);
@@ -5045,15 +5048,21 @@ $('#tlQBar').addEventListener('click', tlAct);
 async function tlSep(pick, quiet) {
   const c = tlSel(); if (!c || TL.busy) return;
   if (!CAPS.sep) { toast(t('sepNo'), 4000); return; }
-  const how = pick || await chooseBox(t('tlSep'), t('sepD'), [{ value: 'two', label: t('sep2'), desc: t('sep2D') }, { value: 'four', label: t('sep4'), desc: t('sep4D') }]);
+  const hqOk = CAPS.uvrOk && !liteOn();   // 5.6: the big model needs about 2 GB of memory
+  const how = pick || await chooseBox(t('tlSep'), t('sepD'), [{ value: 'two', label: t('sep2'), desc: t('sep2D') }].concat(hqOk ? [{ value: 'hq', label: t('sepHq'), desc: t('sepHqD') }] : [], [{ value: 'four', label: t('sep4'), desc: t('sep4D') }]));
   if (!how) return;
+  if (how === 'hq' && !CAPS.uvr) {
+    if (!(await confirmBox({ title: t('sepHq'), text: t('uvrGetQ'), ok: t('spkGetOk') }))) return;
+    toast(t('bgNote'), 3500);
+    try { await bgStart('uvrGet', 'dl:uvr', t('uvrGetting'), {}); CAPS.uvr = true; } catch (e) { if (!String(e.message).includes('pause')) toast(errText(e), 5000); return; }
+  }
   // 4.5.2: the parts need free tracks (at most 4 tracks): say so before the long job
   const need = how === 'four' ? 3 : 1, a = c.at, b = c.at + tlLen(c);
   const free = TL.p.tracks.filter((x, i) => i !== c.tr && !TL.p.clips.some(d => d.tr === i && d.at < b - 0.001 && d.at + tlLen(d) > a + 0.001)).length + (TL_MAX - TL.p.tracks.length);
   if (free < need) { toast(t('sepRoom', { n: need }), 5000); return; }
   tlStop();
   let res;
-  try { res = await tlRunJob(t('tlSep'), 'tlSep', { path: c.path, four: how === 'four' }); } catch (e) { toast(errText(e), 5000); return; }
+  try { res = await tlRunJob(t('tlSep'), 'tlSep', { path: c.path, four: how === 'four', hq: how === 'hq' }); } catch (e) { toast(errText(e), 5000); return; }
   const before = tlSnap(), base = c.name || '', ids = [];
   const fit = (k, o) => { const nd = o.dur / 1000, f = nd / k.dur; Object.assign(k, { path: o.path, ch: o.ch, dur: nd }); k.in = Math.min(k.in * f, nd - 0.05); k.out = Math.min(k.out * f, nd); };
   const parts = how === 'four' ? [['voc', 'sepVoice'], ['drums', 'sepDrums'], ['bass', 'sepBass'], ['other', 'sepOther']] : [['voc', 'sepVoice'], ['acc', 'sepMusic']];
@@ -6000,7 +6009,7 @@ function openTrash() {
 
 /* ---------- "Clean": diagnosis + fix everything in one tap, before/after, what changed ---------- */
 const CL = { r: null, diag: null, res: null, job: null, fixes: null, strength: ls.get('clStrength', 1), purpose: 'youtube', cmp: 'after', play: false, pos: 0, raf: 0 };
-const CL_ORDER = ['channels', 'declip', 'trim', 'hum', 'clicks', 'plosive', 'denoise', 'gate', 'breaths', 'deess', 'eq', 'level', 'pauses', 'loud'];
+const CL_ORDER = ['channels', 'declip', 'trim', 'hum', 'clicks', 'plosive', 'denoise', 'musicdenoise', 'gate', 'breaths', 'deess', 'eq', 'level', 'pauses', 'loud'];
 const TARGET_LUFS = { youtube: -14, podcast: -16, whatsapp: -16 };
 function clStopPlay() {
   if (!CL.play) return;
@@ -6044,6 +6053,7 @@ function clIssues(d, purpose) {
   if (d.clicks >= 3) out.push(['clicks', t('dgClicks', { n: d.clicks })]);
   if (!music && d.plosive >= 0.2) out.push(['plosive', t('dgPlos', { s: n(d.plosive) })]);
   if (!music && d.snr < 35) out.push(['denoise', t('dgNoise', { n: String(d.noise).replace('-', '−') })], ['gate', t('dgGate'), false]);
+  if (music && d.snr < 30) out.push(['musicdenoise', t('dgNoiseMus', { n: String(d.noise).replace('-', '−') })]);   // 5.6: gentle, keeps the instruments
   if (!music && d.sib >= 1) out.push(['deess', t('dgSib', { s: n(d.sib) })]);
   if (!music && d.eq >= 2) out.push(['eq', t('dgEq', { m: n(d.eq) })]);
   if (!music && d.speech && d.lra > 8) out.push(['level', t('dgLevel', { l: n(d.lra) })]);
