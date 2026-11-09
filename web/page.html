@@ -1146,6 +1146,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n44.js"></script>
 <script src="i18n45.js"></script>
 <script src="i18n46.js"></script>
+<script src="i18n47.js"></script>
 <script>
 (() => {
 'use strict';
@@ -1156,7 +1157,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.13';
+const VERSION = '4.14';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -4463,6 +4464,7 @@ function tlDo(k, b) {
   if (k === 'keyfind') { tlKeyFind(); return; }
   if (k === 'capvid') { tlCapVideo(); return; }
   if (k === 'aiduck') { tlAiDuck(); return; }
+  if (k === 'levelall') { tlLevelAll(); return; }
   if (k === 'aibreaths') { const c = tlSel(); if (c) tlAiBreaths(c); return; }
   if (k === 'aigate' || k === 'aipauses' || k === 'ailevel') { const c = tlSel(); if (c) ({ aigate: tlAiGate, aipauses: tlAiPauses, ailevel: tlAiLevel })[k](c); return; }
   if (k === 'flai') { const c = tlSel(); if (!c) return; if (!hasAsr()) { asrOffer().then(ok => { if (ok) toast(t('flaiReady'), 4000); }); return; } tlFillers(c, true); return; }
@@ -5227,6 +5229,25 @@ async function tlAiDuckRefresh(quiet) {
   ls.set('proj', TL.p);
   if (TL.play) try { AND.tlUpdate(JSON.stringify(tlMix())); } catch (x) {}
   return true;
+}
+/* 4.14: every clip to the same loudness in one tap (only each clip's own volume changes; undoable). Music sits 6 dB under the voices */
+async function tlLevelAll() {
+  const tr = TL.p.tracks, cl = TL.p.clips.filter(c => tr[c.tr] && !tr[c.tr].mute);
+  if (!cl.length || TL.busy) return;
+  tlStop();
+  toast(t('lvlAllWork'), 60000);
+  let res;
+  try { res = await runJob('tlLoud', { clips: cl.map(c => ({ path: c.path, in: c.in, len: tlLen(c) })) }); } catch (e) { toast(errText(e), 4000); return; }
+  const mus = c => tlKind(c.tr) === 'music', voice = cl.some(c => !mus(c)), T = -16;
+  const b0 = tlSnap(); let n = 0;
+  cl.forEach((c, i) => {
+    const l = res.lufs[i]; if (l == null || l <= -60) return;
+    const g = clamp(Math.round((T - (voice && mus(c) ? 6 : 0) - l) * 2) / 2, -30, 12);
+    if (Math.abs(g - (c.gain || 0)) >= 0.5) { c.gain = g; n++; }
+  });
+  if (!n) { toast(t('lvlAllNone'), 3500); return; }
+  tlCommit(b0);
+  toast(t('lvlAllDone', { n }), 4000);
 }
 async function tlAiDuck() {
   if (TL.busy) return;
@@ -6493,6 +6514,8 @@ async function itemMenu(r) {
   opts.push(o('pl', 'plAddTo'));
   if (inPl) opts.push(o('rm', 'plRemove', inPl.name));
   if (nat) opts.push(o('share', 'share'), o('copy', 'imCopy', t('imCopyD')), o('saveas', 'imSaveAs', t('imSaveAsD')));
+  if (nat && CAPS.mp3 && !/\.mp3$/i.test(r.name || '')) opts.push(o('mp3', 'imToMp3', t('imToMp3D')));
+  if (nat) opts.push(o('wa', 'imWa', t('imWaD')));
   opts.push(o('move', music ? 'imToRec' : 'imToMusic'));
   if (music) { opts.push(o('artist', 'imArtist', artistOf(r)), o('cover', 'imCover')); if (r.cover) opts.push(o('coverX', 'imCoverX')); }
   opts.push(o('del', 'delete'));
@@ -6507,6 +6530,8 @@ async function itemMenu(r) {
   else if (v === 'rm' && inPl) { inPl.ids = inPl.ids.filter(id => id !== r.id); plSave(); renderColl(); }
   else if (v === 'share') shareItems([r]);
   else if (v === 'copy') copyItem(r, null);
+  else if (v === 'mp3') copyItem(r, 'mp3_192');
+  else if (v === 'wa') { const it = await copyItem(r, 'wa'); if (it) shareItems([it]); }
   else if (v === 'saveas') {
     const f = await chooseBox(t('exFmt'), t('imSaveAsD'), FMTS().map(x => ({ value: x, label: fmtLabel(x), desc: t('exq_' + x) })));
     if (f) copyItem(r, f);
@@ -6543,16 +6568,16 @@ function shareItems(list) {
 }
 /** a copy (same format as the default export) or "save as" another format: a new recording next to the original */
 async function copyItem(r, f, nameIn) {
-  const name = nameIn || await promptBox(t(f ? 'imSaveAs' : 'imCopy'), f ? r.title : r.title + ' (2)'); if (!name) return;
+  const name = nameIn || await promptBox(t(f ? 'imSaveAs' : 'imCopy'), f === 'wa' ? r.title + ' (WhatsApp)' : f ? r.title : r.title + ' (2)'); if (!name) return;
   if (!nameIn) toast(t('imWorking'), 2500);
   try {
     const w = await runJob('wsInit', { src: r.src });
-    const sv = await runJob('wsSave', Object.assign({ path: w.path, name: safeName(name) }, fmtArgs(f)));
+    const sv = await runJob('wsSave', Object.assign({ path: w.path, name: safeName(name) }, f === 'wa' ? { format: 'm4a', kbps: 48, chans: 'mono' } : fmtArgs(f)));
     const meta = metaOf(r); ['id', 'peaks', 'size', 'src', 'trashed', 'origId', 'origSrc', 'pos'].forEach(k => delete meta[k]);
     Object.assign(meta, { title: name, userTitle: true, created: Date.now(), kind: kindOf(r) });
     const it = fromNative(sv.item, meta); S.items.set(it.id, it); await saveRec(it);
     render(); if (!nameIn) toast(t('imCopied', { t: name }), 3500);
-    return true;
+    return it;
   } catch (e) { toast(errText(e), 4000); return false; }
   finally { runJob('wsClean', { keep: [] }).catch(() => {}); }
 }
@@ -6634,6 +6659,7 @@ async function selAct(e) {
     if (one) opts.push(o('ren', 'imRename'));
     if (nat) opts.push(o('saveas', 'imSaveAs', t(one ? 'imSaveAsD' : 'selSaveAsD', { n: list.length })));
     if (one && nat) opts.push(o('copy', 'imCopy', t('imCopyD')));
+    if (nat && !mu) opts.push(o('apply', 'selApply', t('selApplyD')));
     if (!mu) opts.push(o('cat', 'imCats'));
     if (one && mu) opts.push(o('artist', 'imArtist', artistOf(one)), o('cover', 'imCover'));
     if (one) opts.push(o('info', 'selInfo'));
@@ -6641,6 +6667,7 @@ async function selAct(e) {
     if (!v) return;
     if (v === 'ren') { const nm = await promptBox(t('imRename'), one.title); if (nm) { one.title = nm; one.userTitle = true; await saveRec(one); selEnd(); redraw(); } }
     else if (v === 'copy') { selEnd(); copyItem(one, null); }
+    else if (v === 'apply') { selEnd(); batchOp(list); }
     else if (v === 'cat') { await setCats(list); selEnd(); }
     else if (v === 'artist') { const nm = await promptBox(t('imArtist'), one.uArtist || one.artist || ''); if (nm) { one.uArtist = one.artist = nm; await saveRec(one); selEnd(); redraw(); } }
     else if (v === 'cover') { selEnd(); pickCover(one); }
@@ -6657,6 +6684,33 @@ async function selAct(e) {
   }
 }
 $('#selBar').addEventListener('click', selAct);
+/* 4.14: one tool on several recordings: each gets a new copy "<title> (<tool>)", the originals stay */
+const BATCH_OPS = () => ['denoise'].concat(CAPS.sep ? ['aidenoise'] : [], ['clarify', 'level', 'loud', 'eq', 'deess', 'dereverb', 'hum', 'trim', 'pauses', 'widen', 'lofi', 'eightd'], CAPS.hd ? ['hd'] : []);
+async function batchOp(list) {
+  const op = await chooseBox(t('selApply'), t('selApplyQ', { n: list.length }), BATCH_OPS().map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
+  if (!op) return;
+  const args = op === 'loud' ? { target: S.target || 'youtube' } : op === 'eightd' ? { period: 8 } : {};
+  tlStop(); if (!audio.paused) audio.pause();
+  let ok = 0;
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i];
+    toast(t('selApplying', { i: i + 1, n: list.length, x: t('op_' + op) }), 120000);
+    try {
+      const w = await runJob('wsInit', { src: r.src });
+      const res = await runJob('wsOp', Object.assign({ path: w.path, op }, args));
+      if (res.same) continue;
+      const name = `${r.title} (${t('op_' + op)})`;
+      const sv = await runJob('wsSave', Object.assign({ path: res.path, name: safeName(name) }, fmtArgs()));
+      const meta = metaOf(r); ['id', 'peaks', 'size', 'src', 'trashed', 'origId', 'origSrc', 'pos', 'lufs'].forEach(k => delete meta[k]);
+      Object.assign(meta, { title: name, userTitle: true, created: Date.now(), kind: kindOf(r) });
+      const it = fromNative(sv.item, meta); S.items.set(it.id, it); await saveRec(it);
+      ok++;
+    } catch (e) { toast(r.title + ': ' + errText(e), 4000); }
+    finally { await runJob('wsClean', { keep: [] }).catch(() => {}); }
+  }
+  render();
+  toast(t('selApplied', { n: ok }), 4000);
+}
 $('#selTop').addEventListener('click', selAct);
 /** what the file is: name, length, size, format, date, folder */
 function itemInfo(r) {
@@ -7213,7 +7267,7 @@ async function tlSmartFix() {
 function tlGroups(c) {
   if (!c) return [
     ['grp_add', 'speech', [['rec', 'mic', 'sh_rec'], ['add', 'import', 'sh_add'], ['sfx', 'bell', 'sh_sfx'], ['tts', 'speak', 'sh_tts'], ['insSil', 'sil', 'sh_sil'], ['paste', 'paste', 'sh_paste']]],
-    ['grp_arrange', 'other', [['marker', 'flag', 'sh_marker'], ['metro', 'beat', 'sh_metro'], ['fit', 'wave', 'tlFit'], ['aiduck', 'note', 'op_aiduck'], ['video', 'film', 'sh_video'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
+    ['grp_arrange', 'other', [['marker', 'flag', 'sh_marker'], ['metro', 'beat', 'sh_metro'], ['fit', 'wave', 'tlFit'], ['aiduck', 'note', 'op_aiduck'], ['levelall', 'gauge', 'sh_levelall'], ['video', 'film', 'sh_video'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
     ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
   const op = (x, i) => ['op:' + x, i, 'op_' + x];
   return [

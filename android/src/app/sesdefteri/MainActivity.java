@@ -1124,6 +1124,8 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = AsrModels.delete(MainActivity.this, a);
                         } else if ("asrStatus".equals(kind)) {
                             res = AsrModels.status(MainActivity.this);
+                        } else if ("tlLoud".equals(kind)) {
+                            res = Workspace.clipLoud(a, p, cancel);
                         } else if ("loudness".equals(kind)) {
                             res = Workspace.loudness(MainActivity.this, a, p, cancel);
                         } else if ("ringtone".equals(kind)) {

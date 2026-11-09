@@ -973,6 +973,41 @@ final class Workspace {
         return o;
     }
 
+    /** 4.14: loudness (LUFS) of the heard part of each timeline clip: [{path, in, len}] (seconds) → lufs[] (-70 = silent) */
+    static JSONObject clipLoud(JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        JSONArray cl = a.getJSONArray("clips"), res = new JSONArray();
+        for (int i = 0; i < cl.length(); i++) {
+            JSONObject o = cl.getJSONObject(i);
+            File f = new File(o.getString("path"));
+            Info inf = info(f);
+            long st = Math.max(0, Math.min(inf.frames, Math.round(o.optDouble("in", 0) * inf.rate)));
+            long n = Math.min(inf.frames - st, Math.round(o.optDouble("len", 1e9) * inf.rate));
+            Loudness l = new Loudness(inf.ch, inf.rate);
+            l.to(new Sink());
+            RandomAccessFile r = new RandomAccessFile(f, "r");
+            try {
+                final int BL = 8192;
+                byte[] b = new byte[BL * inf.ch * 2];
+                float[][] x = new float[inf.ch][BL];
+                r.seek(44 + st * inf.ch * 2);
+                for (long d = 0; d < n; ) {
+                    if (cancel.get()) throw new InterruptedException();
+                    int k = (int) Math.min(BL, n - d);
+                    r.readFully(b, 0, k * inf.ch * 2);
+                    for (int j = 0, q = 0; j < k; j++) for (int c = 0; c < inf.ch; c++, q += 2) x[c][j] = (short) ((b[q] & 0xff) | (b[q + 1] << 8)) / 32768f;
+                    l.push(x, k);
+                    d += k;
+                }
+            } finally {
+                r.close();
+            }
+            double v = l.integrated();
+            res.put(Double.isInfinite(v) || Double.isNaN(v) ? -70 : Math.round(v * 10) / 10.0);
+            p.on((i + 1.0) / cl.length());
+        }
+        return new JSONObject().put("lufs", res);
+    }
+
     /* ---------- 2.0: ringtone, chapters ---------- */
 
     static JSONObject ringtone(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
