@@ -673,6 +673,7 @@ public class MainActivity extends Activity implements Player.Listener {
                 o.put("opus", Build.VERSION.SDK_INT >= 29);
                 o.put("spk", Speakers.ready(MainActivity.this));
                 o.put("hd", Hd.ready(MainActivity.this));
+                o.put("tag", Sounds.ready(MainActivity.this));
                 android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
                 android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
                 am.getMemoryInfo(mi);
@@ -1135,6 +1136,10 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = AsrModels.delete(MainActivity.this, a);
                         } else if ("asrStatus".equals(kind)) {
                             res = AsrModels.status(MainActivity.this);
+                        } else if ("sounds".equals(kind)) {
+                            res = Sounds.scan(MainActivity.this, a, p, cancel);
+                        } else if ("fwords".equals(kind)) {
+                            res = Workspace.fillerWords(MainActivity.this, a, p, cancel);
                         } else if ("tlLoud".equals(kind)) {
                             res = Workspace.clipLoud(a, p, cancel);
                         } else if ("loudness".equals(kind)) {

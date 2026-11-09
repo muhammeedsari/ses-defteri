@@ -234,6 +234,7 @@
 <script src="i18n46.js"></script>
 <script src="i18n47.js"></script>
 <script src="i18n48.js"></script>
+<script src="i18n49.js"></script>
 <script>
 (() => {
 'use strict';
@@ -244,7 +245,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.15';
+const VERSION = '4.16';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -2201,6 +2202,7 @@ function errText(e) {
   if (m.includes('tts-empty')) return t('ttsEmpty');
   if (m.includes('dia-short')) return t('spkShort');
   if (m.includes('hd-model')) return t('hdFail');
+  if (m.includes('tag-model')) return t('sndFail');
   if (m.includes('download-')) return t('spkNet');
   if (/No such file|FileNotFound|ENOENT/.test(m)) return t('errMissing');
   // keep a short hint for bug reports, but no file paths or Java class names
@@ -3025,7 +3027,7 @@ function wsReport(op, st) {
     case 'eqpreset': return t('rpw_eq5');
     case 'dereverb': return t('rpw_derev');
     case 'comp': return t('rpw_comp', { m: n(r.makeup || 0) });
-    case 'reverb': case 'delay': case 'eightd': case 'widen': case 'double': case 'lofi': case 'reverse': return t('rpw_fx', { x: t('op_' + op) });
+    case 'snddip': case 'reverb': case 'delay': case 'eightd': case 'widen': case 'double': case 'lofi': case 'reverse': return t('rpw_fx', { x: t('op_' + op) });
     case 'clarify': return t('rpw_clarify', { m: n(r.mud || 0), p: n(r.pres || 0), a: n(r.air || 0) });
     case 'voicefx': return t('vfx_' + (r.preset || 'radio'));
     case 'autotune': return t('rpw_autotune', { k: keyName(r.key || 0, r.scale) });
@@ -3519,9 +3521,10 @@ const STUDIO = ['hum', 'denoise', 'dereverb', 'mouth', 'plosive', 'deess', 'clar
 async function tlStudio() {
   const c = tlSel(); if (!c || TL.busy) return;
   tlStop();
+  const set = await studioAsk(); if (!set) return;
   let res, add;
   try {
-    res = await tlRunJob(t('sh_studio'), 'clean', { path: c.path, fixes: STUDIO, strength: 1, target: purposeTarget('podcast'), ai: !!CAPS.sep });
+    res = await tlRunJob(t('sh_studio'), 'clean', Object.assign({ path: c.path, fixes: STUDIO, strength: set.str, target: purposeTarget('podcast'), ai: !!CAPS.sep }, CAPS.sep ? { amb: set.amb / 100 } : {}));
     add = await tlRunJob(t('sh_studio'), 'tlAdd', { src: { path: res.path } });
   } catch (e) { toast(errText(e), 5000); return; }
   const before = tlSnap(), nd = add.dur / 1000, old = c.path, b4 = tlState(c);
@@ -3533,6 +3536,71 @@ async function tlStudio() {
   tlCommit(before);
   tlDiff(c.id, old, add.path);
   toast(t('studioDone'), 3500);
+}
+/* 4.16: Studio voice settings: how strong, and how much of the room sound stays (AI noise removal only) */
+function studioAsk() {
+  return new Promise(res => {
+    let done = false; const fin = v => { if (!done) { done = true; res(v); } };
+    const st = +ls.get('studioStr', 1), am = +ls.get('studioAmb', 5), lab = v => t(v < 0.8 ? 'clLight' : v > 1.2 ? 'clStrong' : 'clBalanced');
+    const card = openModal(`<h3>${esc(t('sh_studio'))}</h3><p class="mtext">${esc(t('stuD'))}</p><div class="modal-body">
+      <div class="slider"><span>${esc(t('stuStr'))}</span><input type="range" id="stS" min="0.6" max="1.4" step="0.4" value="${st}"><span class="tc" id="stSv">${esc(lab(st))}</span></div>
+      ${CAPS.sep ? `<div class="slider"><span>${esc(t('stuAmb'))}</span><input type="range" id="stA" min="0" max="40" step="5" value="${am}"><span class="tc" id="stAv">%${am}</span></div><small class="hint">${esc(t('stuAmbD'))}</small>` : ''}</div>
+      <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`, () => fin(null));
+    card.oninput = () => { card.querySelector('#stSv').textContent = lab(+card.querySelector('#stS').value); const a = card.querySelector('#stA'); if (a) card.querySelector('#stAv').textContent = '%' + a.value; };
+    card.querySelector('[data-x]').onclick = () => closeModal();
+    card.querySelector('[data-ok]').onclick = () => {
+      const v = { str: +card.querySelector('#stS').value, amb: card.querySelector('#stA') ? +card.querySelector('#stA').value : 5 };
+      ls.set('studioStr', v.str); ls.set('studioAmb', v.amb); fin(v); closeModal();
+    };
+  });
+}
+/* 4.16: filler words ("şey, yani, hani…"): the transcript says which sentences have one, Whisper hears their pieces again */
+async function tlFwords() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  const segs = await tlTx(c); if (!segs) return;
+  let res;
+  try { res = await tlRunJob(t('op_fwords'), 'fwords', { src: { path: c.path }, segs, lang: S.textLang || '', model: S.asrModel || '' }); } catch (e) { toast(errText(e), 5000); return; }
+  const fl = (res.ranges || []).filter(([s, e]) => e > c.in && s < c.out);
+  if (!fl.length) { toast(t('fwNone'), 3500); return; }
+  tlPickCut(t('op_fwords'), t('fwFound', { n: fl.length }), fl.map(([s, e, w]) => ({ s, e, label: '“' + w + '”' })), c, false);
+}
+/* 4.16: coughs, laughs, sneezes, throat clearing (a small sound model, downloaded once): lowered or cut */
+async function tlSounds() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  tlStop();
+  if (!CAPS.tag) {
+    if (!(await confirmBox({ title: t('sndGetQ'), text: t('sndGetD'), ok: t('spkGetOk') }))) return;
+    toast(t('bgNote'), 3500);
+    try { await bgStart('tagGet', 'dl:tag', t('sndGetting'), {}); CAPS.tag = true; } catch (e) { if (!String(e.message).includes('pause')) toast(errText(e), 5000); return; }
+  }
+  let res;
+  try { res = await tlRunJob(t('op_sounds'), 'sounds', { path: c.path, in: c.in, len: c.out - c.in }); } catch (e) { toast(errText(e), 5000); return; }
+  const ev = res.events || [];
+  if (!ev.length) { toast(t('sndNone'), 3500); return; }
+  tlPickCut(t('op_sounds'), t('sndFound', { n: ev.length }), ev.map(([s, e, k, p]) => ({ s, e, label: t('snd_' + k) + ' · %' + Math.round(p * 100) })), c, true);
+}
+/** a list of found stretches, ticked; Delete cuts them out, Lower (when offered) turns them down 24 dB */
+function tlPickCut(title, text, rows, c, lower) {
+  const card = openModal(`<h3>${esc(title)}</h3><p class="mtext">${esc(text)}</p>
+    <div class="modal-body"><div class="te-list">${rows.map((r, i) => `<label class="te-row"><input type="checkbox" data-pk="${i}" checked><span class="tc">${fmt(c.at + Math.max(0, r.s - c.in))}</span><span class="te-txt">${esc(r.label)}</span><button class="icon-btn sm" type="button" data-pp="${i}" aria-label="${esc(t('hListen'))}">${ic('play')}</button></label>`).join('')}</div></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button>${lower ? `<button class="btn" type="button" data-lo>${esc(t('sndLower'))}</button>` : ''}<button class="btn primary" type="button" data-ok>${esc(t('delete'))}</button></div>`);
+  const sel = () => rows.filter((r, i) => card.querySelector(`[data-pk="${i}"]`).checked);
+  card.onclick = e => {
+    const pp = e.target.closest('[data-pp]');
+    if (pp) { e.preventDefault(); const r = rows[+pp.dataset.pp], a = Math.max(c.in, r.s - 0.6), b = Math.min(c.out, r.e + 0.6); tlPlay([{ path: c.path, at: 0, in: a, len: b - a, g: 1, fi: 0, fo: 0 }], 0, b - a); }
+  };
+  card.querySelector('[data-x]').onclick = closeModal;
+  const lo = card.querySelector('[data-lo]');
+  if (lo) lo.onclick = () => { const d = sel(); closeModal(); if (d.length) tlEffect(c, 'snddip', { map: d.map(r => [r.s, r.e, -24]), rest: 0, ramp: 0.03 }); };
+  card.querySelector('[data-ok]').onclick = () => {
+    const d = sel().map(r => [r.s, r.e]).sort((x, y) => x[0] - y[0]);
+    closeModal();
+    if (!d.length) return;
+    const keep = []; let pos = 0;
+    for (const [a, b] of d) { if (a > pos + 0.02) keep.push([pos * 1000, a * 1000]); pos = Math.max(pos, b); }
+    keep.push([pos * 1000, c.dur * 1000 + 1000]);
+    tlEffect(c, 'cut', { keep });
+  };
 }
 /* ----- 4.12: HD voice: the AI brings back the high frequencies (model downloaded once, ~56 MB) ----- */
 async function tlHd() {
@@ -3548,6 +3616,8 @@ async function tlHd() {
 function tlDo(k, b) {
   if (k === 'studio') { tlStudio(); return; }
   if (k === 'hd') { tlHd(); return; }
+  if (k === 'fwords') { tlFwords(); return; }
+  if (k === 'sounds') { tlSounds(); return; }
   if (k === 'stt') { tlStt(); return; }
   if (k === 'sep4') { tlSep('four'); return; }
   if (k === 'keyfind') { tlKeyFind(); return; }
@@ -6363,7 +6433,7 @@ function tlGroups(c) {
     ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
   const op = (x, i) => ['op:' + x, i, 'op_' + x];
   return [
-    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], CAPS.sep ? ['hd', 'spec', 'op_hd'] : null, ['clarify', 'spark', 'op_clarify'], ['aigate', 'sil', 'op_aigate'], ['aipauses', 'gapI', 'op_aipauses'], ['ailevel', 'people', 'op_ailevel'], ['aibreaths', 'speak', 'op_aibreaths'], ['aiduck', 'note', 'op_aiduck'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk'], CAPS.asr ? ['flai', 'speak', 'sh_flai'] : null, ['tts', 'speak', 'sh_tts'], ['keyfind', 'beat', 'sh_key'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
+    ['grp_ai', 'ai', [['studio', 'mic', 'sh_studio'], CAPS.sep ? ['hd', 'spec', 'op_hd'] : null, ['clarify', 'spark', 'op_clarify'], ['aigate', 'sil', 'op_aigate'], ['aipauses', 'gapI', 'op_aipauses'], ['ailevel', 'people', 'op_ailevel'], ['aibreaths', 'speak', 'op_aibreaths'], ['aiduck', 'note', 'op_aiduck'], CAPS.asr ? ['stt', 'textic', 'sh_stt'] : null, CAPS.asr ? ['tedit', 'scissors', 'teBtn'] : null, CAPS.sep ? op('aidenoise', 'chip') : null, ['sep', 'mixer', 'tlSep'], CAPS.sep ? ['sep4', 'note', 'sep4'] : null, ['spk', 'people', 'tlSpk'], CAPS.asr ? ['flai', 'speak', 'sh_flai'] : null, CAPS.asr ? ['fwords', 'textic', 'op_fwords'] : null, ['sounds', 'ear', 'op_sounds'], ['tts', 'speak', 'sh_tts'], ['keyfind', 'beat', 'sh_key'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
     ['grp_clean', 'speech', [op('denoise', 'wave'), CAPS.sep ? ['op:sepdenoise', 'note', 'op_sepdenoise', 1] : null, op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
     ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null, ['spec', 'spec', 'tlSpec']]],
     ['grp_vt', 'music', [['gain', 'vol', 'tlVol'], ['pan', 'panI', 'tlPan'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol'), ['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],

@@ -161,14 +161,14 @@ final class Workspace {
         if ("aipauses".equals(op) && a.has("talk")) return aiPauses(in, inf, new File(in.getParentFile(), "s" + System.nanoTime() + ".wav"), a, p, cancel);
         final boolean hybridGate = "aigate".equals(op);
         if ("aipauses".equals(op)) op = "cut";   // 4.9: the AI versions reuse the plain machinery with AI-found stretches
-        else if ("aigate".equals(op) || "ailevel".equals(op)) op = "gainmap";
+        else if ("aigate".equals(op) || "ailevel".equals(op) || "snddip".equals(op)) op = "gainmap";
         File out = new File(in.getParentFile(), "s" + System.nanoTime() + ".wav");
         JSONObject rep = new JSONObject();
         int ch = inf.ch, fs = inf.rate;
         final double str = Math.max(0.3, Math.min(1.6, a.optDouble("strength", 1)));   // Light 0.6 / Balanced 1 / Strong 1.4
         try {
             if ("insert".equals(op)) return insert(c, in, inf, out, a, p, cancel);
-            if ("aidenoise".equals(op)) return aiDenoise(c, in, inf, out, str, p, cancel);
+            if ("aidenoise".equals(op)) return aiDenoise(c, in, inf, out, str, a.optDouble("amb", -1), p, cancel);
             if ("hd".equals(op)) return hd(c, in, inf, out, a, p, cancel);
             if ("reverse".equals(op)) return reverse(in, inf, out, p, cancel);
             if ("gate".equals(op)) return gate(in, inf, out, str, p, cancel);
@@ -954,6 +954,98 @@ final class Workspace {
         }
     }
 
+    /* 4.16: filler words ("şey, yani, hani…", "um, like, you know…"): Whisper gives no word times, so every sentence that has one
+       is split at its small pauses and each piece is heard again on its own; a piece that is only filler words is listed */
+    static final java.util.Map<String, String[]> FW = new java.util.HashMap<>();
+    static {
+        FW.put("tr", new String[] { "şey", "yani", "hani", "işte", "falan", "filan", "eee", "ııı" });
+        FW.put("en", new String[] { "um", "uh", "umm", "uhm", "like", "you know", "i mean", "basically", "actually", "literally", "so" });
+        FW.put("de", new String[] { "äh", "ähm", "also", "halt", "quasi", "sozusagen", "ne", "naja" });
+        FW.put("fr", new String[] { "euh", "ben", "bah", "genre", "en fait", "du coup", "quoi", "bon" });
+        FW.put("es", new String[] { "eh", "este", "o sea", "pues", "bueno", "como", "vale" });
+        FW.put("pt", new String[] { "é", "tipo", "né", "então", "assim", "ahn" });
+        FW.put("ru", new String[] { "ну", "вот", "типа", "как бы", "это", "короче", "значит", "э" });
+        FW.put("ar", new String[] { "يعني", "طيب", "اه", "امم" });
+        FW.put("zh", new String[] { "那个", "就是", "然后", "嗯", "呃" });
+    }
+
+    static java.util.List<String> fwList(String lang) {
+        java.util.ArrayList<String> l = new java.util.ArrayList<>();
+        String k = lang == null ? "" : lang.toLowerCase(java.util.Locale.ROOT);
+        if (k.length() > 2) k = k.substring(0, 2);
+        if (FW.containsKey(k)) l.addAll(java.util.Arrays.asList(FW.get(k)));
+        else for (String[] v : FW.values()) l.addAll(java.util.Arrays.asList(v));
+        return l;
+    }
+
+    static String norm(String t) { return (" " + t.replace('İ', 'i').toLowerCase(java.util.Locale.ROOT).replaceAll("\\p{M}", "").replaceAll("[^\\p{L}\\s]", " ").replaceAll("\\s+", " ").trim() + " "); }
+
+    /** the text holds a filler word / the text is only filler words */
+    static boolean hasFw(String t, java.util.List<String> l) { String n = norm(t); for (String w : l) if (n.contains(" " + w + " ")) return true; return false; }
+    static boolean onlyFw(String t, java.util.List<String> l) {
+        String n = norm(t);
+        if (n.trim().isEmpty()) return false;
+        for (String w : l) n = n.replace(" " + w + " ", " ").replace(" " + w + " ", " ");
+        return n.trim().isEmpty();
+    }
+
+    /** {src:{path}, segs:[[s,e,text]…] (from the transcript), lang, model} → ranges [[s, e, text]] in file seconds */
+    static JSONObject fillerWords(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        String model = AsrModels.pick(c, a.optString("model", ""));
+        if (model == null) throw new IllegalStateException("asr-missing");
+        java.util.List<String> fl = fwList(a.optString("lang", ""));
+        JSONArray segs = a.getJSONArray("segs"), out = new JSONArray();
+        java.util.ArrayList<double[]> todo = new java.util.ArrayList<>();
+        for (int i = 0; i < segs.length(); i++) { JSONArray q = segs.getJSONArray(i); if (hasFw(q.getString(2), fl)) todo.add(new double[] { q.getDouble(0), q.getDouble(1) }); }
+        if (todo.isEmpty()) return new JSONObject().put("ranges", out).put("checked", 0);
+        File w = new File(c.getCacheDir(), "fw" + System.nanoTime() + ".wav");
+        app.sesdefteri.asr.Transcriber tr = null;
+        try {
+            decodeTo(c, a.getJSONObject("src"), 1, 16000, p, new double[] { 0, 0.2 }, cancel, w);
+            Info inf = info(w);
+            RandomAccessFile r = new RandomAccessFile(w, "r");
+            tr = new app.sesdefteri.asr.Transcriber(null, AsrModels.dir(c, model).getAbsolutePath(), model, a.optString("lang", ""), Device.threads(4));
+            try {
+                for (int t = 0; t < todo.size(); t++) {
+                    double[] q = todo.get(t);
+                    long f0 = Math.max(0, (long) (q[0] * 16000)), f1 = Math.min(inf.frames, (long) (q[1] * 16000));
+                    if (f1 - f0 < 1600) continue;
+                    float[] x = readRegion(r, inf, f0, (int) (f1 - f0))[0];
+                    // 10 ms levels; pauses = 50 ms or more at least 20 dB under the sentence's loud part
+                    int nf = x.length / 160;
+                    float[] db = new float[nf];
+                    float[] srt = new float[nf];
+                    for (int i = 0; i < nf; i++) { double e = 0; for (int j = 0; j < 160; j++) { float v = x[i * 160 + j]; e += v * v; } srt[i] = db[i] = (float) (10 * Math.log10(e / 160 + 1e-12)); }
+                    java.util.Arrays.sort(srt);
+                    float thr = srt[(int) (nf * 0.9)] - 20;
+                    java.util.ArrayList<int[]> pieces = new java.util.ArrayList<>();
+                    int st = -1, quiet = 0;
+                    for (int i = 0; i <= nf; i++) {
+                        boolean loud = i < nf && db[i] > thr;
+                        if (loud) { if (st < 0) st = i; quiet = 0; }
+                        else if (st >= 0 && (++quiet >= 5 || i == nf)) { pieces.add(new int[] { st, i - quiet + 1 }); st = -1; quiet = 0; }
+                    }
+                    if (pieces.size() < 2 || pieces.size() > 40) continue;   // one piece = a whole sentence of fluent speech: not cut
+                    for (int[] pc : pieces) {
+                        if (cancel.get()) throw new InterruptedException("cancel");
+                        int len = pc[1] - pc[0];
+                        if (len < 12 || len > 160) continue;   // 0.12 – 1.6 s
+                        int s0 = Math.max(0, pc[0] * 160 - 800), s1 = Math.min(x.length, pc[1] * 160 + 800);
+                        String txt = tr.recognize(java.util.Arrays.copyOfRange(x, s0, s1));
+                        if (!onlyFw(txt, fl)) continue;
+                        double a0 = (f0 + pc[0] * 160) / 16000.0 - 0.03, a1 = (f0 + pc[1] * 160) / 16000.0 + 0.04;
+                        out.put(new JSONArray().put(Math.round(a0 * 100) / 100.0).put(Math.round(a1 * 100) / 100.0).put(txt.trim()));
+                    }
+                    p.on(0.2 + 0.8 * (t + 1) / todo.size());
+                }
+            } finally { r.close(); }
+        } finally {
+            if (tr != null) tr.release();
+            w.delete();
+        }
+        return new JSONObject().put("ranges", out).put("checked", todo.size());
+    }
+
     /** a new recording made of the kept ranges of another (text-based editing) */
     static JSONObject keepRender(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         JSONObject item = AudioTools.render(c, a.getJSONObject("src"), a.getJSONArray("keep"), Studio.safe(a.optString("name", "Ses")) + ".m4a", p, cancel);
@@ -1117,7 +1209,8 @@ final class Workspace {
         }
     }
 
-    static JSONObject aiDenoise(Context c, File in, Info inf, File out, double str, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+    /** amb ≥ 0: the share of the room sound kept (4.16 Studio voice slider), else from the strength */
+    static JSONObject aiDenoise(Context c, File in, Info inf, File out, double str, double amb, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         Analyzer.Analysis b = analyze(in, inf, part(p, 0, 0.25), cancel);
         Denoiser.Par dn = null;
         try {
@@ -1126,7 +1219,7 @@ final class Workspace {
             int ch = inf.ch, fs = inf.rate;
             Analyzer after = new Analyzer(ch, fs);
             Meter m = new Meter(ch, fs);
-            dn = new Denoiser.Par(c, ch, Math.pow(10, -lim / 20));
+            dn = new Denoiser.Par(c, ch, amb >= 0 ? Math.max(0.02, Math.min(0.6, amb)) : Math.pow(10, -lim / 20));
             Node head = dn, tail = head;
             if (fs != Denoiser.RATE) {
                 Resampler up = new Resampler(ch, (double) fs, (double) Denoiser.RATE), down = new Resampler(ch, (double) Denoiser.RATE, (double) fs);
@@ -1424,6 +1517,7 @@ final class Workspace {
                 if ("pauses".equals(fx)) { o.put("max", a.optDouble("pmax", 0.8)); o.put("keep", a.optDouble("pkeep", 0.45)); }
                 if ("eq".equals(fx) && a.has("learned")) o.put("learned", a.get("learned"));
                 if ("denoise".equals(fx) && a.has("profile")) o.put("profile", a.get("profile"));
+                if ("denoise".equals(fx) && a.has("amb")) o.put("amb", a.getDouble("amb"));
                 JSONObject r = op(c, o, part(p, (double) i / n, (double) (i + 1) / n), cancel);
                 if (r.optJSONObject("report") != null) reports.put(fx, r.getJSONObject("report"));
                 if (r.optBoolean("same")) continue;
