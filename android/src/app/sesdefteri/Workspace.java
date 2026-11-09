@@ -285,7 +285,7 @@ final class Workspace {
                     rep.put("strength", Math.round(Math.max(h50, h60)));
                     m = new Meter(ch, fs);
                     head = new Stages.Filters(ch, fs, 0, notch);
-                    head.to(m);
+                    head.to(new Limiter(ch, fs, -1.0, 0)).to(m);
                     break;
                 }
                 case "trim": {
@@ -348,7 +348,7 @@ final class Workspace {
                     if (mean < 0.5) { rep.put("none", true); return same(a, rep); }
                     Spectral s = new Spectral(ch, fs).eq(Enhancer.eqCurve(g, fs, Fft.nextPow2((int) Math.round(fs * 0.021))));
                     m = new Meter(ch, fs);
-                    s.to(m);
+                    s.to(new Limiter(ch, fs, -1.0, 0)).to(m);   // 5.14: boosts must not clip
                     head = s;
                     rep.put("mean", Math.round(mean * 10) / 10.0);
                     double[] after = new double[g.length];
@@ -467,7 +467,7 @@ final class Workspace {
                     Node tp = app.sesdefteri.dsp.Stretch.make(ch, fs, sp, st, a.optBoolean("formant", true));   // 5.10: Signalsmith when the pitch moves
                     rep.put("speed", sp);
                     rep.put("semitones", st);
-                    tp.to(m);
+                    tp.to(new Limiter(ch, fs, -1.0, 0)).to(m);
                     head = tp;
                     slice = new double[] { 0, 1 };
                     break;

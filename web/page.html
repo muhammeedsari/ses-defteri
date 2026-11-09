@@ -1192,6 +1192,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n58.js"></script>
 <script src="i18n59.js"></script>
 <script src="i18n60.js"></script>
+<script src="i18n61.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -1203,7 +1204,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.13';
+const VERSION = '5.14';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1276,7 +1277,6 @@ const P = {
   wave: '<path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/>',
   ear: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3.5" y="14" width="4.5" height="6.5" rx="1.6"/><rect x="16" y="14" width="4.5" height="6.5" rx="1.6"/>',
   people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c3 .2 5.5 2.4 5.5 5.8"/>',
-  bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2H4.5z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   speak: '<path d="M4 6.5h11M4 11h8M4 15.5h5"/><path d="M15.5 13.5v5l3-2.5h2v-5h-2z"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>',
   note: '<circle cx="7" cy="17.5" r="2.8"/><circle cx="17" cy="15.5" r="2.8"/><path d="M9.8 17.5V6l10-2v11.5"/>',
@@ -1405,7 +1405,7 @@ const S = {
   tab: ls.get('tab', 'rec'), mview: ls.get('mview', 'songs'),
   media: !!CAPS.media, mediaBlocked: false, pps: ls.get('pps', 50),
   peaks: new Map(), modalLocked: false, precompute: ls.get('precompute', true),
-  autoEnh: ls.get('autoEnh', true), target: ls.get('target', 'youtube'), autoText: ls.get('autoText', true),
+  autoEnh: ls.get('autoEnh', true), target: ls.get('target', 'youtube'),
   textLang: ls.get('textLang', ''), asrModel: ls.get('asrModel', 'base'), autoText: ls.get('autoText', false), learnVoice: ls.get('learnVoice', true), showBeats: ls.get('showBeats', true), beats: new Map(), texts: new Map(),
   recQuality: ls.get('recQuality', 'std'), recFmt: ls.get('recFmt', 'm4a'), micSrc: ls.get('micSrc', 'auto'), callPause: ls.get('callPause', true), autoClean: ls.get('autoClean', false),
   fmt: ls.get('fmt', CAPS.mp3 ? 'mp3_192' : 'm4a'), nameTpl: ls.get('nameTpl', '{name}'), trashDays: +ls.get('trashDays', 30),
@@ -1815,7 +1815,10 @@ function swapOverlay(from, to) {
 
 /* ---------- modal helpers ---------- */
 function openModal(html, onClose) {
-  const card = $('#modalCard');
+  // 5.14: a fresh card every time, so listeners a closed dialog added (addEventListener) do not pile up and run again
+  const old = $('#modalCard'), card = old.cloneNode(false);
+  card.className = 'modal-card';
+  old.replaceWith(card);
   card.innerHTML = html;
   modalOnClose = onClose || null;
   openOverlay('modal');
@@ -4314,63 +4317,7 @@ async function tlExport() {
 }
 
 /* ----- screen ----- */
-function renderEdit() {
-  const box = $('#editTab');
-  if (!box || S.tab !== 'edit') return;
-  if (!NATIVE) { box.innerHTML = `<div class="empty">${ic('scissors', 1.6)}<b>${esc(t('tabEdit'))}</b>${esc(t('wsNative'))}</div>`; return; }
-  if (!TL.p) tlLoad();
-  const empty = !TL.p.clips.length;
-  box.innerHTML = `<div class="tl-top">
-      <button class="icon-btn" type="button" data-tl="undo" aria-label="${esc(t('undo'))}"${TL.undo.length && !TL.busy ? '' : ' disabled'}>${ic('undo')}</button>
-      <button class="icon-btn tl-redo" type="button" data-tl="redo" aria-label="${esc(t('tlRedo'))}"${TL.redo.length && !TL.busy ? '' : ' disabled'}>${ic('undo')}</button>
-      <button class="icon-btn tl-snap${TL.snap ? ' on' : ''}" type="button" data-tl="snap" aria-pressed="${TL.snap}" aria-label="${esc(t('tlSnap'))}">${ic('magnet')}</button>
-      <button class="icon-btn tl-snap${TL.meter ? ' on' : ''}" type="button" data-tl="meter" aria-pressed="${TL.meter}" aria-label="${esc(t('tlMeter'))}">${ic('spec')}</button>
-      <span class="spacer"></span>
-      <button class="icon-btn tl-recb" type="button" data-tl="rec" aria-label="${esc(t('tlRec'))}">${ic('mic')}</button>
-      <button class="ctl" type="button" data-tl="play" id="tlPlay" style="width:48px;height:48px"${empty ? ' disabled' : ''}>${ic(TL.play ? 'pause' : 'play')}</button>
-      <span class="tc" id="tlTime"></span><span class="spacer"></span>
-      <button class="btn primary sm" type="button" data-tl="export"${empty || TL.busy ? ' disabled' : ''}>${esc(t('tlExport'))}</button></div>
-    <canvas class="tl-cv" id="tl" aria-label="${esc(t('tabEdit'))}"></canvas>
-    <canvas class="tl-meter" id="tlMeter" aria-label="${esc(t('tlMeter'))}"${TL.meter ? '' : ' hidden'}></canvas>
-    <div class="lyr" id="tlLyr"${TL.p.lyrics && TL.p.lyrics.length ? '' : ' hidden'}><b></b><span></span></div>
-    <div id="tlBusy" hidden><p class="st-desc" style="display:flex;align-items:center;gap:8px"><b id="tlBusyT" style="flex:1"></b><button class="btn sm" type="button" id="tlBusyX">${esc(t('cancel'))}</button></p><div class="prog"><i id="tlBusyBar"></i></div></div>
-    <div class="tl-bar" id="tlBar"></div>
-    <div class="tl-fx" id="tlFxList" hidden></div>
-    ${empty ? `<div class="tl-empty"><b>${esc(t('tlEmpty'))}</b><p>${esc(t('tlEmptyD'))}</p></div>` : `<p class="hint tl-hint">${esc(t('tlHint'))}</p>`}`;
-  renderTlBar(); tlBusyUi();
-  for (const c of TL.p.clips) { const it = tlItem(c); if (!isComplete(S.peaks.get(it.id))) ensurePeaks(it, {}).then(drawTl, () => {}); }
-  requestAnimationFrame(drawTl);
-  if (TL.meter) requestAnimationFrame(drawMeter);
-}
-function renderTlBar() {
-  const bar = $('#tlBar'); if (!bar) return;
-  const c = tlSel(), dis = TL.busy ? ' disabled' : '';
-  const b = (k, icn, lab, extra) => `<button class="tool" type="button" data-tl="${k}"${dis}${extra || ''}>${ic(icn)}${esc(lab)}</button>`;
-  if (c && TL.env) {
-    bar.classList.remove('two');
-    bar.innerHTML = b('envDone', 'check', t('tlDone')) + ((c.env || []).length ? b('envReset', 'trash', t('envReset')) : '') + `<span class="hint">${esc(t('envHint'))}</span>`;
-    tlFxList(); return;
-  }
-  TL.env = false;
-  bar.classList.toggle('two', !TL.rec);
-  bar.innerHTML = c
-    ? b('done', 'check', t('tlDone')) + b('del', 'trash', t('tlDelete')) + b('split', 'scissors', t('tlSplit')) + (c.prev ? b('ab', 'ear', t('tlAB')) : '') + b('env', 'envl', t('tlEnv')) + b('clarify', 'spark', t('op_clarify')) + b('vchg', 'speak', t('vcT')) + b('spec', 'spec', t('tlSpec')) + b('fx', 'spark', t('tlFx')) + b('gain', 'gauge', t('tlVol')) + b('fade', 'wave', t('tlFade')) +
-      b('punch', 'mic', t('tlPunch')) + b('merge', 'copy', t('tlMerge')) + b('eq5', 'mixer', t('tlEq')) + b('bass', 'wave', t('tlBass')) + b('treble', 'spark', t('tlTreble')) + b('sep', 'mixer', t('tlSep')) + b('spk', 'people', t('tlSpk')) + b('speed', 'gauge', t('tlSpeed')) + b('beats', 'beat', t('tlBeats')) + b('dup', 'copy', t('tlDup')) + b('copy', 'copy', t('tlCopy')) + b('cut', 'scissors', t('tlCut')) + b('track', 'mixer', t('tlTrack'))
-    : b('add', 'import', t('tlAdd')) + b('rec', 'mic', t('tlRec')) + b('recset', 'gear', t('tlRecSet')) + (tlClip() ? b('paste', 'paste', t('tlPaste')) : '') + b('sfx', 'bell', t('tlSfx')) + b('tts', 'speak', t('tlTts')) + (TL.p.clips.length ? b('insSil', 'plus', t('tlInsSil')) + b('marker', 'flag', t('tlMarker')) + b('metro', 'beat', t('tlClick')) + b('video', 'film', t('tlVideo')) + b('fit', 'wave', t('tlFit')) + b('new', 'trash', t('tlNewP')) : '');
-  tlFxList();
-  if (TL.rec) bar.innerHTML = `<button class="btn danger-fill" type="button" data-tl="rec">${ic('pause')} ${esc(t('tlRecStop'))} <span class="tc" id="tlRecT"></span></button><span class="hint">${esc(t('tlRecHint'))}</span>`;
-  tlQBar();
-}
 /* 3.9: a tapped clip gets a short bar at the bottom (add, delete, copy, paste, split); the full tool list stays above */
-function tlQBar() {
-  const q = $('#tlQBar'); if (!q) return;
-  const on = !!(S.tab === 'edit' && TL.p && tlSel() && !TL.rec && !TL.env && !SEL);
-  q.hidden = !on; document.body.classList.toggle('tlq', on);
-  if (!on) return;
-  const dis = TL.busy ? ' disabled' : '';
-  q.innerHTML = [['add', 'plus', 'tlAdd'], ['del', 'trash', 'tlDelete'], ['copy', 'copy', 'tlCopy'], ['paste', 'paste', 'tlPaste'], ['split', 'scissors', 'tlSplit']]
-    .map(([k, i, l]) => `<button type="button" data-tl="${k}"${dis || (k === 'paste' && !tlClip() ? ' disabled' : '')}${k === 'del' ? ' data-sb="del"' : ''}>${ic(i)}<span>${esc(t(l))}</span></button>`).join('');
-}
 function tlBusyUi() {
   const b = $('#tlBusy'); if (!b) return;
   b.hidden = !TL.busy;
@@ -4678,6 +4625,7 @@ function drawWs() { drawTl(); }
           const mk = (TL.p.markers || []).find(x => Math.abs(x.t - m.tm) * TL.pps < 14);
           if (mk && Math.abs(TL.pos - mk.t) < 0.01) { tlDelMarker(mk); return; }
           TL.pos = clamp(mk ? mk.t : m.tm, 0, Math.max(tlEnd(), mk ? mk.t : 0)); if (TL.play) { tlStop(); tlPlay(); }
+          if (mk) toast(t('markerTapDel'), 3000);
         }
         else TL.sel = m.c && TL.sel !== m.c.id ? m.c.id : null;
         renderTlBar(); drawTl();
@@ -5087,6 +5035,7 @@ function tlDo(k, b) {
   else if (k === 'bass' || k === 'treble') tlTone(k);
   else if (k === 'snap') { TL.snap = !TL.snap; ls.set('tlSnap', TL.snap); if (b) { b.classList.toggle('on', TL.snap); b.setAttribute('aria-pressed', TL.snap); } toast(t(TL.snap ? 'snapOn' : 'snapOff')); }
   else if (k === 'marker') tlAddMarker();
+  else if (k === 'markersX') tlDelMarkers();
   else if (k === 'meter') { TL.meter = !TL.meter; ls.set('tlMeter', TL.meter); if (b) { b.classList.toggle('on', TL.meter); b.setAttribute('aria-pressed', TL.meter); } const cv = $('#tlMeter'); if (cv) cv.hidden = !TL.meter; if (TL.meter) drawMeter(); }
   else if (k === 'punch') tlPunch();
   else if (k === 'beats') tlBeats();
@@ -5315,11 +5264,19 @@ async function tlSpk() {
   tlCommit(before);
   toast(t('spkDone', { n: used }), 5000);
 }
+const tlMarkerAt = () => (TL.p.markers || []).find(m => Math.abs(m.t - TL.pos) * TL.pps < 14 || Math.abs(m.t - TL.pos) < 0.05);
 function tlAddMarker() {
+  const near = tlMarkerAt();
+  if (near) { tlDelMarker(near); return; }   // 5.14: on a marker the same tool removes it
   const before = tlSnap();
   TL.p.markers = (TL.p.markers || []).filter(m => Math.abs(m.t - TL.pos) > 0.05).concat({ id: uid(), t: TL.pos }).sort((a, b) => a.t - b.t);
   tlCommit(before);
-  toast(t('markerAdded'));
+  toast(t('markerAdded2'), 3500);
+}
+async function tlDelMarkers() {
+  const n = (TL.p.markers || []).length; if (!n) return;
+  if (!(await confirmBox({ title: t('sh_markersX'), text: t('markersXQ', { n }), ok: t('delete'), danger: true }))) return;
+  const before = tlSnap(); TL.p.markers = []; tlCommit(before);
 }
 async function tlDelMarker(mk) {
   if (!(await confirmBox({ title: t('markerDelQ'), text: fmtT(mk.t), ok: t('delete'), danger: true }))) return;
@@ -5464,18 +5421,6 @@ function tlTone(kind) {
   card.querySelector('[data-ok]').onclick = () => { ok = true; closeModal(); tlCommit(before); };
 }
 /** what has been done to the selected clip, in order (effects, then the live settings) */
-function tlFxList() {
-  const box = $('#tlFxList'); if (!box) return;
-  const c = tlSel();
-  const rows = c ? (c.fx || []).map(f => [t('op_' + f.op), f.r]) : [];
-  if (c && c.eq) rows.push([t('tlEq'), c.eq.map((v, i) => EQ_BANDS[i] + ' ' + (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v)).join(' · ')]);
-  if (c && c.bass) rows.push([t('tlBass'), sdb(c.bass)]);
-  if (c && c.treble) rows.push([t('tlTreble'), sdb(c.treble)]);
-  if (c && c.gain) rows.push([t('tlVol'), dbTxt(c.gain)]);
-  if (c && c.env && c.env.length) rows.push([t('tlEnv'), t('envN', { n: c.env.length })]);
-  box.hidden = !rows.length;
-  box.innerHTML = rows.length ? `<b>${esc(t('fxDone'))}</b><ol>${rows.map(([a, b]) => `<li><span>${esc(a)}</span>${b ? `<small>${esc(b)}</small>` : ''}</li>`).join('')}</ol>` : '';
-}
 /** joins the selected clip with the next one on its track into a single clip (the gap between them stays as silence) */
 async function tlMerge() {
   const c = tlSel(); if (!c || TL.busy) return;
@@ -6089,7 +6034,7 @@ function clIssues(d, purpose) {
   if (d.clipped > 50) out.push(['declip', t('dgClip2', { n: d.clipped })]);
   if (d.channel) out.push(['channels', t({ identical: 'chIdentical', 'left-silent': 'chSilent', 'right-silent': 'chSilent', 'left-broken': 'chBroken', 'right-broken': 'chBroken', inverted: 'chInverted' }[d.channel] || 'chMono')]);
   if (d.head > 1 || d.tail > 1.5) out.push(['trim', t('dgTrim', { a: n(d.head), b: n(d.tail) })]);
-  if (d.hum > 6) out.push(['hum', t('dgHum', { hz: d.humHz })]);
+  if (d.hum > (music ? 10 : 6)) out.push(['hum', t('dgHum', { hz: d.humHz })]);
   if (d.clicks >= 3) out.push(['clicks', t('dgClicks', { n: d.clicks })]);
   if (!music && d.plosive >= 0.2) out.push(['plosive', t('dgPlos', { s: n(d.plosive) })]);
   if (!music && d.snr < 35) out.push(['denoise', t('dgNoise', { n: String(d.noise).replace('-', '−') })], ['gate', t('dgGate'), false]);
@@ -7513,7 +7458,7 @@ function showIntro(again) {
   });
   document.body.appendChild(d); draw();
 }
-const NEWS = ['ui', 'drag', 'studio', 'text', 'aitools', 'more', 'look'];
+const NEWS = ['n5rack', 'n5master', 'n5practice', 'n5chords', 'n5hq', 'n5pitch', 'n5fix'];   // 5.14: renew with every minor version
 function showNews() {
   const card = openModal(`<h3>${esc(t('newsT', { v: VERSION.split('.').slice(0, 2).join('.') }))}</h3><ul class="news">${NEWS.map(k => `<li>${esc(t('news_' + k))}</li>`).join('')}</ul>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('newsOk'))}</button></div>`, () => setTimeout(coachMaybe, 300));
@@ -7744,7 +7689,7 @@ function renderTlBar() {
   const body = grp
     ? `<div class="tc-cat" style="--cc:${TK[grp[1]].c};--cs:${TK[grp[1]].soft}"><button type="button" class="icon-btn" data-tl="catx" aria-label="${esc(t('back'))}">${ic('backI')}</button><b>${esc(t(grp[0]))}</b><button type="button" class="icon-btn" data-tl="all" aria-label="${esc(t('drSearch'))}">${ic('search')}</button></div>
       <div class="tc-grid g4" style="--kc:${TK[grp[1]].c};--ks:${TK[grp[1]].soft}">${grp[2].filter(Boolean).map(([k, i, l, beta]) => tile(k, i, t(l), beta ? 'k beta' : 'k')).join('')}</div>`
-    : `<div class="tc-grid">${tile('split', 'scissors', t('sh_split')) + tile('del', 'trash', t('sh_del'), 'del') + tile('copy', 'copy', t('sh_copy')) + tile('gain', 'vol', t('sh_vol')) + tile('speed', 'gauge', t('sh_speed')) + tile('fade', 'fade', t('sh_xf'))}</div>
+    : `<div class="tc-grid">${tile('split', 'scissors', t('sh_split')) + tile('del', 'trash', t('sh_del'), 'del') + tile('copy', 'copy', t('sh_copy')) + tile('gain', 'vol', t('sh_vol')) + tile('speed', 'gauge', t('sh_speed')) + tile('dup', 'dupI', t('tlDup'))}</div>
       <div class="tc-grid">${CATS.map(([g, k, i, l]) => `<button type="button" class="tc-tile cat${CAT_FOR[kind] === g ? ' hl' : ''}" style="--kc:${TK[k].c};--ks:${TK[k].soft}" data-tl="cat:${g}"${TL.busy ? ' disabled' : ''}>${ic(i)}<span>${esc(t(l))}</span></button>`).join('')}</div>`;
   bar.innerHTML = `<div class="tc-head"><span class="tc-ic" style="color:${K.c};background:${K.soft}">${ic(K.ic)}</span>
       <div class="tc-t"><b>${esc(t('tkClip_' + kind))}</b><small>${esc([fmt(tlLen(c)), c.gain ? dbTxt(c.gain) : '', nfx ? t('tcFx', { n: nfx }) : ''].filter(Boolean).join(' · '))}</small></div>
@@ -7853,8 +7798,8 @@ async function tlSmartFix() {
 /* ----- every tool in one drawer: groups, big labelled squares, search ----- */
 function tlGroups(c) {
   if (!c) return [
-    ['grp_add', 'speech', [['rec', 'mic', 'sh_rec'], ['add', 'import', 'sh_add'], ['sfx', 'bell', 'sh_sfx'], ['tts', 'speak', 'sh_tts'], ['insSil', 'sil', 'sh_sil'], ['paste', 'paste', 'sh_paste']]],
-    ['grp_arrange', 'other', [['marker', 'flag', 'sh_marker'], ['metro', 'beat', 'sh_metro'], ['fit', 'wave', 'tlFit'], ['aiduck', 'note', 'op_aiduck'], ['levelall', 'gauge', 'sh_levelall'], ['master', 'spark', 'sh_master'], ['video', 'film', 'sh_video'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
+    ['grp_add', 'speech', [['rec', 'mic', 'sh_rec'], ['add', 'import', 'sh_add'], ['sfx', 'bell', 'sh_sfx'], ['tts', 'speak', 'sh_tts'], ['insSil', 'sil', 'sh_sil'], tlClip() ? ['paste', 'paste', 'sh_paste'] : null]],
+    ['grp_arrange', 'other', [['marker', 'flag', tlMarkerAt() ? 'sh_markerDel' : 'sh_marker'], (TL.p.markers || []).length > 1 ? ['markersX', 'trash', 'sh_markersX'] : null, ['metro', 'beat', 'sh_metro'], ['fit', 'wave', 'tlFit'], ['aiduck', 'note', 'op_aiduck'], ['levelall', 'gauge', 'sh_levelall'], ['master', 'spark', 'sh_master'], ['video', 'film', 'sh_video'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
     ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
   const op = (x, i) => ['op:' + x, i, 'op_' + x];
   return [
