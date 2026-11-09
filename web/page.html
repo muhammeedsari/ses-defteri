@@ -1190,6 +1190,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n56.js"></script>
 <script src="i18n57.js"></script>
 <script src="i18n58.js"></script>
+<script src="i18n59.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -1201,7 +1202,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.7';
+const VERSION = '5.8';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -4708,20 +4709,7 @@ async function tlStudio() {
   const c = tlSel(); if (!c || TL.busy) return;
   tlStop();
   const set = await studioAsk(); if (!set) return;
-  let res, add;
-  try {
-    res = await tlRunJob(t('sh_studio'), 'clean', Object.assign({ path: c.path, fixes: STUDIO, strength: set.str, target: purposeTarget('podcast'), ai: !!CAPS.sep }, CAPS.sep ? { amb: set.amb / 100 } : {}));
-    add = await tlRunJob(t('sh_studio'), 'tlAdd', { src: { path: res.path } });
-  } catch (e) { toast(errText(e), 5000); return; }
-  const before = tlSnap(), nd = add.dur / 1000, old = c.path, b4 = tlState(c);
-  if (Math.abs(nd - c.dur) > 0.01) { c.in = 0; c.out = nd; delete c.env; }
-  Object.assign(c, { path: add.path, dur: nd, ch: add.ch, prev: old });
-  delete c.chg;
-  c.out = Math.min(c.out, nd); c.in = Math.min(c.in, c.out - 0.05);
-  tlStep(c, { op: 'studio', r: STUDIO.map(k => t('op_' + k)).join(', ') }, b4);
-  tlCommit(before);
-  tlDiff(c.id, old, add.path);
-  toast(t('studioDone'), 3500);
+  tlEffect(c, 'studio', Object.assign({ strength: set.str }, CAPS.sep ? { amb: set.amb } : {}));   // 5.8: kept in the effect list
 }
 /* ---------- 5.0: every clip's own effect list (live, changeable any time) and mastering of the whole mix ---------- */
 // per effect: [setting, min, max, step, default, unit]
@@ -4735,10 +4723,17 @@ const RACK = {
   lofi: [['mix', 0, 100, 5, 80, '%']]
 };
 // 5.1: computed effects: worked out once on the clip's own sound, kept, and worked out again only from a changed one on
-const HEAVY = ['aidenoise', 'denoise', 'musicdenoise', 'clarify', 'dereverb', 'deess', 'autotune', 'hd'];
+const HEAVY = ['studio', 'chain', 'aidenoise', 'denoise', 'musicdenoise', 'clarify', 'dereverb', 'deess', 'autotune', 'hd'];
 const LVL = ['strength', 0.6, 1.4, 0.4, 1, 'lvl'];
-const HV = { aidenoise: [LVL], denoise: [LVL], musicdenoise: [LVL], clarify: [LVL], dereverb: [LVL], deess: [LVL], autotune: [['style', 'sel', ['natural', 'strong', 'robot'], 'natural']], hd: [] };
-const RKDEF = k => RACK[k] || HV[k] || [];
+const HV = { studio: [LVL, ['amb', 0, 40, 5, 5, '%']], chain: [['id', 'sel', SD_FX.chains.map(x => x.id), SD_FX.chains[0].id]], aidenoise: [LVL], denoise: [LVL], musicdenoise: [LVL], clarify: [LVL], dereverb: [LVL], deess: [LVL], autotune: [['style', 'sel', ['natural', 'strong', 'robot'], 'natural']], hd: [] };
+const RKDEF = k => RACK[k] || (k === 'studio' && !CAPS.sep ? [LVL] : HV[k]) || [];
+/** 5.8: what the job is given for one computed effect (studio voice and the ready-made effects carry their full recipe) */
+function hvArgs(f) {
+  const a = Object.assign({}, f.v, { op: f.k, direct: true });
+  if (f.k === 'studio') Object.assign(a, { target: purposeTarget('podcast'), ai: !!CAPS.sep });
+  if (f.k === 'chain') { const ch = SD_FX.chains.find(x => x.id === f.v.id) || SD_FX.chains[0]; a.steps = ch.steps; }
+  return a;
+}
 const hvHas = c => (c.rk || []).some(f => HEAVY.includes(f.k));
 const hvAvail = k => (k !== 'aidenoise' || CAPS.sep) && (k !== 'hd' || CAPS.hd);
 /** the sound was changed by something else since the effects were worked out (or a cut is coming): they stay in it for good */
@@ -4756,7 +4751,7 @@ async function tlHeavyRun(c) {
   const hs = (c.rk || []).filter(f => HEAVY.includes(f.k) && f.on !== false), hc = c.hc || [], used = [];
   let cur = c.src, ch = c.ch;
   for (const f of hs) {
-    const args = Object.assign({}, f.v, { op: f.k, direct: true }), key = cur + '|' + JSON.stringify(args);
+    const args = hvArgs(f), key = cur + '|' + JSON.stringify(args);
     let hit = hc.find(x => x.key === key);
     if (!hit) {
       const res = await tlRunJob(t('op_' + f.k), 'wsOp', Object.assign({ path: cur }, args));
@@ -4777,7 +4772,7 @@ function hvSteps(c) {
   const hs = (c.rk || []).filter(f => HEAVY.includes(f.k) && f.on !== false), hc = c.hc || [], out = [];
   let cur = c.src;
   for (const f of hs) {
-    const args = Object.assign({}, f.v, { op: f.k, direct: true }), h = hc.find(x => x.key === cur + '|' + JSON.stringify(args));
+    const args = hvArgs(f), h = hc.find(x => x.key === cur + '|' + JSON.stringify(args));
     if (!h) return null;
     out.push({ args, path: h.path, ch: h.ch }); cur = h.path;
   }
@@ -4827,7 +4822,7 @@ function tlRack(c, before0) {
     const hv = HEAVY.includes(f.k), same = j => fx[j] && HEAVY.includes(fx[j].k) === hv;
     return `<div class="rk${hv ? ' rk-hv' : ''}"><div class="rk-h"><b class="rk-n">${esc(t('op_' + f.k))}</b><label class="switch rk-sw" aria-label="${esc(t('op_' + f.k))}"><input type="checkbox" data-ron="${i}"${f.on !== false ? ' checked' : ''}><span></span></label><button class="icon-btn sm" type="button" data-rup="${i}"${same(i - 1) ? '' : ' disabled'} aria-label="${esc(t('tkUp'))}">↑</button><button class="icon-btn sm" type="button" data-rdn="${i}"${same(i + 1) ? '' : ' disabled'} aria-label="${esc(t('tkDown'))}">↓</button><button class="icon-btn sm" type="button" data-rdel="${i}" aria-label="${esc(t('delete'))}">${ic('trash')}</button></div>
         ${RKDEF(f.k).map(([p, a, b, st, d, u]) => a === 'sel'
-          ? `<div class="slider"><span>${esc(t('rk_' + p))}</span><select data-rs="${i}:${p}" class="sel-full">${b.map(x => `<option value="${x}"${(f.v[p] || st) === x ? ' selected' : ''}>${esc(t('at_' + x))}</option>`).join('')}</select></div>`
+          ? `<div class="slider"><span>${esc(t('rk_' + p))}</span><select data-rs="${i}:${p}" class="sel-full">${b.map(x => `<option value="${x}"${(f.v[p] || st) === x ? ' selected' : ''}>${esc(t((p === 'id' ? 'fxc_' : 'at_') + x))}</option>`).join('')}</select></div>`
           : `<div class="slider"><span>${esc(t('rk_' + p))}</span><input type="range" data-rv="${i}:${p}" min="${a}" max="${b}" step="${st}" value="${f.v[p] != null ? f.v[p] : d}"><span class="tc">${esc(rkVal(u, f.v[p] != null ? f.v[p] : d))}</span></div>`).join('')}</div>`;
   };
   const draw = () => {
@@ -4914,7 +4909,7 @@ async function tlChain() {
   const c = tlSel(); if (!c || TL.busy) return;
   const id = await chooseBox(t('sh_chain'), t('chainD'), SD_FX.chains.map(x => ({ value: x.id, label: t('fxc_' + x.id), desc: t('fxcd_' + x.id) })));
   const ch = id && SD_FX.chains.find(x => x.id === id); if (!ch) return;
-  tlEffect(c, 'chain', { steps: ch.steps, label: t('fxc_' + id) });
+  tlEffect(c, 'chain', { id });   // 5.8: kept in the effect list, the recipe can be swapped later
 }
 /* 4.17: harmony / duet: a pitch-shifted copy of the clip on a free track (the formants stay, so it still sounds like a voice) */
 async function tlHarmony() {

@@ -159,6 +159,15 @@ final class Workspace {
         Info inf = info(in);
         String op = a.getString("op");
         if ("chain".equals(op)) return chain(c, in, a, p, cancel);
+        if ("studio".equals(op)) {   // 5.8: studio voice as one step (so it can sit in a clip's effect list and be undone or changed)
+            JSONObject o = new JSONObject(a.toString());
+            o.put("fixes", new JSONArray(java.util.Arrays.asList("hum", "denoise", "dereverb", "mouth", "plosive", "deess", "clarify", "eq", "comp", "loud")));
+            if (a.has("amb")) o.put("amb", a.getDouble("amb") / 100);
+            JSONObject r = clean(c, o, p, cancel);
+            if (r.getString("path").equals(in.getAbsolutePath())) return same(a, new JSONObject());
+            r.put("ch", info(new File(r.getString("path"))).ch);
+            return r;
+        }
         if ("aipauses".equals(op) && a.has("talk")) return aiPauses(in, inf, new File(in.getParentFile(), "s" + System.nanoTime() + ".wav"), a, p, cancel);
         final boolean hybridGate = "aigate".equals(op);
         if ("aipauses".equals(op)) op = "cut";   // 4.9: the AI versions reuse the plain machinery with AI-found stretches
