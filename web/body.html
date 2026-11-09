@@ -235,6 +235,8 @@
 <script src="i18n47.js"></script>
 <script src="i18n48.js"></script>
 <script src="i18n49.js"></script>
+<script src="i18n50.js"></script>
+<script src="fx-presets.js"></script>
 <script>
 (() => {
 'use strict';
@@ -245,7 +247,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.16';
+const VERSION = '4.17';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -3027,6 +3029,7 @@ function wsReport(op, st) {
     case 'eqpreset': return t('rpw_eq5');
     case 'dereverb': return t('rpw_derev');
     case 'comp': return t('rpw_comp', { m: n(r.makeup || 0) });
+    case 'chain': return t('rpw_fx', { x: t('sh_chain') });
     case 'snddip': case 'reverb': case 'delay': case 'eightd': case 'widen': case 'double': case 'lofi': case 'reverse': return t('rpw_fx', { x: t('op_' + op) });
     case 'clarify': return t('rpw_clarify', { m: n(r.mud || 0), p: n(r.pres || 0), a: n(r.air || 0) });
     case 'voicefx': return t('vfx_' + (r.preset || 'radio'));
@@ -3537,6 +3540,34 @@ async function tlStudio() {
   tlDiff(c.id, old, add.path);
   toast(t('studioDone'), 3500);
 }
+/* 4.17: ready-made effects, from the data in fx-presets.js */
+async function tlChain() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  const id = await chooseBox(t('sh_chain'), t('chainD'), SD_FX.chains.map(x => ({ value: x.id, label: t('fxc_' + x.id), desc: t('fxcd_' + x.id) })));
+  const ch = id && SD_FX.chains.find(x => x.id === id); if (!ch) return;
+  tlEffect(c, 'chain', { steps: ch.steps, label: t('fxc_' + id) });
+}
+/* 4.17: harmony / duet: a pitch-shifted copy of the clip on a free track (the formants stay, so it still sounds like a voice) */
+async function tlHarmony() {
+  const c = tlSel(); if (!c || TL.busy) return;
+  const k = await chooseBox(t('sh_harmony'), t('hmD'), [['third', 4], ['fifth', 7], ['octUp', 12], ['octDown', -12], ['duet', 4]].map(([x, n]) => ({ value: x, label: t('hm_' + x), desc: t('hmd_' + x, { n: (n > 0 ? '+' : '') + n }) })));
+  if (!k) return;
+  const len = tlLen(c);
+  if (tlFree(c.at, c.at + len) < 0) { toast(t('sepRoom', { n: 1 }), 5000); return; }
+  tlStop();
+  const st = { third: 4, fifth: 7, octUp: 12, octDown: -12, duet: 4 }[k];
+  let res;
+  try { res = await tlRunJob(t('sh_harmony'), 'wsOp', { path: c.path, op: 'vchange', semitones: st, formant: true }); } catch (e) { toast(errText(e), 5000); return; }
+  const before = tlSnap(), duet = k === 'duet';
+  const d = { id: uid(), tr: tlFree(c.at, c.at + len), path: res.path, ch: res.ch || c.ch, dur: res.dur / 1000, in: c.in, out: Math.min(c.out, res.dur / 1000), at: c.at,
+    gain: (c.gain || 0) - (duet ? 3 : 6), fi: c.fi || 0, fo: c.fo || 0, name: (c.name || '') + ' · ' + t('hm_' + k), kind: c.kind };
+  if (c.env) d.env = JSON.parse(JSON.stringify(c.env));
+  if (duet) { c.pan = -40; d.pan = 40; }
+  tlEnsureTrack(d.tr);
+  TL.p.clips.push(d); TL.sel = d.id;
+  tlCommit(before);
+  toast(t('hmDone'), 3500);
+}
 /* 4.16: Studio voice settings: how strong, and how much of the room sound stays (AI noise removal only) */
 function studioAsk() {
   return new Promise(res => {
@@ -3617,6 +3648,8 @@ function tlDo(k, b) {
   if (k === 'studio') { tlStudio(); return; }
   if (k === 'hd') { tlHd(); return; }
   if (k === 'fwords') { tlFwords(); return; }
+  if (k === 'chain') { tlChain(); return; }
+  if (k === 'harmony') { tlHarmony(); return; }
   if (k === 'sounds') { tlSounds(); return; }
   if (k === 'stt') { tlStt(); return; }
   if (k === 'sep4') { tlSep('four'); return; }
@@ -3735,7 +3768,7 @@ function stemMixer(ids) {
   };
 }
 /* 3.8: change the voice: pitch (semitones + octave), a voice changer with characters, room presets; each with a short preview */
-const VC_PRE = { female: { vst: 4, tempo: 1, speed: 1 }, male: { vst: -4, tempo: 1, speed: 1 }, robot: { vst: 0, tempo: 1, speed: 1, fx: 'robot' }, cartoon: { vst: 7, tempo: 1.1, speed: 1 }, girl: { vst: 6, tempo: 1.05, speed: 1 }, oldman: { vst: -3, tempo: 0.9, speed: 1 } };
+const VC_PRE = SD_FX.voices;   // 4.17: the characters live in fx-presets.js
 const REV_PRE = { warm: { mix: 30, soft: 70, room: 35, gain: 1 }, wide: { mix: 45, soft: 40, room: 80, gain: 0 }, compact: { mix: 20, soft: 50, room: 15, gain: 1 }, fantasy: { mix: 70, soft: 20, room: 100, gain: -1 }, ambient: { mix: 55, soft: 60, room: 65, gain: 0 } };
 function tlVoice(c0) {
   const c = c0 || tlSel(); if (!c || TL.busy) return;
@@ -6438,7 +6471,7 @@ function tlGroups(c) {
     ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null, ['spec', 'spec', 'tlSpec']]],
     ['grp_vt', 'music', [['gain', 'vol', 'tlVol'], ['pan', 'panI', 'tlPan'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol'), ['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],
     ['grp_edit', 'other', [op('trim', 'trimI'), op('pauses', 'gapI'), op('fillers', 'speak'), op('silence', 'sil'), ['speed', 'gauge', 'tlSpeed'], ['merge', 'mergeI', 'tlMerge'], ['dup', 'dupI', 'tlDup'], ['punch', 'mic', 'tlPunch'], ['beats', 'beat', 'tlBeats']]],
-    ['grp_fx', 'fx', [op('voicefx', 'spark'), ['vchg', 'speak', 'vcT'], op('autotune', 'note'), op('reverb', 'ear'), op('delay', 'wave'), op('eightd', 'orbit'), op('widen', 'widenI'), op('double', 'dblI'), op('lofi', 'lofiI'), op('reverse', 'revI')]]];
+    ['grp_fx', 'fx', [op('voicefx', 'spark'), ['vchg', 'speak', 'vcT'], op('autotune', 'note'), ['chain', 'spark', 'sh_chain'], ['harmony', 'people', 'sh_harmony'], op('reverb', 'ear'), op('delay', 'wave'), op('eightd', 'orbit'), op('widen', 'widenI'), op('double', 'dblI'), op('lofi', 'lofiI'), op('reverse', 'revI')]]];
 }
 function tlAll() {
   const c = tlSel(), groups = tlGroups(c).map(([g, k, items]) => [g, k, items.filter(Boolean)]);

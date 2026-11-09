@@ -158,6 +158,7 @@ final class Workspace {
         File in = new File(a.getString("path"));
         Info inf = info(in);
         String op = a.getString("op");
+        if ("chain".equals(op)) return chain(c, in, a, p, cancel);
         if ("aipauses".equals(op) && a.has("talk")) return aiPauses(in, inf, new File(in.getParentFile(), "s" + System.nanoTime() + ".wav"), a, p, cancel);
         final boolean hybridGate = "aigate".equals(op);
         if ("aipauses".equals(op)) op = "cut";   // 4.9: the AI versions reuse the plain machinery with AI-found stretches
@@ -1148,6 +1149,32 @@ final class Workspace {
 
     /** noise removal with the voice-separation model: keeps the voice, drops everything else */
     /** DPDFNet speech denoiser (48 kHz mono model; other rates are converted there and back) */
+    /** 4.17: a ready-made effect = several tools one after another, described as data: steps [{op, …args}] (web/fx-presets.js) */
+    static JSONObject chain(Context c, File in, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        JSONArray st = a.getJSONArray("steps");
+        File cur = in;
+        JSONObject last = null;
+        int n = st.length();
+        try {
+            for (int i = 0; i < n; i++) {
+                JSONObject o = new JSONObject(st.getJSONObject(i).toString());
+                if ("chain".equals(o.optString("op"))) continue;
+                o.put("path", cur.getAbsolutePath());
+                JSONObject r = op(c, o, part(p, (double) i / n, (double) (i + 1) / n), cancel);
+                if (r.optBoolean("same")) continue;
+                if (cur != in) cur.delete();
+                cur = new File(r.getString("path"));
+                last = r;
+            }
+        } catch (Exception e) {
+            if (cur != in) cur.delete();
+            throw e;
+        }
+        if (last == null) return same(a, new JSONObject().put("none", true));
+        last.put("report", new JSONObject().put("steps", n));
+        return last;
+    }
+
     /** 4.13: the clip played backwards (read from the end in blocks; work files are always 44-byte-header 16-bit WAV) */
     static JSONObject reverse(File in, Info inf, File out, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         final int ch = inf.ch, B = 8192;
