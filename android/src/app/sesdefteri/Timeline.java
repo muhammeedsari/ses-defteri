@@ -80,7 +80,7 @@ final class Timeline {
         RandomAccessFile f;
         int ch, rate;
         long frames, at, in, len;
-        float g, duck = 1;   // duck: gain while the other tracks are speaking (1 = never ducked)
+        float g, pl = 1, pr = 1, duck = 1;   // pl / pr: left / right balance (4.13 pan); duck: gain while the other tracks are speaking (1 = never ducked)
         int fi, fo, xi, xo;   // xi / xo: crossfades with the neighbouring clip on the same track (equal power)
         double[] et; float[] ed;   // volume line: times in frames from the clip start, levels in dB
         byte[] buf = new byte[0];
@@ -128,6 +128,9 @@ final class Timeline {
                     k.in = Math.max(0, Math.min(inf.frames, Math.round(o.getDouble("in") * RATE)));
                     k.len = Math.max(0, Math.min(inf.frames - k.in, Math.round(o.getDouble("len") * RATE)));
                     k.g = (float) o.optDouble("g", 1);
+                    double pn = Math.max(-1, Math.min(1, o.optDouble("pan", 0) / 100));   // balance: the centre stays as it was
+                    if (pn > 0) k.pl = (float) (1 - pn); else if (pn < 0) k.pr = (float) (1 + pn);
+                    if (pn != 0) c2 = 2;
                     k.fi = (int) Math.round(o.optDouble("fi", 0) * RATE);
                     k.fo = (int) Math.round(o.optDouble("fo", 0) * RATE);
                     k.xi = (int) Math.round(o.optDouble("xi", 0) * RATE);
@@ -243,8 +246,8 @@ final class Timeline {
                     q += 2;
                     float rr = l;
                     if (k.ch > 1) { rr = (short) ((b[q] & 0xff) | (b[q + 1] << 8)) / 32768f; q += 2; }
-                    L[base + i] += l * g;
-                    Rr[base + i] += rr * g;
+                    L[base + i] += l * g * k.pl;
+                    Rr[base + i] += rr * g * k.pr;
                 }
                 if (k.eq != null || k.tone != null) {
                     if (k.eq != null) for (app.sesdefteri.dsp.Biquad f : k.eq) { f.process(0, L, 0, cnt); f.process(1, Rr, 0, cnt); }

@@ -170,6 +170,7 @@ final class Workspace {
             if ("insert".equals(op)) return insert(c, in, inf, out, a, p, cancel);
             if ("aidenoise".equals(op)) return aiDenoise(c, in, inf, out, str, p, cancel);
             if ("hd".equals(op)) return hd(c, in, inf, out, a, p, cancel);
+            if ("reverse".equals(op)) return reverse(in, inf, out, p, cancel);
             if ("gate".equals(op)) return gate(in, inf, out, str, p, cancel);
             if ("sepdenoise".equals(op)) return sepDenoise(c, in, inf, p, cancel);
             if ("pauses".equals(op)) return pauses(in, inf, out, a, p, cancel);
@@ -379,6 +380,17 @@ final class Workspace {
                         }
                     };
                     head.to(m);
+                    slice = new double[] { 0, 1 };
+                    break;
+                }
+                case "eightd": case "widen": case "double": case "lofi": {
+                    // 4.13 creative stereo effects (dsp/Fx): always two channels out
+                    m = new Meter(2, fs);
+                    if ("eightd".equals(op)) head = new app.sesdefteri.dsp.Fx.EightD(ch, fs, Math.max(2, Math.min(20, a.optDouble("period", 8))));
+                    else if ("widen".equals(op)) head = new app.sesdefteri.dsp.Fx.Widen(ch, fs, Math.max(0.2, Math.min(1, str * 0.6)));
+                    else if ("double".equals(op)) head = new app.sesdefteri.dsp.Fx.Double(ch, fs);
+                    else head = new app.sesdefteri.dsp.Fx.LoFi(ch, fs);
+                    head.to(new Limiter(2, fs, -1.0, 0)).to(m);
                     slice = new double[] { 0, 1 };
                     break;
                 }
@@ -1009,6 +1021,38 @@ final class Workspace {
 
     /** noise removal with the voice-separation model: keeps the voice, drops everything else */
     /** DPDFNet speech denoiser (48 kHz mono model; other rates are converted there and back) */
+    /** 4.13: the clip played backwards (read from the end in blocks; work files are always 44-byte-header 16-bit WAV) */
+    static JSONObject reverse(File in, Info inf, File out, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        final int ch = inf.ch, B = 8192;
+        Meter m = new Meter(ch, inf.rate);
+        m.to(new Studio.WavNode(out, inf.rate));
+        byte[] buf = new byte[B * ch * 2];
+        float[][] f = new float[ch][B];
+        RandomAccessFile r = new RandomAccessFile(in, "r");
+        try {
+            for (long end = inf.frames; end > 0; ) {
+                if (cancel.get()) throw new InterruptedException();
+                int n = (int) Math.min(B, end);
+                end -= n;
+                r.seek(44 + end * ch * 2);
+                r.readFully(buf, 0, n * ch * 2);
+                for (int i = 0; i < n; i++) for (int c = 0; c < ch; c++) {
+                    int q = ((n - 1 - i) * ch + c) * 2;
+                    f[c][i] = (short) ((buf[q] & 0xff) | (buf[q + 1] << 8)) / 32768f;
+                }
+                m.push(f, n);
+                p.on(1 - (double) end / inf.frames);
+            }
+            m.end();
+        } catch (Exception e) {
+            out.delete();
+            throw e;
+        } finally {
+            r.close();
+        }
+        return done(out, m, new JSONObject());
+    }
+
     /** 4.12 HD voice: the original up to its own top frequency, the AI's high band above it; 48 kHz out */
     static JSONObject hd(Context c, File in, Info inf, File out, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         if (!Separator.available()) throw new IllegalStateException("sep-unavailable");
