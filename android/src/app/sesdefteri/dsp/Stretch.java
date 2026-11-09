@@ -79,4 +79,9 @@ public final class Stretch extends Node {
         }
         if (next != null) next.end();
     }
+
+    /** 5.14.1: a cancelled job never reaches end(); free the native stretcher when this node is collected */
+    @Override protected void finalize() throws Throwable {
+        try { if (h != 0) { destroy(h); h = 0; } } finally { super.finalize(); }
+    }
 }

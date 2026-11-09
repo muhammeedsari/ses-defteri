@@ -11,7 +11,7 @@ public final class Master {
     final Biquad lo1, lo2, hi1, hi2;
     final Biquad[] tone;
     final double[] thr = new double[3], ratio = new double[3], env = new double[3];
-    final double atk, rel, drive, ceil, lAtk, lRel, target, amt, fs;
+    final double atk, rel, drive, ceil, lRel, target, amt, fs;
     double lim = 1, ms, gdb;
     long t;
     final boolean tape;
@@ -23,7 +23,6 @@ public final class Master {
         hi1 = Biquad.highpass(2, fs, 3000, 0.707); hi2 = Biquad.highpass(2, fs, 3000, 0.707);
         atk = 1 - Math.exp(-1 / (0.010 * fs));
         rel = 1 - Math.exp(-1 / (0.200 * fs));
-        lAtk = 1 - Math.exp(-1 / (0.0007 * fs));
         lRel = 1 - Math.exp(-1 / (0.050 * fs));
         ceil = Math.pow(10, -1.0 / 20);
         tape = "tape".equals(style);
@@ -70,7 +69,7 @@ public final class Master {
             l *= mk; r *= mk;
             if (drive > 0) { l = Math.tanh(l * drive) / drive; r = Math.tanh(r * drive) / drive; }
             double pk = Math.max(Math.abs(l), Math.abs(r)), wl = pk > ceil ? ceil / pk : 1;
-            lim += (wl - lim) * (wl < lim ? lAtk : lRel);
+            if (wl < lim) lim = wl; else lim += (wl - lim) * lRel;   // 5.14.1: instant attack, so a sudden peak can't clip
             l *= lim; r *= lim;
             L[i] = (float) (l > 1 ? 1 : l < -1 ? -1 : l);
             R[i] = (float) (r > 1 ? 1 : r < -1 ? -1 : r);
