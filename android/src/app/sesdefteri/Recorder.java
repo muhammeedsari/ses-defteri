@@ -32,6 +32,7 @@ final class Recorder {
     private static MediaLib.Target target;
     private static ParcelFileDescriptor pfd;
     private static volatile String state = "idle";
+    static String stateName() { return state; }
     private static volatile boolean running;
     private static volatile Exception fail;
     private static volatile float peak;

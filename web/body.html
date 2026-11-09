@@ -149,6 +149,7 @@
       <button class="tool" id="plClean" type="button" hidden></button>
       <button class="tool" id="plChap" type="button" hidden></button>
       <button class="tool" id="plRing" type="button" hidden></button>
+      <button class="tool" id="plPrac" type="button" hidden></button>
       <button class="tool" id="plAB" type="button" hidden></button>
       <button class="tool" id="plSkip" type="button" aria-pressed="false" hidden></button>
       <button class="tool" id="plEqB" type="button" hidden></button>
@@ -239,6 +240,7 @@
 <script src="i18n51.js"></script>
 <script src="i18n52.js"></script>
 <script src="i18n53.js"></script>
+<script src="i18n54.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -250,7 +252,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.2';
+const VERSION = '5.3';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1748,7 +1750,7 @@ function fillPlayer(r) {
   const q = NATIVE && audio.st.count > 1;
   $('#plPrev').hidden = !q; $('#plNext').hidden = !q; $('#plShuffle').hidden = !q; $('#plRepeat').hidden = !q;
   updateQueueTools();
-  $('#plEdit').hidden = !NATIVE || !r.src; $('#plEdit2').hidden = !NATIVE || !r.src; $('#plClean').hidden = !NATIVE || !r.src; $('#plChap').hidden = !NATIVE || !r.src || (r.duration || 0) < 240; $('#plRing').hidden = !NATIVE || !r.src; $('#plAB').hidden = $('#plSkip').hidden = $('#plSleep').hidden = $('#plEqB').hidden = !NATIVE || !r.src; $('#plXfB').hidden = true;   /* 4.0.1: crossfade lives in Settings only */ abLabel(); sleepLabel(); plPrefLabels(); $('#plSkip').setAttribute('aria-pressed', !!S.skipSil);
+  $('#plEdit').hidden = !NATIVE || !r.src; $('#plEdit2').hidden = !NATIVE || !r.src; $('#plClean').hidden = !NATIVE || !r.src; $('#plChap').hidden = !NATIVE || !r.src || (r.duration || 0) < 240; $('#plRing').hidden = !NATIVE || !r.src; $('#plPrac').hidden = $('#plAB').hidden = $('#plSkip').hidden = $('#plSleep').hidden = $('#plEqB').hidden = !NATIVE || !r.src; $('#plXfB').hidden = true;   /* 4.0.1: crossfade lives in Settings only */ abLabel(); sleepLabel(); plPrefLabels(); $('#plSkip').setAttribute('aria-pressed', !!S.skipSil);
   $('#plWhere').textContent = NATIVE && r.src ? t('where', { p: `${r.folder || ''}${r.name || ''}` }) : '';
   renderBookmarks(); setPlayIcons(); updateTimes();
   renderText(r); loadExtras(r);
@@ -1836,6 +1838,7 @@ $('#plSpeed').addEventListener('click', () => {
 $('#plMark').addEventListener('click', addBookmarkNow);
 $('#plEdit').addEventListener('click', () => openWorkspace(curRec()));
 $('#plEdit2').addEventListener('click', () => openWorkspace(curRec()));
+$('#plPrac').addEventListener('click', () => openPractice(curRec()));
 $('#plClean').addEventListener('click', () => { const r = curRec(); if (r) openClean(r); });
 $('#plChap').addEventListener('click', async () => {
   const r = curRec(); if (!r || BUSY.has(r.id)) return;
@@ -1875,6 +1878,110 @@ function sendSkips(r) {
   try { AND.plSkips(r.id, JSON.stringify(arr)); } catch (e) {}
 }
 const AB = { a: null, on: false };
+/* ---------- 5.3: practice mode: speed without the pitch moving, pitch without the speed moving, an A-B loop that can sit on
+   the beat, the song's key and tempo, the parts played on their own; a tuner and a vocal range test ---------- */
+const PR = { pitch: 0, beats: {}, snap: true };
+const noteName = m => { const sol = ['tr', 'fr', 'es', 'pt', 'it', 'ar'].includes(LANG); return (sol ? KEY_S : KEY_L)[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); };
+function prSnap(r, x) {
+  const b = PR.snap && PR.beats[r.id]; if (!b || !b.length) return x;
+  let best = b[0]; for (const v of b) if (Math.abs(v - x) < Math.abs(best - x)) best = v;
+  return Math.abs(best - x) < 0.4 ? best : x;
+}
+function openPractice(r) {
+  if (!r || !NATIVE || !r.src) return;
+  const card = openModal(`<h3>${esc(t('pracT'))}</h3><div class="modal-body">
+      <div class="slider"><span>${esc(t('pracSpeed'))}</span><input type="range" id="prS" min="0.5" max="1.5" step="0.05" value="${S.rate || 1}"><span class="tc" id="prSv"></span></div>
+      <div class="slider"><span>${esc(t('pracPitch'))}</span><input type="range" id="prP" min="-6" max="6" step="1" value="${PR.pitch}"><span class="tc" id="prPv"></span></div>
+      <p class="rk-sec">${esc(t('pracLoop'))}</p>
+      <div class="pr-ab"><button class="btn sm" type="button" data-pa="a">A</button><button class="btn sm" type="button" data-pa="b">B</button><button class="btn sm" type="button" data-pa="x">${esc(t('pracLoopOff'))}</button><span class="tc" id="prAB"></span></div>
+      <label class="switch"><input type="checkbox" id="prSnap"${PR.snap ? ' checked' : ''}><span>${esc(t('pracSnap'))}<small>${esc(t('pracSnapD'))}</small></span></label>
+      <p class="rk-sec">${esc(t('pracSong'))}</p>
+      <div class="pr-info"><span id="prKey">${r.mkey ? esc(r.mkey + (r.bpm ? ' · ' + r.bpm + ' BPM' : '')) : '—'}</span><button class="btn sm" type="button" data-pk>${esc(t('pracFind'))}</button></div>
+      <div class="pr-go">${CAPS.sep ? `<button class="btn" type="button" data-pst>${ic('mixer')}${esc(t('pracStems'))}</button>` : ''}<button class="btn" type="button" data-ptu>${ic('note')}${esc(t('tunT'))}</button><button class="btn" type="button" data-prg>${ic('mic')}${esc(t('rngT'))}</button></div></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
+  const lab = () => {
+    card.querySelector('#prSv').textContent = speedLabel(S.rate || 1);
+    card.querySelector('#prPv').textContent = PR.pitch ? (PR.pitch > 0 ? '+' : '−') + Math.abs(PR.pitch) : '0';
+    card.querySelector('#prAB').textContent = AB.on ? t('abLoop', { a: fmt(AB.a), b: fmt(AB.b || 0) }) : AB.a != null ? 'A ' + fmt(AB.a) : '';
+  };
+  lab();
+  card.addEventListener('input', e => {
+    if (e.target.id === 'prS') { S.rate = +e.target.value; audio.defaultPlaybackRate = S.rate; audio.playbackRate = S.rate; ls.set('rate', S.rate); $('#plSpeed').innerHTML = `<span class="tc">${speedLabel(S.rate)}</span>`; }
+    if (e.target.id === 'prP') { PR.pitch = +e.target.value; try { AND.plPitch(PR.pitch); } catch (x) {} }
+    lab();
+  });
+  card.addEventListener('change', e => { if (e.target.id === 'prSnap') PR.snap = e.target.checked; });
+  card.addEventListener('click', async e => {
+    const a = e.target.closest('[data-pa]');
+    if (a) {
+      const now = audio.currentTime || 0;
+      if (a.dataset.pa === 'x') abReset();
+      else if (a.dataset.pa === 'a') { abReset(); AB.a = prSnap(r, now); }
+      else if (AB.a != null) {
+        const b = prSnap(r, now);
+        if (b < AB.a + 0.5) { toast(t('abShort')); return; }
+        AB.b = b; AB.on = true; try { AND.plLoop(Math.round(AB.a * 1000), Math.round(b * 1000)); } catch (x) {} seek(AB.a);
+      }
+      abLabel(); lab(); return;
+    }
+    if (e.target.closest('[data-pk]')) {
+      const kb = card.querySelector('#prKey'); kb.textContent = t('pracWork');
+      try {
+        const k = await runJob('musicKey', { src: r.src }), bt = await runJob('beats', { src: r.src });
+        if (k.key >= 0) r.mkey = KEY_L[k.key].replace('♯', '#').replace('♭', 'b') + (k.minor ? 'm' : '');
+        r.bpm = bt.bpm && bt.confidence >= 0.3 ? Math.round(bt.bpm) : k.bconf >= 0.3 ? k.bpm : null;
+        PR.beats[r.id] = bt.times || [];
+        saveRec(r);
+        kb.textContent = (r.mkey || '—') + (r.bpm ? ' · ' + r.bpm + ' BPM' : '');
+      } catch (x) { kb.textContent = '—'; toast(errText(x), 4000); }
+      return;
+    }
+    if (e.target.closest('[data-pst]')) { closeModal(); closeOverlay('player'); if (!audio.paused) audio.pause(); S.tab = 'edit'; ls.set('tab', 'edit'); render(); await tlAddFrom(r); if (tlSel()) tlSep('four'); return; }
+    if (e.target.closest('[data-ptu]')) { closeModal(); openTuner(false); return; }
+    if (e.target.closest('[data-prg]')) { closeModal(); openTuner(true); }
+  });
+  card.querySelector('[data-x]').onclick = closeModal;
+}
+/** the tuner (note, cents, Hz) or the vocal range test (lowest and highest note held for a moment) */
+async function openTuner(range) {
+  if (!NATIVE) return;
+  if (!CAPS.mic && !(await askPerm('mic'))) { toast(t('micDenied'), 4000); return; }
+  CAPS.mic = true;
+  if (!audio.paused) audio.pause();
+  if (!AND.tunerStart()) { toast(t('tunBusy'), 4000); return; }
+  const hist = [], held = { m: null, n: 0 }, rg = { lo: null, hi: null };
+  const card = openModal(`<h3>${esc(t(range ? 'rngT' : 'tunT'))}</h3><p class="mtext">${esc(t(range ? 'rngD' : 'tunD'))}</p>
+    <div class="tun"><b id="tuN">—</b><div class="tun-bar"><i id="tuI"></i></div><span class="tc" id="tuC"></span></div>
+    ${range ? `<div class="key-res"><div><small>${esc(t('rngLo'))}</small><b id="rgL">—</b></div><div><small>${esc(t('rngHi'))}</small><b id="rgH">—</b></div></div><p class="mtext" id="rgT"></p>` : ''}
+    <div class="modal-actions">${range ? `<button class="btn sm" type="button" data-rr>${esc(t('rngReset'))}</button>` : ''}<span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`,
+    () => { try { AND.tunerStop(); } catch (e) {} window.__sdTune = null; });
+  const voice = () => {
+    if (rg.lo == null || rg.hi - rg.lo < 5) return '';
+    const mid = (rg.lo + rg.hi) / 2, v = mid <= 50 ? 'bass' : mid <= 53 ? 'baritone' : mid <= 57 ? 'tenor' : mid <= 61 ? 'alto' : mid <= 64 ? 'mezzo' : 'soprano';
+    return t('rngVoice', { v: t('vt_' + v), n: nf1.format(Math.round((rg.hi - rg.lo) / 12 * 10) / 10) });
+  };
+  window.__sdTune = (hz, db) => {
+    if (!card.isConnected) return;
+    if (!hz) { held.n = 0; return; }
+    hist.push(hz); if (hist.length > 3) hist.shift();
+    const f = hist.slice().sort((a, b) => a - b)[Math.floor(hist.length / 2)], m = 69 + 12 * Math.log2(f / 440), mr = Math.round(m), ct = Math.round((m - mr) * 100);
+    card.querySelector('#tuN').textContent = noteName(mr);
+    card.querySelector('#tuI').style.left = (50 + ct) + '%';
+    card.querySelector('#tuI').className = Math.abs(ct) <= 5 ? 'ok' : '';
+    card.querySelector('#tuC').textContent = (ct > 0 ? '+' : ct < 0 ? '−' : '') + Math.abs(ct) + ' cent · ' + nf1.format(Math.round(f * 10) / 10) + ' Hz';
+    if (!range) return;
+    if (held.m === mr) held.n++; else { held.m = mr; held.n = 1; }
+    if (held.n === 6) {   // about a quarter of a second on one note
+      if (rg.lo == null || mr < rg.lo) rg.lo = mr;
+      if (rg.hi == null || mr > rg.hi) rg.hi = mr;
+      card.querySelector('#rgL').textContent = noteName(rg.lo); card.querySelector('#rgH').textContent = noteName(rg.hi);
+      card.querySelector('#rgT').textContent = voice();
+    }
+  };
+  const rr = card.querySelector('[data-rr]');
+  if (rr) rr.onclick = () => { rg.lo = rg.hi = null; card.querySelector('#rgL').textContent = card.querySelector('#rgH').textContent = '—'; card.querySelector('#rgT').textContent = ''; };
+  card.querySelector('[data-x]').onclick = closeModal;
+}
 function abReset() { if (AB.a != null || AB.on) { AB.a = null; AB.on = false; try { AND.plLoop(-1, -1); } catch (e) {} } abLabel(); }
 function abLabel() { const b = $('#plAB'); if (!b) return; b.innerHTML = ic('repeat') + esc(AB.on ? t('abOn') : AB.a != null ? t('abSetB') : t('abSetA')); b.setAttribute('aria-pressed', AB.on || AB.a != null); }
 $('#plAB').addEventListener('click', () => {
@@ -1882,7 +1989,7 @@ $('#plAB').addEventListener('click', () => {
   if (AB.on) { abReset(); toast(t('abOff')); return; }
   if (AB.a == null) { AB.a = now; abLabel(); toast(t('abA', { t: fmt(now) })); return; }
   if (now < AB.a + 0.5) { toast(t('abShort')); return; }
-  AB.on = true; try { AND.plLoop(Math.round(AB.a * 1000), Math.round(now * 1000)); } catch (e) {}
+  AB.on = true; AB.b = now; try { AND.plLoop(Math.round(AB.a * 1000), Math.round(now * 1000)); } catch (e) {}
   seek(AB.a); abLabel(); toast(t('abLoop', { a: fmt(AB.a), b: fmt(now) }));
 });
 $('#plSkip').addEventListener('click', () => {
@@ -6760,7 +6867,7 @@ async function boot() {
   $('#recClose').innerHTML = ic('close'); $('#recMarkIc').innerHTML = ic('flag'); $('#recDoneIc').innerHTML = ic('check', 2.2);
   $('#plBack').innerHTML = ic('back', 2); $('#collBack').innerHTML = ic('back', 2); $('#plB10').innerHTML = ic('b10'); $('#plF10').innerHTML = ic('f10');
   $('#plPrev').innerHTML = ic('prev'); $('#plNext').innerHTML = ic('next'); $('#miniNext').innerHTML = ic('next');
-  $('#plMark').innerHTML = ic('flag') + esc(t('mark')); $('#plEdit').innerHTML = ic('scissors'); $('#plEdit2').innerHTML = ic('scissors') + esc(t('edit')); $('#plClean').innerHTML = ic('spark') + esc(t('clClean')); $('#plChap').innerHTML = ic('flag') + esc(t('chapters')); $('#plRing').innerHTML = ic('bell') + esc(t('ringtone')); $('#plSkip').innerHTML = ic('next') + esc(t('skipSil'));
+  $('#plMark').innerHTML = ic('flag') + esc(t('mark')); $('#plPrac').innerHTML = ic('beat') + esc(t('pracT')); $('#plEdit').innerHTML = ic('scissors'); $('#plEdit2').innerHTML = ic('scissors') + esc(t('edit')); $('#plClean').innerHTML = ic('spark') + esc(t('clClean')); $('#plChap').innerHTML = ic('flag') + esc(t('chapters')); $('#plRing').innerHTML = ic('bell') + esc(t('ringtone')); $('#plSkip').innerHTML = ic('next') + esc(t('skipSil'));
   $('#plCopy').innerHTML = ic('copy') + esc(t('copyNotes'));
   $('#plShare').innerHTML = ic('share') + esc(t(AND || (!IN_FRAME && navigator.canShare) ? 'share' : 'download'));
   $('#plDelete').innerHTML = ic('trash') + esc(t('delete'));

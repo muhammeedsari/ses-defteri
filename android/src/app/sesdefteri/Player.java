@@ -45,7 +45,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     private int pos = -1;              // position in order
     private boolean prepared, wantPlay, playing;
     private long pendingSeek = -1;
-    private float rate = 1f;
+    private float rate = 1f, pitch = 1f;   // 5.3: pitch factor (2^(semitones/12)), the tempo stays
     private boolean shuffle;
     private int repeat;                // 0 off, 1 all, 2 one
     private String error = "";
@@ -710,11 +710,17 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         emit();
     }
 
+    synchronized void setPitch(float semis) {
+        pitch = (float) Math.pow(2, Math.max(-12, Math.min(12, semis)) / 12.0);
+        if (playing) applyRate();
+    }
+
     private void applyRate() {
         if (mp == null || !prepared || Build.VERSION.SDK_INT < 23) return;
         try {
             PlaybackParams p = mp.getPlaybackParams();
             p.setSpeed(rate);
+            p.setPitch(pitch);
             mp.setPlaybackParams(p);
         } catch (Exception ignored) { }
     }

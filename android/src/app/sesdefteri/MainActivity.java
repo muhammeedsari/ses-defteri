@@ -204,6 +204,9 @@ public class MainActivity extends Activity implements Player.Listener {
         });
     }
 
+    /** 5.3: the tuner's reading (Hz, 0 = no clear note) and the input level */
+    void tuned(double hz, double db) { js("window.__sdTune && window.__sdTune(" + Math.round(hz * 100) / 100.0 + "," + Math.round(db) + ")"); }
+
     private static String q(String s) {
         return JSONObject.quote(s == null ? "" : s);
     }
@@ -1014,6 +1017,9 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public void plPause() { ui(new Runnable() { @Override public void run() { Player.I.pause(); } }); }
         @JavascriptInterface public void plSeek(final double ms) { ui(new Runnable() { @Override public void run() { Player.I.seek((long) ms); } }); }
         @JavascriptInterface public void plRate(final double r) { ui(new Runnable() { @Override public void run() { Player.I.setRate((float) r); } }); }
+        @JavascriptInterface public void plPitch(final double st) { ui(new Runnable() { @Override public void run() { Player.I.setPitch((float) st); } }); }
+        @JavascriptInterface public boolean tunerStart() { return Tuner.start(MainActivity.this); }
+        @JavascriptInterface public void tunerStop() { Tuner.stop(); }
         @JavascriptInterface public void plNext() { ui(new Runnable() { @Override public void run() { Player.I.next(); } }); }
         @JavascriptInterface public void plPrev() { ui(new Runnable() { @Override public void run() { Player.I.prev(); } }); }
         @JavascriptInterface public void plShuffle(final boolean on) { ui(new Runnable() { @Override public void run() { Player.I.setShuffle(on); } }); }
