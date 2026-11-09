@@ -994,6 +994,7 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public boolean recMonitor(boolean on) { return Recorder.monitor(on); }
         @JavascriptInterface public void recMonFx(double rev, double echo) { Recorder.monitorFx(rev, echo); }
         @JavascriptInterface public void setLowLat(boolean on) { Timeline.lowLat = on; }
+        @JavascriptInterface public void setAccel(boolean on) { Device.accel = on; Separator.setAccel(on); }
         @JavascriptInterface public String aiCrash() { return Device.lastCrash(MainActivity.this); }
         @JavascriptInterface public void setLite(boolean on) { Device.lite = on; }
         @JavascriptInterface public String recFx(boolean ns, boolean aec) { return Recorder.fx(ns, aec).toString(); }
@@ -1200,6 +1201,8 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Studio.transcribe(MainActivity.this, tsrc, a.optString("lang", ""), p, cancel);
                         } else if ("musicKey".equals(kind)) {
                             res = Studio.musicKey(MainActivity.this, a.getJSONObject("src"), p, cancel);
+                        } else if ("accelTest".equals(kind)) {
+                            res = Separator.accelTest(MainActivity.this, p, cancel);
                         } else if ("songMap".equals(kind)) {
                             res = Studio.songMap(MainActivity.this, a.getJSONObject("src"), p, cancel);
                         } else if ("beats".equals(kind)) {

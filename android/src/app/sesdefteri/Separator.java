@@ -22,6 +22,49 @@ final class Separator {
 
     static native long create(String vocals, String accompaniment, int threads);
     static native void destroy(long h);
+    static native void accel(boolean on);
+
+    /** 5.9: the AI accelerator for separation, the AI denoiser and HD voice (set from the settings) */
+    static void setAccel(boolean on) { if (available()) accel(on); }
+
+    /** 5.9: the same 8 s of sound separated on the processor and on the accelerator: times (ms) and how far the results differ */
+    static JSONObject accelTest(Context c, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        if (!available()) throw new IllegalStateException("sep-unavailable");
+        final int R = 44100, n = 8 * R;
+        float[][] x = new float[2][n];
+        java.util.Random rnd = new java.util.Random(7);
+        for (int i = 0; i < n; i++) {
+            double t = (double) i / R, v = 0.2 * Math.sin(2 * Math.PI * 220 * t) * (0.6 + 0.4 * Math.sin(2 * Math.PI * 3 * t)) + 0.1 * Math.sin(2 * Math.PI * 330 * t) + 0.03 * rnd.nextGaussian();
+            x[0][i] = (float) v; x[1][i] = (float) (v * 0.9);
+        }
+        String vm = model(c, "vocals.fp16.onnx").getAbsolutePath(), am = model(c, "accompaniment.fp16.onnx").getAbsolutePath();
+        JSONObject o = new JSONObject();
+        float[][][] out = new float[2][][];
+        boolean was = Device.accel;
+        try {
+            for (int k = 0; k < 2; k++) {
+                if (cancel.get()) throw new InterruptedException("cancel");
+                accel(k == 1);
+                long t0 = System.nanoTime();
+                long h = create(vm, am, Device.threads(4));
+                long t1 = System.nanoTime();
+                if (h == 0) { o.put(k == 0 ? "cpu" : "nn", -1); continue; }
+                try { out[k] = process(h, x, R, new int[1]); } finally { destroy(h); }
+                long t2 = System.nanoTime();
+                o.put(k == 0 ? "cpu" : "nn", out[k] == null ? -1 : (t2 - t1) / 1000000);
+                o.put(k == 0 ? "cpuLoad" : "nnLoad", (t1 - t0) / 1000000);
+                p.on(0.5 * (k + 1));
+            }
+        } finally {
+            accel(was);
+        }
+        if (out[0] != null && out[1] != null) {
+            double e = 0, d = 0;
+            for (int i = 0; i < out[0][0].length && i < out[1][0].length; i++) { double a = out[0][0][i], b = out[1][0][i]; e += a * a; d += (a - b) * (a - b); }
+            o.put("diffDb", Math.round(10 * Math.log10((d + 1e-12) / (e + 1e-12))));
+        }
+        return o;
+    }
     static native float[][] process(long h, float[][] chans, int rate, int[] outRate);
 
     private static Boolean ok;

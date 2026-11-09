@@ -5,6 +5,7 @@ package app.sesdefteri;
  * at most 2 model threads and one chunk at a time, so less memory is in use at once.
  */
 final class Device {
+    static volatile boolean accel;   // 5.9: AI accelerator turned on in the settings
     private Device() { }
 
     static volatile boolean lite;

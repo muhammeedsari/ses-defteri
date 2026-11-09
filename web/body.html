@@ -248,6 +248,7 @@
 <script src="i18n57.js"></script>
 <script src="i18n58.js"></script>
 <script src="i18n59.js"></script>
+<script src="i18n60.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -259,7 +260,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.8';
+const VERSION = '5.9';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -939,6 +940,7 @@ function openSettings() {
       <label class="switch"><input type="checkbox" id="setSilCut"${S.silCut ? ' checked' : ''}><span>${esc(t('setSilCut'))}<small>${esc(t('setSilCutD'))}</small></span></label>
       <label class="switch"><input type="checkbox" id="setTech"${ls.get('techInfo', false) ? ' checked' : ''}><span>${esc(t('setTech'))}<small>${esc(t('setTechD'))}</small></span></label>
       ${NATIVE && (CAPS.sdk || 0) >= 26 ? `<label class="switch"><input type="checkbox" id="setLowLat"${ls.get('lowLat', false) ? ' checked' : ''}><span>${esc(t('setLowLat'))}<small>${esc(t('setLowLatD'))}</small></span></label>` : ''}
+      ${NATIVE && CAPS.sep ? `<label class="switch"><input type="checkbox" id="setAccel"${ls.get('accel', false) ? ' checked' : ''}><span>${esc(t('setAccel'))}<small>${esc(t('setAccelD'))}</small></span></label><button class="btn sm" type="button" id="accTest">${esc(t('accTest'))}</button>` : ''}
       ${NATIVE ? `<label class="switch"><input type="checkbox" id="setLite"${liteOn() ? ' checked' : ''}><span>${esc(t('setLite'))}<small>${esc(t('setLiteD', { r: nf1.format(Math.round((CAPS.ramMb || 0) / 102.4) / 10), c: CAPS.cores || 0 }))}</small></span></label>` : ''}</div>
     <div class="set-sec"><h4>${esc(t('setClean'))}</h4>
       <div class="set-sub"><span>${esc(t('setStrength'))}</span><select id="setStr" class="sel-full">${[[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([v, k]) => `<option value="${v}"${CL.strength === v ? ' selected' : ''}>${esc(t(k))}</option>`).join('')}</select></div>
@@ -1010,6 +1012,17 @@ function openSettings() {
   }
   { const tb = card.querySelector('#setTech'); if (tb) tb.onchange = () => { ls.set('techInfo', tb.checked); document.documentElement.classList.toggle('tech', tb.checked); }; }
   { const lb = card.querySelector('#setLite'); if (lb) lb.onchange = () => { ls.set('lite', lb.checked); applyLite(); }; }
+  { const lb = card.querySelector('#setAccel'); if (lb) lb.onchange = () => { ls.set('accel', lb.checked); applyLite(); }; }
+  { const bt = card.querySelector('#accTest'); if (bt) bt.onclick = async () => {   // 5.9: measured on this phone
+    bt.disabled = true; bt.textContent = t('pracWork');
+    try {
+      const r = await runJob('accelTest', {}), s = v => nf1.format(Math.round(v / 100) / 10);
+      const ok = r.nn > 0 && r.cpu > 0 && (r.diffDb == null || r.diffDb < -20), pc = ok ? Math.round((r.cpu / r.nn - 1) * 100) : 0;
+      toast(r.nn <= 0 ? t('accFail') : !ok ? t('accWrong') : t('accRes', { c: s(r.cpu), n: s(r.nn) }) + ' ' + t(pc >= 15 ? 'accFaster' : pc <= -10 ? 'accSlower' : 'accSame', { p: Math.abs(pc) }), 9000);
+      if (!ok || pc < 15) { ls.set('accel', false); const lb = card.querySelector('#setAccel'); if (lb) lb.checked = false; applyLite(); }
+    } catch (e) { toast(errText(e), 5000); }
+    bt.disabled = false; bt.textContent = t('accTest');
+  }; }
   { const lb = card.querySelector('#setLowLat'); if (lb) lb.onchange = () => { ls.set('lowLat', lb.checked); applyLite(); toast(t('lowLatT'), 4000); }; }
   bind('#setAgc', 'agc'); bind('#setSilCut', 'silCut'); bind('#setTlXf', 'tlXf'); bind('#setChans', 'chans'); bind('#setStartTab', 'startTab');
   const ps = card.querySelector('#setPause'); if (ps) ps.onchange = () => { S.pauseMax = +ps.value; ls.set('pauseMax', S.pauseMax); };
@@ -5026,7 +5039,7 @@ function askParams(title, desc, rows) {
 
 /* 4.15: light mode (fewer model threads, one AI chunk at a time): on by itself on weak phones, or chosen in Settings */
 const liteOn = () => { const v = ls.get('lite', null); return v === null ? !!CAPS.weak : !!v; };
-function applyLite() { try { AND.setLite(liteOn()); AND.setLowLat(!!ls.get('lowLat', false)); } catch (e) {} }
+function applyLite() { try { AND.setLite(liteOn()); AND.setLowLat(!!ls.get('lowLat', false)); AND.setAccel(!!ls.get('accel', false)); } catch (e) {} }
 /* ---------- 1.8: export format, file names, trash ---------- */
 const recOpts = () => { const s = recSet(); return JSON.stringify({ q: 'std', src: S.micSrc, call: !!S.callPause, agc: S.agc !== false, fmt: s.fmt, rate: s.rate, ch: s.ch, kbps: s.kbps,
   ns: !!ls.get('recNs', false), aec: !!ls.get('recAec', false), bt: !!ls.get('recBt', false), dir: ls.get('recDir', ''), lowlat: !!ls.get('lowLat', false) }); };

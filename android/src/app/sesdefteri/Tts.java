@@ -35,7 +35,7 @@ final class Tts {
 
     static String voice(String lang) {
         switch (lang) {
-            case "tr": return "tr_TR-dfki-medium-int8";
+            case "tr": return "tr_TR-fettah-medium-int8";   // 5.9: CC0 (the old DFKI voice was non-commercial)
             case "de": return "de_DE-thorsten-medium-int8";
             case "fr": return "fr_FR-siwis-medium-int8";
             case "es": return "es_ES-davefx-medium-int8";
@@ -48,7 +48,12 @@ final class Tts {
     }
 
     static File root(Context c) { File d = new File(c.getFilesDir(), "tts"); d.mkdirs(); return d; }
-    static File dir(Context c, String lang) { return new File(root(c), lang); }
+    static File dir(Context c, String lang) {
+        if (!"tr".equals(lang)) return new File(root(c), lang);
+        File old = new File(root(c), "tr");   // 5.9: the old Turkish voice goes; the new one is downloaded on request
+        if (old.isDirectory()) { deleteAll(old.listFiles()); old.delete(); }
+        return new File(root(c), "tr-fettah");
+    }
     static File espeak(Context c) { return new File(root(c), "espeak-ng-data"); }
 
     static boolean ready(Context c, String lang) {

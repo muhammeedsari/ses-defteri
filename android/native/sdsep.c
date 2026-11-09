@@ -6,6 +6,10 @@
 void *memset(void *d, int c, unsigned long n) { unsigned char *p = d; while (n--) *p++ = (unsigned char)c; return d; }
 void *memcpy(void *d, const void *s, unsigned long n) { unsigned char *p = d; const unsigned char *q = s; while (n--) *p++ = *q++; return d; }
 
+/* 5.9: the phone's AI accelerator (NNAPI) instead of the processor, when the user turns it on */
+static const char *prov = "cpu";
+JNIEXPORT void JNICALL Java_app_sesdefteri_Separator_accel(JNIEnv *env, jclass cl, jboolean on) { prov = on ? "nnapi" : "cpu"; }
+
 JNIEXPORT jlong JNICALL Java_app_sesdefteri_Separator_create(JNIEnv *env, jclass cl, jstring voc, jstring acc, jint threads) {
   const char *v = (*env)->GetStringUTFChars(env, voc, 0);
   const char *a = (*env)->GetStringUTFChars(env, acc, 0);
@@ -15,7 +19,7 @@ JNIEXPORT jlong JNICALL Java_app_sesdefteri_Separator_create(JNIEnv *env, jclass
   else { cfg.model.spleeter.vocals = ""; cfg.model.spleeter.accompaniment = ""; cfg.model.uvr.model = v; }   /* 5.6: no accompaniment model = UVR */
   cfg.model.num_threads = threads;
   cfg.model.debug = 0;
-  cfg.model.provider = "cpu";
+  cfg.model.provider = prov;
   const SherpaOnnxOfflineSourceSeparation *p = SherpaOnnxCreateOfflineSourceSeparation(&cfg);
   (*env)->ReleaseStringUTFChars(env, voc, v);
   (*env)->ReleaseStringUTFChars(env, acc, a);
@@ -71,7 +75,7 @@ JNIEXPORT jlong JNICALL Java_app_sesdefteri_Denoiser_create(JNIEnv *env, jclass 
   cfg.model.gtcrn.model = "";
   cfg.model.dpdfnet.model = m;
   cfg.model.num_threads = threads;
-  cfg.model.provider = "cpu";
+  cfg.model.provider = prov;
   const SherpaOnnxOnlineSpeechDenoiser *p = SherpaOnnxCreateOnlineSpeechDenoiser(&cfg);
   (*env)->ReleaseStringUTFChars(env, model, m);
   return (jlong)(intptr_t)p;
@@ -108,7 +112,7 @@ JNIEXPORT jlong JNICALL Java_app_sesdefteri_Denoiser_createOff(JNIEnv *env, jcla
   cfg.model.gtcrn.model = "";
   cfg.model.dpdfnet.model = m;
   cfg.model.num_threads = threads;
-  cfg.model.provider = "cpu";
+  cfg.model.provider = prov;
   const SherpaOnnxOfflineSpeechDenoiser *p = SherpaOnnxCreateOfflineSpeechDenoiser(&cfg);
   (*env)->ReleaseStringUTFChars(env, model, m);
   return (jlong)(intptr_t)p;
@@ -130,6 +134,7 @@ JNIEXPORT jfloatArray JNICALL Java_app_sesdefteri_Denoiser_runOff(JNIEnv *env, j
 
 /* ---- 4.12: HD voice (LavaSR: backbone + spectrogram head) straight through ONNX Runtime's C API ---- */
 #include "onnxruntime_c_api.h"
+extern OrtStatus *OrtSessionOptionsAppendExecutionProvider_Nnapi(OrtSessionOptions *o, unsigned int flags);
 
 static const OrtApi *ort;
 static OrtEnv *hdEnv;
@@ -157,6 +162,7 @@ JNIEXPORT jboolean JNICALL Java_app_sesdefteri_Hd_open(JNIEnv *env, jclass cl, j
   OrtSessionOptions *o = 0;
   int r = ok(ort->CreateEnv(ORT_LOGGING_LEVEL_ERROR, "sd", &hdEnv)) && ok(ort->CreateSessionOptions(&o))
        && ok(ort->SetIntraOpNumThreads(o, threads)) && ok(ort->SetSessionGraphOptimizationLevel(o, ORT_ENABLE_ALL))
+       && (prov[0] != 'n' || ok(OrtSessionOptionsAppendExecutionProvider_Nnapi(o, 0)) || 1)
        && ok(ort->CreateSession(hdEnv, b, o, &hdB)) && ok(ort->CreateSession(hdEnv, h, o, &hdH))
        && ok(ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &hdMem));
   if (o) ort->ReleaseSessionOptions(o);
