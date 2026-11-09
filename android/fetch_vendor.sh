@@ -8,9 +8,10 @@ GH=https://github.com/k2-fsa/sherpa-onnx/releases/download
 mkdir -p "$V"/{jniLibs/arm64-v8a,jniLibs/armeabi-v7a,sepm,dn,dia,asr,fonts,tmp}
 cd "$V/tmp"
 
-# 1) sherpa-onnx v1.13.8 Android libraries (ONNX Runtime + JNI + C API)
-[ -f android.tar.bz2 ] || curl -fL -o android.tar.bz2 "$GH/v1.13.8/sherpa-onnx-v1.13.8-android.tar.bz2"
-tar xjf android.tar.bz2
+# 1) sherpa-onnx v1.13.8 Android libraries (ONNX Runtime + JNI + C API), 5.13: built WITHOUT text to speech
+#    (no GPL espeak-ng) by .github/workflows/sherpa-notts.yml, published as this repo's pre-release
+[ -f jniLibs-notts.tar.bz2 ] || curl -fL -o jniLibs-notts.tar.bz2 "https://github.com/muhammeedsari/ses-defteri/releases/download/sherpa-onnx-v1.13.8-notts/jniLibs.tar.bz2"
+tar xjf jniLibs-notts.tar.bz2
 for abi in arm64-v8a armeabi-v7a; do
   for so in libsherpa-onnx-jni.so libonnxruntime.so libsherpa-onnx-c-api.so; do cp "jniLibs/$abi/$so" "$V/jniLibs/$abi/"; done
 done

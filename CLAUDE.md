@@ -8,9 +8,9 @@ Ses Defteri, **internetsiz çalışan bir Android uygulaması**: ses kaydı, mü
 - **Arayüz:** tek sayfalık HTML/CSS/vanilla JS, Android WebView içinde (`web/`). Çerçeve yok.
 - **Yerel katman:** Java 8 (lambda/method reference YOK — dx/dalvik-exchange min-sdk 24 ile derlenir), `android/src/app/sesdefteri/`.
 - **Ses işleme:** saf Java DSP (`dsp/`), masaüstü JVM'de de test edilebilir.
-- **Yapay zekâ:** sherpa-onnx v1.13.8 (ONNX Runtime) — Whisper (sesten metne, isteğe bağlı indirilir), Spleeter (sesi ayır), DPDFNet-2 48 kHz (gelişmiş gürültü temizliği), LavaSR (HD ses, `Hd.java`, ONNX Runtime C API doğrudan, model GitHub'dan isteğe bağlı ~56 MB), UVR-MDX-NET Inst_HQ_5 (5.6, deneysel kaliteli ayırma, ~59 MB isteğe bağlı, ≥6 GB RAM ve hafif mod kapalıyken). Kendi JNI köprüleri: `libsdsep.so` (ayırma + gürültü temizleme), `libsdmp3.so` (LAME MP3), `libsdtp.so` (5.10, Signalsmith Stretch perde değişimi, yalnız arm64; yoksa `dsp/TimePitch`).
+- **Yapay zekâ:** sherpa-onnx v1.13.8 (ONNX Runtime; 5.13 itibarıyla metin okuma KAPALI derlenmiş kendi kopyamız, espeak-ng GPL yok — `.github/workflows/sherpa-notts.yml`, ön sürüm `sherpa-onnx-v1.13.8-notts`) — Whisper (sesten metne, isteğe bağlı indirilir), Spleeter (sesi ayır), DPDFNet-2 48 kHz (gelişmiş gürültü temizliği), LavaSR (HD ses, `Hd.java`, ONNX Runtime C API doğrudan, model GitHub'dan isteğe bağlı ~56 MB), UVR-MDX-NET Inst_HQ_5 (5.6, deneysel kaliteli ayırma, ~59 MB isteğe bağlı, ≥6 GB RAM ve hafif mod kapalıyken). Kendi JNI köprüleri: `libsdsep.so` (ayırma + gürültü temizleme), `libsdmp3.so` (LAME MP3), `libsdtp.so` (5.10, Signalsmith Stretch perde değişimi, yalnız arm64; yoksa `dsp/TimePitch`).
 - **Derleme:** Gradle YOK. `android/build_apk.py`: aapt → javac (-source 8, android-34.jar) → dalvik-exchange → aapt add (dex + .so) → zipalign → apksigner.
-- **Sürüm:** şu an **5.12** (versionCode 85). minSdk 24, targetSdk 34. Paket adı `app.sesdefteri`.
+- **Sürüm:** şu an **5.13** (versionCode 86). minSdk 24, targetSdk 34. Paket adı `app.sesdefteri`.
 
 ## Kullanıcıyla çalışma kuralları (önemli)
 - Kullanıcıyla **Türkçe** konuş. Teknik olmayan, kısa ve net anlat.

@@ -2,7 +2,7 @@
 
 **5.12:** Piper okuma sesleri (yapay zekâ sesi) uygulamadan çıkarıldı; metin okuma yalnız telefonun kendi sesiyle (Android TextToSpeech) yapılıyor, Arapça dahil. Telefonda kalan indirilmiş sesler ilk açılışta silinir.
 
-**Açık konu:** espeak-ng kodu hâlâ sherpa-onnx kütüphanelerinin (libsherpa-onnx-jni.so, libsherpa-onnx-c-api.so) içinde derli; kullanılmasa da APK'da duruyor. Tamamen çıkması için sherpa-onnx'in `SHERPA_ONNX_ENABLE_TTS=OFF` ile Android NDK kullanılarak yeniden derlenmesi gerekiyor.
+**5.13:** sherpa-onnx kütüphaneleri `SHERPA_ONNX_ENABLE_TTS=OFF` ile yeniden derlendi (`.github/workflows/sherpa-notts.yml`, sonuç bu deponun `sherpa-onnx-v1.13.8-notts` ön sürümü). APK'da artık espeak-ng (GPL) yok; lisans listesinden çıkarıldı.
 
 Google Play öncesi uygulamanın içerdiği ve indirdiği her parçanın lisansı. "Ticari" = ücretli sürüm / reklam / şirket adına dağıtım.
 
@@ -22,7 +22,7 @@ Google Play öncesi uygulamanın içerdiği ve indirdiği her parçanın lisans�
 Arapça için bakılan başka sesler: SA_miro (CC BY-NC-ND 4.0), SA_dii (CC BY-NC-SA 4.0) — ikisi de ticari değil.
 
 ## Modeller ve kütüphaneler
-- espeak-ng (okuma seslerinin harf→ses çevirisi, sherpa-onnx içinde): **GPL-3.0**. APK'da olduğu için uygulamanın kaynağı GPL-3.0 ile açık olmalı (repo herkese açıksa ve GPL-3.0 LICENSE eklenirse sorun yok) ya da okuma sesi özelliği çıkarılmalı. **Karar kullanıcıda.**
+- espeak-ng (GPL-3.0): 5.13'ten beri APK'da yok (okuma sesleri 5.12'de çıkarıldı, kütüphane 5.13'te onsuz derlendi).
 - LAME (MP3): LGPL, ayrı libsdmp3.so olarak — tamam.
 - UVR MDX-Net Inst HQ 5: UVR kodu MIT; modeller UVR ekibince eğitilmiş, README "herkes kullanabilir, UVR'a atıf verin" diyor — atıf lisans listesinde.
 - Signalsmith Stretch, ONNX Runtime, Whisper, Spleeter, Silero VAD, pyannote: MIT. sherpa-onnx, DPDFNet, CAM++, LavaSR, CED: Apache-2.0. Fontlar: OFL-1.1.
