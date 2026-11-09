@@ -233,6 +233,7 @@
 <script src="i18n45.js"></script>
 <script src="i18n46.js"></script>
 <script src="i18n47.js"></script>
+<script src="i18n48.js"></script>
 <script>
 (() => {
 'use strict';
@@ -243,7 +244,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '4.14';
+const VERSION = '4.15';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -921,7 +922,8 @@ function openSettings() {
       <label class="switch"><input type="checkbox" id="setCall"${S.callPause ? ' checked' : ''}><span>${esc(t('setCall'))}<small>${esc(t('setCallD'))}</small></span></label>
       <label class="switch"><input type="checkbox" id="setAgc"${S.agc !== false ? ' checked' : ''}><span>${esc(t('setAgc'))}<small>${esc(t('setAgcD'))}</small></span></label>
       <label class="switch"><input type="checkbox" id="setSilCut"${S.silCut ? ' checked' : ''}><span>${esc(t('setSilCut'))}<small>${esc(t('setSilCutD'))}</small></span></label>
-      <label class="switch"><input type="checkbox" id="setTech"${ls.get('techInfo', false) ? ' checked' : ''}><span>${esc(t('setTech'))}<small>${esc(t('setTechD'))}</small></span></label></div>
+      <label class="switch"><input type="checkbox" id="setTech"${ls.get('techInfo', false) ? ' checked' : ''}><span>${esc(t('setTech'))}<small>${esc(t('setTechD'))}</small></span></label>
+      ${NATIVE ? `<label class="switch"><input type="checkbox" id="setLite"${liteOn() ? ' checked' : ''}><span>${esc(t('setLite'))}<small>${esc(t('setLiteD', { r: nf1.format(Math.round((CAPS.ramMb || 0) / 102.4) / 10), c: CAPS.cores || 0 }))}</small></span></label>` : ''}</div>
     <div class="set-sec"><h4>${esc(t('setClean'))}</h4>
       <div class="set-sub"><span>${esc(t('setStrength'))}</span><select id="setStr" class="sel-full">${[[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([v, k]) => `<option value="${v}"${CL.strength === v ? ' selected' : ''}>${esc(t(k))}</option>`).join('')}</select></div>
       <label class="switch"><input type="checkbox" id="setAuto"${S.autoClean ? ' checked' : ''}><span>${esc(t('setAuto'))}<small>${esc(t('setAutoD'))}</small></span></label>
@@ -991,6 +993,7 @@ function openSettings() {
     cc.onclick = () => { ls.set('cover', ''); cimg.hidden = true; cc.hidden = true; };
   }
   { const tb = card.querySelector('#setTech'); if (tb) tb.onchange = () => { ls.set('techInfo', tb.checked); document.documentElement.classList.toggle('tech', tb.checked); }; }
+  { const lb = card.querySelector('#setLite'); if (lb) lb.onchange = () => { ls.set('lite', lb.checked); applyLite(); }; }
   bind('#setAgc', 'agc'); bind('#setSilCut', 'silCut'); bind('#setTlXf', 'tlXf'); bind('#setChans', 'chans'); bind('#setStartTab', 'startTab');
   const ps = card.querySelector('#setPause'); if (ps) ps.onchange = () => { S.pauseMax = +ps.value; ls.set('pauseMax', S.pauseMax); };
   const ms = card.querySelector('#setMinSong'); if (ms) ms.onchange = () => { S.minSong = +ms.value; ls.set('minSong', S.minSong); render(); };
@@ -4488,6 +4491,9 @@ function askParams(title, desc, rows) {
   });
 }
 
+/* 4.15: light mode (fewer model threads, one AI chunk at a time): on by itself on weak phones, or chosen in Settings */
+const liteOn = () => { const v = ls.get('lite', null); return v === null ? !!CAPS.weak : !!v; };
+function applyLite() { try { AND.setLite(liteOn()); } catch (e) {} }
 /* ---------- 1.8: export format, file names, trash ---------- */
 const recOpts = () => { const s = recSet(); return JSON.stringify({ q: 'std', src: S.micSrc, call: !!S.callPause, agc: S.agc !== false, fmt: s.fmt, rate: s.rate, ch: s.ch, kbps: s.kbps,
   ns: !!ls.get('recNs', false), aec: !!ls.get('recAec', false), bt: !!ls.get('recBt', false), dir: ls.get('recDir', '') }); };
@@ -6493,9 +6499,17 @@ async function boot() {
     scheduleBackground(3000);
     purgeTrash().then(() => render(), () => {});
     // 3.4.3: the app closed unexpectedly last time: offer to send the note (it never leaves the phone otherwise)
+    applyLite();
     setTimeout(async () => {
       let note = ''; try { note = AND.lastCrash ? AND.lastCrash() : ''; } catch (e) {}
       if (note && await confirmBox({ title: t('crashT'), text: t('crashD'), ok: t('crashSend') })) try { AND.shareText('ses-defteri-hata.txt', note, 'text/plain'); } catch (e) {}
+      // 4.15: an AI tool was still working when the app closed (out of memory, most likely): offer light mode
+      let ai = ''; try { ai = AND.aiCrash ? AND.aiCrash() : ''; } catch (e) {}
+      if (ai && !liteOn()) {
+        const x = ({ tlSep: 'tlSep', transcribe: 'sh_stt', tlSpk: 'tlSpk', vad: 'op_aigate', ttsSpeak: 'sh_tts', flai: 'sh_flai' })[ai] || 'op_' + ai;
+        const nm = t(x) !== x ? t(x) : t('aiCrashAny');
+        if (await confirmBox({ title: t('aiCrashT'), text: t('aiCrashD', { x: nm }), ok: t('aiCrashOk') })) { ls.set('lite', true); applyLite(); toast(t('liteOnT'), 3500); }
+      }
     }, 1500);
     applyPlayerPrefs();
     if (CAPS.asr) asrRefresh();

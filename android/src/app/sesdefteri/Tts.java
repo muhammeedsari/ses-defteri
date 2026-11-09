@@ -127,7 +127,7 @@ final class Tts {
         cfg.model.vits.model = new File(d, "model.onnx").getAbsolutePath();
         cfg.model.vits.tokens = new File(d, "tokens.txt").getAbsolutePath();
         cfg.model.vits.dataDir = espeak(c).getAbsolutePath();
-        cfg.model.numThreads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
+        cfg.model.numThreads = Math.max(1, Device.threads(4) / 2 + 1);
         OfflineTts tts = new OfflineTts(cfg);
         GeneratedAudio g;
         final int total = Math.max(1, text.length());

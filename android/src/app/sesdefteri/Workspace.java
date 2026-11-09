@@ -643,7 +643,7 @@ final class Workspace {
         java.util.ArrayList<int[]> l = Speech.breaths(sc), ok = new java.util.ArrayList<>();
         String model = c != null ? AsrModels.pick(c, a.optString("model", "")) : null;
         if (model != null && !l.isEmpty()) {
-            int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
+            int threads = Device.threads(4);
             app.sesdefteri.asr.Transcriber tr = new app.sesdefteri.asr.Transcriber(null, AsrModels.dir(c, model).getAbsolutePath(), model, a.optString("lang", ""), threads);
             RandomAccessFile r = new RandomAccessFile(in, "r");
             try {
@@ -929,7 +929,7 @@ final class Workspace {
             // 4.7: smart: a looser search finds more candidates, then Whisper listens to each one: no words (or only
             // "ıı / eee / hmm / um…") = a hesitation; real words = speech, kept
             java.util.ArrayList<double[]> cand = Speech.fillers(x, 16000, 24, 0.06);
-            int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
+            int threads = Device.threads(4);
             app.sesdefteri.asr.Transcriber tr = new app.sesdefteri.asr.Transcriber(null, AsrModels.dir(c, model).getAbsolutePath(), model, a.optString("lang", ""), threads);
             int kept = 0;
             try {
@@ -1119,14 +1119,15 @@ final class Workspace {
 
     static JSONObject aiDenoise(Context c, File in, Info inf, File out, double str, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         Analyzer.Analysis b = analyze(in, inf, part(p, 0, 0.25), cancel);
-        long h = Denoiser.open(c);
+        Denoiser.Par dn = null;
         try {
             // Light keeps ~25 % of the original (-12 dB), Balanced -23 dB, Strong -34 dB
             double lim = 12 + 22 * Math.max(0, Math.min(1, (str - 0.6) / 0.8));
             int ch = inf.ch, fs = inf.rate;
             Analyzer after = new Analyzer(ch, fs);
             Meter m = new Meter(ch, fs);
-            Node head = new Denoiser.Stage(h, ch, Math.pow(10, -lim / 20)), tail = head;
+            dn = new Denoiser.Par(c, ch, Math.pow(10, -lim / 20));
+            Node head = dn, tail = head;
             if (fs != Denoiser.RATE) {
                 Resampler up = new Resampler(ch, (double) fs, (double) Denoiser.RATE), down = new Resampler(ch, (double) Denoiser.RATE, (double) fs);
                 up.to(head); head.to(down); head = up; tail = down;
@@ -1144,7 +1145,7 @@ final class Workspace {
             out.delete();
             throw e;
         } finally {
-            Denoiser.destroy(h);
+            if (dn != null) dn.close();
         }
     }
 

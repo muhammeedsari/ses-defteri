@@ -673,6 +673,12 @@ public class MainActivity extends Activity implements Player.Listener {
                 o.put("opus", Build.VERSION.SDK_INT >= 29);
                 o.put("spk", Speakers.ready(MainActivity.this));
                 o.put("hd", Hd.ready(MainActivity.this));
+                android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+                android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+                am.getMemoryInfo(mi);
+                o.put("ramMb", mi.totalMem >> 20);
+                o.put("cores", Device.cores());
+                o.put("weak", am.isLowRamDevice() || mi.totalMem < (3L << 30));
                 o.put("folder", MediaLib.scoped() ? "Music/Ses Defteri" : "Android/data/app.sesdefteri/files/Music/Ses Defteri");
             } catch (Exception ignored) { }
             return o.toString();
@@ -980,6 +986,8 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public float recLevel() { return Recorder.level(); }
         @JavascriptInterface public String recMeter() { return Recorder.meter(); }
         @JavascriptInterface public boolean recMonitor(boolean on) { return Recorder.monitor(on); }
+        @JavascriptInterface public String aiCrash() { return Device.lastCrash(MainActivity.this); }
+        @JavascriptInterface public void setLite(boolean on) { Device.lite = on; }
         @JavascriptInterface public String recFx(boolean ns, boolean aec) { return Recorder.fx(ns, aec).toString(); }
         @JavascriptInterface public String recStop() {
             ui(new Runnable() { @Override public void run() { getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); } });
@@ -1066,12 +1074,15 @@ public class MainActivity extends Activity implements Player.Listener {
             (bg ? bgPool : heavy || "wsClean".equals(kind) || "tlClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
                 @Override
                 public void run() {
+                    String model = null;
                     try {
                         JSONObject a = new JSONObject(argsJson);
                         AudioTools.Progress p = new AudioTools.Progress() {
                             @Override public void on(double f) { jobProgress(id, f); }
                         };
                         JSONObject res;
+                        model = Device.model(kind, a);
+                        if (model != null) Device.begin(MainActivity.this, model);
                         if ("peaks".equals(kind)) {
                             AudioTools.Chunks ch = new AudioTools.Chunks() {
                                 @Override public void on(int from, byte[] data) { jobChunk(id, from, data); }
@@ -1184,6 +1195,7 @@ public class MainActivity extends Activity implements Player.Listener {
                         String msg = e instanceof OutOfMemoryError ? "memory" : String.valueOf(e.getMessage());
                         jobDone(id, false, "{\"error\":" + q(msg) + "}");
                     } finally {
+                        if (model != null) Device.end();
                         if (heavy) { heavyIds.remove(id); WorkService.end(MainActivity.this); }
                     }
                 }

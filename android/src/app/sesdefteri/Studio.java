@@ -230,7 +230,7 @@ final class Studio {
                 lang0 = o.optString("lang", "");
             } catch (Exception ignored) { before.clear(); from = 0; }
         }
-        int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
+        int threads = Device.threads(4);
         final Transcriber tr;
         try {
             String model = AsrModels.pick(c, src.optString("_model", ""));

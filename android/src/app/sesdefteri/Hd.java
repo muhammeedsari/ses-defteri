@@ -65,7 +65,7 @@ final class Hd {
         return bw;
     }
 
-    static int threads() { return Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1)); }
+    static int threads() { return Device.threads(4); }
 
     /**
      * ch channels at 48 kHz in, the same out. Works in blocks of B frames (2.7 s) with C frames (0.34 s) of context on each side,

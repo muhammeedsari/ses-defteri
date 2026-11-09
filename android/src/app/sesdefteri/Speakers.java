@@ -73,7 +73,7 @@ final class Speakers {
         float[] mono = java.util.Arrays.copyOf(x, len[0]);
 
         OfflineSpeakerDiarizationConfig cfg = new OfflineSpeakerDiarizationConfig();
-        int th = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
+        int th = Math.max(1, Device.threads(4) / 2 + 1);
         cfg.segmentation.pyannote.model = Separator.model(c, "pyannote.int8.onnx").getAbsolutePath();
         cfg.segmentation.numThreads = th;
         cfg.embedding.model = emb(c).getAbsolutePath();

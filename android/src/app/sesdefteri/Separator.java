@@ -82,7 +82,7 @@ final class Separator {
 
     /** writes vocals and accompaniment next to the input; returns both files */
     static File[] run(File in, Workspace.Info inf, File vm, File am, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
-        int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
+        int threads = Device.threads(4);
         long h = create(vm.getAbsolutePath(), am.getAbsolutePath(), threads);
         if (h == 0) throw new IllegalStateException("sep-model");
         File dir = in.getParentFile();

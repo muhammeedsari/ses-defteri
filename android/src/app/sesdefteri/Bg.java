@@ -185,7 +185,8 @@ final class Bg {
             else if ("transcribe".equals(t.kind)) {
                 JSONObject src = a.getJSONObject("src");
                 src.put("_model", a.optString("model", ""));
-                res = Studio.transcribe(app, src, a.optString("lang", ""), p, cancel, partFile(t.key));
+                Device.begin(app, "transcribe");
+                try { res = Studio.transcribe(app, src, a.optString("lang", ""), p, cancel, partFile(t.key)); } finally { Device.end(); }
             } else throw new IllegalArgumentException("unknown");
             if (cancel.get()) throw new InterruptedException("cancel");
             synchronized (Bg.class) {

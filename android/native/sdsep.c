@@ -101,6 +101,34 @@ JNIEXPORT jfloatArray JNICALL Java_app_sesdefteri_Denoiser_run(JNIEnv *env, jcla
   return den_out(env, o);
 }
 
+/* ---- 4.15: the same model on whole chunks (offline API): ~1.45x faster than streaming, and several instances can run side by side ---- */
+JNIEXPORT jlong JNICALL Java_app_sesdefteri_Denoiser_createOff(JNIEnv *env, jclass cl, jstring model, jint threads) {
+  const char *m = (*env)->GetStringUTFChars(env, model, 0);
+  SherpaOnnxOfflineSpeechDenoiserConfig cfg;
+  memset(&cfg, 0, sizeof cfg);
+  cfg.model.gtcrn.model = "";
+  cfg.model.dpdfnet.model = m;
+  cfg.model.num_threads = threads;
+  cfg.model.provider = "cpu";
+  const SherpaOnnxOfflineSpeechDenoiser *p = SherpaOnnxCreateOfflineSpeechDenoiser(&cfg);
+  (*env)->ReleaseStringUTFChars(env, model, m);
+  return (jlong)(intptr_t)p;
+}
+
+JNIEXPORT void JNICALL Java_app_sesdefteri_Denoiser_destroyOff(JNIEnv *env, jclass cl, jlong h) {
+  if (h) SherpaOnnxDestroyOfflineSpeechDenoiser((const SherpaOnnxOfflineSpeechDenoiser *)(intptr_t)h);
+}
+
+/* n samples (48 kHz mono) in, the same span out, aligned with the input */
+JNIEXPORT jfloatArray JNICALL Java_app_sesdefteri_Denoiser_runOff(JNIEnv *env, jclass cl, jlong h, jfloatArray in, jint n, jint rate) {
+  const SherpaOnnxOfflineSpeechDenoiser *d = (const SherpaOnnxOfflineSpeechDenoiser *)(intptr_t)h;
+  if (!d || n <= 0) return 0;
+  float *p = (*env)->GetFloatArrayElements(env, in, 0);
+  const SherpaOnnxDenoisedAudio *o = SherpaOnnxOfflineSpeechDenoiserRun(d, p, n, rate);
+  (*env)->ReleaseFloatArrayElements(env, in, p, JNI_ABORT);
+  return den_out(env, o);
+}
+
 /* ---- 4.12: HD voice (LavaSR: backbone + spectrogram head) straight through ONNX Runtime's C API ---- */
 #include "onnxruntime_c_api.h"
 
