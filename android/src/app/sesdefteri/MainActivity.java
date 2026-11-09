@@ -990,6 +990,8 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public float recLevel() { return Recorder.level(); }
         @JavascriptInterface public String recMeter() { return Recorder.meter(); }
         @JavascriptInterface public boolean recMonitor(boolean on) { return Recorder.monitor(on); }
+        @JavascriptInterface public void recMonFx(double rev, double echo) { Recorder.monitorFx(rev, echo); }
+        @JavascriptInterface public void setLowLat(boolean on) { Timeline.lowLat = on; }
         @JavascriptInterface public String aiCrash() { return Device.lastCrash(MainActivity.this); }
         @JavascriptInterface public void setLite(boolean on) { Device.lite = on; }
         @JavascriptInterface public String recFx(boolean ns, boolean aec) { return Recorder.fx(ns, aec).toString(); }

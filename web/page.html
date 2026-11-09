@@ -1176,6 +1176,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n52.js"></script>
 <script src="i18n53.js"></script>
 <script src="i18n54.js"></script>
+<script src="i18n55.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -1187,7 +1188,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.3';
+const VERSION = '5.4';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1866,6 +1867,7 @@ function openSettings() {
       <label class="switch"><input type="checkbox" id="setAgc"${S.agc !== false ? ' checked' : ''}><span>${esc(t('setAgc'))}<small>${esc(t('setAgcD'))}</small></span></label>
       <label class="switch"><input type="checkbox" id="setSilCut"${S.silCut ? ' checked' : ''}><span>${esc(t('setSilCut'))}<small>${esc(t('setSilCutD'))}</small></span></label>
       <label class="switch"><input type="checkbox" id="setTech"${ls.get('techInfo', false) ? ' checked' : ''}><span>${esc(t('setTech'))}<small>${esc(t('setTechD'))}</small></span></label>
+      ${NATIVE && (CAPS.sdk || 0) >= 26 ? `<label class="switch"><input type="checkbox" id="setLowLat"${ls.get('lowLat', false) ? ' checked' : ''}><span>${esc(t('setLowLat'))}<small>${esc(t('setLowLatD'))}</small></span></label>` : ''}
       ${NATIVE ? `<label class="switch"><input type="checkbox" id="setLite"${liteOn() ? ' checked' : ''}><span>${esc(t('setLite'))}<small>${esc(t('setLiteD', { r: nf1.format(Math.round((CAPS.ramMb || 0) / 102.4) / 10), c: CAPS.cores || 0 }))}</small></span></label>` : ''}</div>
     <div class="set-sec"><h4>${esc(t('setClean'))}</h4>
       <div class="set-sub"><span>${esc(t('setStrength'))}</span><select id="setStr" class="sel-full">${[[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([v, k]) => `<option value="${v}"${CL.strength === v ? ' selected' : ''}>${esc(t(k))}</option>`).join('')}</select></div>
@@ -1937,6 +1939,7 @@ function openSettings() {
   }
   { const tb = card.querySelector('#setTech'); if (tb) tb.onchange = () => { ls.set('techInfo', tb.checked); document.documentElement.classList.toggle('tech', tb.checked); }; }
   { const lb = card.querySelector('#setLite'); if (lb) lb.onchange = () => { ls.set('lite', lb.checked); applyLite(); }; }
+  { const lb = card.querySelector('#setLowLat'); if (lb) lb.onchange = () => { ls.set('lowLat', lb.checked); applyLite(); toast(t('lowLatT'), 4000); }; }
   bind('#setAgc', 'agc'); bind('#setSilCut', 'silCut'); bind('#setTlXf', 'tlXf'); bind('#setChans', 'chans'); bind('#setStartTab', 'startTab');
   const ps = card.querySelector('#setPause'); if (ps) ps.onchange = () => { S.pauseMax = +ps.value; ls.set('pauseMax', S.pauseMax); };
   const ms = card.querySelector('#setMinSong'); if (ms) ms.onchange = () => { S.minSong = +ms.value; ls.set('minSong', S.minSong); render(); };
@@ -5842,10 +5845,10 @@ function askParams(title, desc, rows) {
 
 /* 4.15: light mode (fewer model threads, one AI chunk at a time): on by itself on weak phones, or chosen in Settings */
 const liteOn = () => { const v = ls.get('lite', null); return v === null ? !!CAPS.weak : !!v; };
-function applyLite() { try { AND.setLite(liteOn()); } catch (e) {} }
+function applyLite() { try { AND.setLite(liteOn()); AND.setLowLat(!!ls.get('lowLat', false)); } catch (e) {} }
 /* ---------- 1.8: export format, file names, trash ---------- */
 const recOpts = () => { const s = recSet(); return JSON.stringify({ q: 'std', src: S.micSrc, call: !!S.callPause, agc: S.agc !== false, fmt: s.fmt, rate: s.rate, ch: s.ch, kbps: s.kbps,
-  ns: !!ls.get('recNs', false), aec: !!ls.get('recAec', false), bt: !!ls.get('recBt', false), dir: ls.get('recDir', '') }); };
+  ns: !!ls.get('recNs', false), aec: !!ls.get('recAec', false), bt: !!ls.get('recBt', false), dir: ls.get('recDir', ''), lowlat: !!ls.get('lowLat', false) }); };
 const FMTS = () => ['mp3_192', 'mp3_320', 'm4a', 'wav', 'flac'].concat(CAPS.opus ? ['ogg'] : []);
 /** default export format as job arguments: {format, kbps} */
 function fmtArgs(f) {
@@ -6545,8 +6548,24 @@ function recMonitor() {
   if (!R.native) return;
   let on = false; try { on = AND.recMonitor(!R.mon); } catch (e) {}
   if (!R.mon && !on) { toast(t('monFail'), 3500); return; }
-  R.mon = on; if (on) toast(t('monOn'), 3500);
-  updateRecUI();
+  R.mon = on; updateRecUI();
+  if (on) monFxBox();
+}
+/* 5.4: reverb / echo only in the headphones while recording; the recording itself stays dry */
+function monFxBox() {
+  const v = Object.assign({ rev: 0, echo: 0 }, ls.get('monFx', {}));
+  const send = () => { try { AND.recMonFx(v.rev, v.echo); } catch (e) {} };
+  send();
+  const card = openModal(`<h3>${esc(t('monT'))}</h3><p class="mtext">${esc(t('monD'))}</p><div class="modal-body">
+      <div class="slider"><span>${esc(t('op_reverb'))}</span><input type="range" id="mfR" min="0" max="80" step="5" value="${v.rev}"><span class="tc" id="mfRv">%${v.rev}</span></div>
+      <div class="slider"><span>${esc(t('op_delay'))}</span><input type="range" id="mfE" min="0" max="60" step="5" value="${v.echo}"><span class="tc" id="mfEv">%${v.echo}</span></div></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
+  card.addEventListener('input', e => {
+    if (e.target.id === 'mfR') v.rev = +e.target.value; else if (e.target.id === 'mfE') v.echo = +e.target.value; else return;
+    card.querySelector('#mfRv').textContent = '%' + v.rev; card.querySelector('#mfEv').textContent = '%' + v.echo;
+    ls.set('monFx', v); send();
+  });
+  card.querySelector('[data-x]').onclick = closeModal;
 }
 $('#recMon').addEventListener('click', recMonitor);
 function updateRecUI() {

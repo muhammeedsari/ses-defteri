@@ -371,7 +371,7 @@ final class Timeline {
         Play(Engine e, long start) { eng = e; this.start = start; }
 
         @Override public void run() {
-            final int BL = 1024;
+            final int BL = lowLat ? 256 : 1024;
             float[][] mix = new float[2][BL];
             short[] pcm = new short[BL * 2];
             long pos = start;
@@ -420,13 +420,19 @@ final class Timeline {
         play(json, sec, 0);
     }
 
+    static volatile boolean lowLat;   // 5.4: Settings > Low latency
+
     static synchronized void play(String json, double sec, long minEnd) throws Exception {
         stop();
         Engine e = new Engine(new JSONArray(json));
         int min = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT);
         Play p = new Play(e, Math.round(sec * RATE));   // negative: count-in before the start
         p.minEnd = minEnd;
-        p.track = new AudioTrack(AudioManager.STREAM_MUSIC, RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT,
+        if (lowLat && android.os.Build.VERSION.SDK_INT >= 26) {   // 5.4: a 40 ms buffer on the phone's fast audio path
+            p.track = new AudioTrack.Builder()
+                .setAudioFormat(new AudioFormat.Builder().setSampleRate(RATE).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
+                .setBufferSizeInBytes(Math.max(min, RATE / 25 * 4)).setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY).build();
+        } else p.track = new AudioTrack(AudioManager.STREAM_MUSIC, RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT,
             Math.max(min * 2, RATE / 5 * 4), AudioTrack.MODE_STREAM);   // 200 ms: room for the phone to be busy (waveforms, effects) without a gap
         synchronized (Play.class) { Play.cur = p; }
         Thread th = new Thread(p, "timeline");

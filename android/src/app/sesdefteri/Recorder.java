@@ -38,6 +38,10 @@ final class Recorder {
     private static volatile float peak;
     private static volatile Timeline.Meter meter;
     private static volatile AudioTrack mon;
+    // 5.4: what the headphones hear while recording can have its own reverb / echo (the file stays dry)
+    private static volatile app.sesdefteri.dsp.Node monFx;
+    private static volatile Timeline.RackOut monOut;
+    private static boolean lowLat;
     private static int rate, chans;
 
     private Recorder() { }
@@ -59,6 +63,7 @@ final class Recorder {
         try { o = new JSONObject(optsJson == null ? "{}" : optsJson); } catch (Exception e) { o = new JSONObject(); }
         callPause = o.optBoolean("call", true);
         agc = o.optBoolean("agc", true);
+        lowLat = o.optBoolean("lowlat", false);
         temp = o.optBoolean("temp", false);
         fmt = temp ? "m4a" : o.optString("fmt", "m4a");
         if (!"wav".equals(fmt) && !"flac".equals(fmt)) fmt = "m4a";
@@ -88,6 +93,8 @@ final class Recorder {
             android.media.AudioDeviceInfo sco = bt ? btRoute(c) : null;
             if (sco != null) { source = MediaRecorder.AudioSource.VOICE_COMMUNICATION; chans = 1; }
             // 4.2: most phones run their noise suppressor / echo canceller only on the "call" source: on MIC the switch did nothing
+            // 5.4 low latency: the "live performance" input path (API 29+), meant for singing along on headphones
+            if (lowLat && !music && sco == null && !ns && !aec && Build.VERSION.SDK_INT >= 29) source = MediaRecorder.AudioSource.VOICE_PERFORMANCE;
             int plain = source;
             if (!music && (ns || aec) && sco == null) { source = MediaRecorder.AudioSource.VOICE_COMMUNICATION; chans = 1; }
             int cfg = chans > 1 ? AudioFormat.CHANNEL_IN_STEREO : AudioFormat.CHANNEL_IN_MONO;
@@ -204,7 +211,9 @@ final class Recorder {
     }
 
     private static void loop() {
-        short[] buf = new short[(rate / 50) * chans];   // 20 ms
+        short[] buf = new short[(rate / (lowLat ? 200 : 50)) * chans];   // 20 ms (5 ms in low-latency mode: what the headphones hear comes sooner)
+        short[] mb = new short[buf.length];
+        float[][] mf = new float[2][buf.length / chans];
         float[][] fl = new float[2][buf.length / chans];
         try {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
@@ -220,7 +229,18 @@ final class Recorder {
                     if (a > pk) pk = a;
                 }
                 AudioTrack m = mon;
-                if (m != null) try { m.write(buf, 0, n, AudioTrack.WRITE_NON_BLOCKING); } catch (Exception ignored) { }
+                app.sesdefteri.dsp.Node fx = monFx;
+                if (m != null && fx != null) try {
+                    for (int c = 0; c < chans; c++) System.arraycopy(fl[c], 0, mf[c], 0, fr);
+                    fx.push(chans > 1 ? mf : new float[][] { mf[0] }, fr);
+                    float[][] y = monOut.o;
+                    for (int i = 0; i < fr; i++) for (int c = 0; c < chans; c++) {
+                        float v = y[Math.min(c, y.length - 1)][i];
+                        mb[i * chans + c] = (short) (Math.max(-1f, Math.min(1f, v)) * 32767);
+                    }
+                    m.write(mb, 0, n, AudioTrack.WRITE_NON_BLOCKING);
+                } catch (Exception ignored) { }
+                else if (m != null) try { m.write(buf, 0, n, AudioTrack.WRITE_NON_BLOCKING); } catch (Exception ignored) { }
                 if (!"rec".equals(state)) continue;
                 if (pk > peak) peak = pk;
                 meter.feed(fl, fr);
@@ -255,6 +275,19 @@ final class Recorder {
     static String meter() {
         Timeline.Meter m = meter;
         return m == null || "idle".equals(state) ? "" : m.json(Long.MAX_VALUE);
+    }
+
+    /** 5.4: reverb and echo (0–100 each) on what the headphones hear; both 0 = the plain microphone */
+    static synchronized void monitorFx(double rev, double echo) {
+        int ch = chans > 0 ? chans : 1, fs = rate > 0 ? rate : 48000;
+        if (rev <= 0 && echo <= 0) { monFx = null; return; }
+        Timeline.RackOut out = new Timeline.RackOut();
+        app.sesdefteri.dsp.Node head = null, tail = null;
+        if (rev > 0) { head = tail = new app.sesdefteri.dsp.Stages.Reverb(ch, fs, 0.65, rev / 100.0); }
+        if (echo > 0) { app.sesdefteri.dsp.Node d = new app.sesdefteri.dsp.Stages.Delay(ch, fs, 280, 0.3, echo / 100.0); if (head == null) head = tail = d; else tail = tail.to(d); }
+        tail.to(out);
+        monOut = out;
+        monFx = head;
     }
 
     /** hear the microphone on headphones while recording */
