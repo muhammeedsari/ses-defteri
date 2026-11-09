@@ -19,3 +19,17 @@ LAME's `libmp3lame/*.c` (configured with `--disable-frontend --disable-decoder`)
 `zig cc -target aarch64-linux-musl -O2 -fPIC` and linked as a shared library against stub `libc.so`/`libm.so`
 (empty functions with the same names) so that the real Android libc/libm are used at run time.
 As a separate shared library it can be replaced with any other build of LAME.
+
+# libsdtp.so (pitch change, arm64-v8a only, 5.10)
+
+`sdtp/sdtp.cpp` is a JNI bridge (`app.sesdefteri.dsp.Stretch`) to Signalsmith Stretch (MIT; `sdtp/signalsmith-stretch.h`
+from github.com/Signalsmith-Audio/signalsmith-stretch @88061fd, `sdtp/linear/{stft,fft}.h` from
+github.com/Signalsmith-Audio/linear @7bb1c8f). Built like libsdmp3.so:
+
+    zig c++ -target aarch64-linux-musl -O2 -fPIC -fno-exceptions -fno-rtti -fno-stack-protector -std=c++11 \
+      -Isdtp -I$JAVA_HOME/include -I$JAVA_HOME/include/linux -c sdtp/sdtp.cpp -o sdtp.o
+    zig c++ -target aarch64-linux-musl -shared -nostdlib -s -Wl,-soname,libsdtp.so -o arm64-v8a/libsdtp.so sdtp.o libc.so libm.so
+
+with stub `libc.so` (abort calloc free malloc memmove memset) and `libm.so` (cosf sinf exp exp2). The few C++ runtime
+pieces the header needs (operator new/delete, random_device, __libcpp_verbose_abort) are defined in sdtp.cpp.
+Without the library (32-bit phones) the Java phase vocoder (`dsp/TimePitch`) is used.

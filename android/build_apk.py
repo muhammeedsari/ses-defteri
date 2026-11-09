@@ -162,7 +162,7 @@ def main():
     names = []
     for abi in ([] if LITE else ["arm64-v8a", "armeabi-v7a"]):
         (libs / "lib" / abi).mkdir(parents=True, exist_ok=True)
-        for so in ["libsherpa-onnx-jni.so", "libonnxruntime.so", "libsherpa-onnx-c-api.so", "libsdsep.so", "libsdmp3.so"]:
+        for so in ["libsherpa-onnx-jni.so", "libonnxruntime.so", "libsherpa-onnx-c-api.so", "libsdsep.so", "libsdmp3.so", "libsdtp.so"]:
             if not (VENDOR / "jniLibs" / abi / so).exists(): continue   # the MP3 encoder is only built for 64-bit ARM
             shutil.copy(VENDOR / "jniLibs" / abi / so, libs / "lib" / abi / so)
             names.append(f"lib/{abi}/{so}")

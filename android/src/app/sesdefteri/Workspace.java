@@ -464,7 +464,7 @@ final class Workspace {
                 case "speed": {
                     double sp = Math.max(0.5, Math.min(2, a.optDouble("speed", 1))), st = Math.max(-12, Math.min(12, a.optDouble("semitones", 0)));
                     m = new Meter(ch, fs);
-                    TimePitch tp = new TimePitch(ch, fs, sp, st, a.optBoolean("formant", true));
+                    Node tp = app.sesdefteri.dsp.Stretch.make(ch, fs, sp, st, a.optBoolean("formant", true));   // 5.10: Signalsmith when the pitch moves
                     rep.put("speed", sp);
                     rep.put("semitones", st);
                     tp.to(m);
@@ -496,7 +496,7 @@ final class Workspace {
                     m = new Meter(ch, fs);
                     Node tail = null;
                     head = null;
-                    if (Math.abs(sp - 1) > 1e-3 || Math.abs(st) > 1e-3) { head = tail = new TimePitch(ch, fs, sp, st, a.optBoolean("formant", false)); }
+                    if (Math.abs(sp - 1) > 1e-3 || Math.abs(st) > 1e-3) { head = tail = app.sesdefteri.dsp.Stretch.make(ch, fs, sp, st, a.optBoolean("formant", false)); }
                     if (!pr.isEmpty()) { Node v = new app.sesdefteri.dsp.VoiceFx(ch, fs, pr); if (head == null) head = tail = v; else tail = tail.to(v); }
                     JSONObject rv = a.optJSONObject("rev");
                     if (rv != null && rv.optDouble("mix", 0) > 0) {
@@ -514,7 +514,7 @@ final class Workspace {
                     String pr = a.optString("preset", "radio");
                     rep.put("preset", pr);
                     m = new Meter(ch, fs);
-                    if ("high".equals(pr) || "deep".equals(pr)) head = new TimePitch(ch, fs, 1, "high".equals(pr) ? 5 : -5, false);
+                    if ("high".equals(pr) || "deep".equals(pr)) head = app.sesdefteri.dsp.Stretch.make(ch, fs, 1, "high".equals(pr) ? 5 : -5, false);
                     else head = new app.sesdefteri.dsp.VoiceFx(ch, fs, pr);
                     head.to(new Limiter(ch, fs, -1.0, 0)).to(m);
                     slice = new double[] { 0, 1 };
