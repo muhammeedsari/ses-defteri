@@ -562,3 +562,10 @@ html:not(.tech) .pu-card small{display:none}
 .hist.h2 li.now b{color:var(--accent)}
 .h-acts{display:flex;align-items:center;gap:4px;flex:none}
 .h-acts .icon-btn{width:36px;height:36px}
+/* 5.0 effect list */
+.rk{border:1px solid var(--line);border-radius:12px;padding:6px 10px 2px;margin-bottom:8px}
+.rk-h{display:flex;align-items:center;gap:4px}
+.rk-n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:15px}
+.rk-sw{margin:0;flex:none}
+.rk .slider{margin:2px 0}
+#rkAdd{margin-top:4px}

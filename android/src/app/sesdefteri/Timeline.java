@@ -87,6 +87,81 @@ final class Timeline {
         java.util.ArrayList<app.sesdefteri.dsp.Biquad> eq;   // live 5-band EQ (null = flat)
         app.sesdefteri.dsp.Tone tone;   // bass / treble (null = off)
         float[][] tmp = new float[2][0];
+        app.sesdefteri.dsp.Node rack;   // 5.0: the clip's own live effects (null = none)
+        RackOut rout;
+        long tail;                      // how long its echoes ring on after the clip ends (frames)
+    }
+
+    /** the end of a clip's effect chain: holds what came out */
+    static final class RackOut extends app.sesdefteri.dsp.Node {
+        float[][] o; int n;
+        @Override public void push(float[][] b, int n) { o = b; this.n = n; }
+        @Override public void end() { }
+    }
+
+    /** 5.0: live effects of one clip, in order: [{k, on, v:{…}}]; every one keeps the timing (no look-ahead) */
+    static void rack(Clip k, JSONArray fx) throws Exception {
+        if (fx == null) return;
+        app.sesdefteri.dsp.Node head = null, tail = null;
+        int ch = k.ch;
+        long t = 0;
+        for (int i = 0; i < fx.length(); i++) {
+            JSONObject f = fx.getJSONObject(i);
+            if (!f.optBoolean("on", true)) continue;
+            JSONObject v = f.optJSONObject("v");
+            if (v == null) v = new JSONObject();
+            String kind = f.optString("k");
+            app.sesdefteri.dsp.Node n;
+            if ("reverb".equals(kind)) {
+                double room = v.optDouble("room", 50) / 100;
+                n = new app.sesdefteri.dsp.Stages.Reverb(ch, RATE, room, v.optDouble("mix", 30) / 100, v.optDouble("soft", 30) / 100);
+                t = Math.max(t, (long) (RATE * Math.min(5, 1 + 3 * room)));
+            } else if ("delay".equals(kind)) {
+                double ms = v.optDouble("ms", 300), fb = Math.min(0.9, v.optDouble("fb", 35) / 100);
+                n = new app.sesdefteri.dsp.Stages.Delay(ch, RATE, ms, fb, v.optDouble("mix", 35) / 100);
+                double rep = fb > 0.01 ? Math.log(0.001) / Math.log(fb) : 1;
+                t = Math.max(t, Math.min(RATE * 4L, (long) (RATE * ms / 1000 * (rep + 1))));
+            } else if ("comp".equals(kind)) {
+                double a = v.optDouble("amt", 50) / 100, thr = -12 - 24 * a, ratio = 1.5 + 4.5 * a;
+                n = new app.sesdefteri.dsp.Stages.Compressor(ch, RATE, thr, ratio);
+                Gain mk = new Gain(ch, Math.pow(10, Math.min(9, -thr * (1 - 1 / ratio) * 0.35) / 20));
+                n.to(mk);
+                if (head == null) head = n; else tail.to(n);
+                tail = mk;
+                continue;
+            } else if ("widen".equals(kind)) { n = new app.sesdefteri.dsp.Fx.Widen(ch, RATE, v.optDouble("amt", 60) / 100); ch = 2; }
+            else if ("eightd".equals(kind)) { n = new app.sesdefteri.dsp.Fx.EightD(ch, RATE, Math.max(2, Math.min(20, v.optDouble("period", 8)))); ch = 2; }
+            else if ("double".equals(kind)) { n = new Wet(ch, new app.sesdefteri.dsp.Fx.Double(ch, RATE), v.optDouble("mix", 70) / 100); ch = 2; }
+            else if ("lofi".equals(kind)) { n = new Wet(ch, new app.sesdefteri.dsp.Fx.LoFi(ch, RATE), v.optDouble("mix", 80) / 100); ch = 2; }
+            else continue;
+            if (head == null) head = n; else tail.to(n);
+            tail = n;
+        }
+        if (head == null) return;
+        k.rout = new RackOut();
+        tail.to(k.rout);
+        k.rack = head;
+        k.tail = t;
+    }
+
+    static final class Gain extends app.sesdefteri.dsp.Node {
+        final int ch; final float g;
+        Gain(int ch, double g) { this.ch = ch; this.g = (float) g; }
+        @Override public void push(float[][] b, int n) throws Exception { for (int c = 0; c < ch; c++) for (int i = 0; i < n; i++) b[c][i] *= g; next.push(b, n); }
+    }
+
+    /** a stereo effect blended with the dry sound: out = dry · (1 − w) + effect · w */
+    static final class Wet extends app.sesdefteri.dsp.Node {
+        final int ch; final float w; final app.sesdefteri.dsp.Node fx; final RackOut got = new RackOut();
+        float[][] dry = new float[2][0], o = new float[2][0];
+        Wet(int ch, app.sesdefteri.dsp.Node fx, double w) { this.ch = ch; this.fx = fx; this.w = (float) Math.max(0, Math.min(1, w)); fx.to(got); }
+        @Override public void push(float[][] b, int n) throws Exception {
+            if (dry[0].length < n) { dry = new float[2][n]; o = new float[2][n]; }
+            for (int c = 0; c < 2; c++) System.arraycopy(b[Math.min(c, ch - 1)], 0, dry[c], 0, n);
+            fx.push(b, n);
+            for (int c = 0; c < 2; c++) { float[] e = got.o[Math.min(c, got.o.length - 1)]; for (int i = 0; i < n; i++) o[c][i] = dry[c][i] * (1 - w) + e[i] * w; }
+            next.push(o, n);
+        }
     }
 
     /** same bands as the eqpreset op: shelf 100 Hz, peaks 300 Hz / 1 kHz / 3 kHz, shelf 8 kHz */
@@ -119,6 +194,8 @@ final class Timeline {
             try {
                 for (int i = 0; i < a.length(); i++) {
                     JSONObject o = a.getJSONObject(i);
+                    JSONObject ms = o.optJSONObject("master");   // 5.0: mastering of the whole mix
+                    if (ms != null) { if (ms.optBoolean("on", true)) master = new app.sesdefteri.dsp.Master(RATE, ms.optString("style", "natural"), ms.optDouble("amt", 50) / 100); continue; }
                     File file = new File(o.getString("path"));
                     if (!file.exists()) continue;
                     Workspace.Info inf = Workspace.info(file);
@@ -152,9 +229,11 @@ final class Timeline {
                     double tb = o.optDouble("bass", 0), tt = o.optDouble("treble", 0);
                     if (tb != 0 || tt != 0) k.tone = new app.sesdefteri.dsp.Tone(RATE, tb, tt);
                     if (k.len <= 0 || k.g <= 0) continue;
+                    rack(k, o.optJSONArray("fx"));
+                    if (k.rack != null) c2 = 2;
                     k.f = new RandomAccessFile(file, "r");
                     l.add(k);
-                    e = Math.max(e, k.at + k.len);
+                    e = Math.max(e, k.at + k.len + k.tail);
                     if (k.ch > 1) c2 = 2;
                 }
             } catch (Exception x) {
@@ -179,8 +258,15 @@ final class Timeline {
         private static final float THR = 0.02f, E_ATK = (float) (1 - Math.exp(-1.0 / (0.005 * RATE))), E_REL = (float) Math.exp(-1.0 / (0.25 * RATE)),
             D_ATK = (float) (1 - Math.exp(-1.0 / (0.08 * RATE))), D_REL = (float) (1 - Math.exp(-1.0 / (0.6 * RATE)));
 
-        /** frames [pos, pos+n) of every clip mixed into out (2 channels, cleared here) */
+        app.sesdefteri.dsp.Master master;
+
+        /** frames [pos, pos+n) of every clip mixed into out (2 channels, cleared here), then the mastering */
         void render(long pos, int n, float[][] out) throws Exception {
+            mixAll(pos, n, out);
+            if (master != null) master.process(out, n);
+        }
+
+        private void mixAll(long pos, int n, float[][] out) throws Exception {
             for (float[] o : out) java.util.Arrays.fill(o, 0, n, 0f);
             boolean ducked = false;
             for (Clip k : clips) { if (k.duck < 1) ducked = true; else add(k, pos, n, out, null); }
@@ -207,12 +293,14 @@ final class Timeline {
 
         private void add(Clip k, long pos, int n, float[][] out, float[] dep) throws Exception {
             {
-                long a = Math.max(pos, k.at), z = Math.min(pos + n, k.at + k.len);
+                long a = Math.max(pos, k.at), z = Math.min(pos + n, k.at + k.len + k.tail);
                 if (z <= a) return;
-                int cnt = (int) (z - a), off = (int) (a - pos), bytes = cnt * k.ch * 2;
+                int cnt = (int) (z - a), off = (int) (a - pos);
+                long zf = Math.min(z, k.at + k.len);   // past the clip only its echoes go on: silence goes in
+                int rd = (int) Math.max(0, zf - a), bytes = cnt * k.ch * 2;
                 if (k.buf.length < bytes) k.buf = new byte[bytes];
-                k.f.seek(44 + (k.in + a - k.at) * k.ch * 2);
-                k.f.readFully(k.buf, 0, bytes);
+                if (rd > 0) { k.f.seek(44 + (k.in + a - k.at) * k.ch * 2); k.f.readFully(k.buf, 0, rd * k.ch * 2); }
+                java.util.Arrays.fill(k.buf, rd * k.ch * 2, bytes, (byte) 0);
                 byte[] b = k.buf;
                 int q = 0;
                 float[] L = out[0], Rr = out[1];
@@ -220,13 +308,14 @@ final class Timeline {
                 double[] et = k.et;
                 int j = 0;
                 if (et != null) while (j < et.length - 1 && et[j + 1] <= a - k.at) j++;
-                if (k.eq != null || k.tone != null) {
+                final boolean post = k.eq != null || k.tone != null || k.rack != null;
+                if (post) {
                     if (k.tmp[0].length < cnt) k.tmp = new float[2][cnt];
                     L = k.tmp[0]; Rr = k.tmp[1]; base = 0;
                     java.util.Arrays.fill(L, 0, cnt, 0f); java.util.Arrays.fill(Rr, 0, cnt, 0f);
                 }
                 for (int i = 0; i < cnt; i++) {
-                    long r = a - k.at + i;
+                    long r = Math.min(a - k.at + i, k.len - 1);
                     float g = k.g;
                     if (k.fi > 0 && r < k.fi) g *= (float) r / k.fi;
                     if (k.fo > 0 && k.len - r < k.fo) g *= (float) (k.len - r) / k.fo;
@@ -246,13 +335,20 @@ final class Timeline {
                     q += 2;
                     float rr = l;
                     if (k.ch > 1) { rr = (short) ((b[q] & 0xff) | (b[q + 1] << 8)) / 32768f; q += 2; }
-                    L[base + i] += l * g * k.pl;
-                    Rr[base + i] += rr * g * k.pr;
+                    if (post) { L[i] += l * g; Rr[i] += rr * g; }
+                    else { L[base + i] += l * g * k.pl; Rr[base + i] += rr * g * k.pr; }
                 }
-                if (k.eq != null || k.tone != null) {
+                if (post) {
                     if (k.eq != null) for (app.sesdefteri.dsp.Biquad f : k.eq) { f.process(0, L, 0, cnt); f.process(1, Rr, 0, cnt); }
                     if (k.tone != null) k.tone.process(L, Rr, cnt);
-                    for (int i = 0; i < cnt; i++) { out[0][off + i] += L[i]; out[1][off + i] += Rr[i]; }
+                    float[] oL = L, oR = Rr;
+                    if (k.rack != null) {
+                        // a mono clip goes in as one channel (L and R hold the same samples)
+                        k.rack.push(k.ch > 1 ? new float[][] { L, Rr } : new float[][] { L }, cnt);
+                        float[][] y = k.rout.o;
+                        oL = y[0]; oR = y.length > 1 ? y[1] : y[0];
+                    }
+                    for (int i = 0; i < cnt; i++) { out[0][off + i] += oL[i] * k.pl; out[1][off + i] += oR[i] * k.pr; }
                 }
             }
         }
