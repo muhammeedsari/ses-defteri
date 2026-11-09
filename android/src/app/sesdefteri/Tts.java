@@ -40,19 +40,21 @@ final class Tts {
             case "fr": return "fr_FR-siwis-medium-int8";
             case "es": return "es_ES-davefx-medium-int8";
             case "pt": return "pt_BR-faber-medium-int8";
-            case "ru": return "ru_RU-irina-medium-int8";
+            case "ru": return "ru_RU-dmitri-medium-int8";   // 5.11: CC0 (irina: licence unknown)
             case "ar": return "ar_JO-kareem-medium-int8";
-            case "zh": return "zh_CN-huayan-medium";
-            default: return "en_US-lessac-medium-int8";
+            case "zh": return "zh_CN-chaowen-medium-int8";   // 5.11: CC0 (huayan: licence unknown)
+            default: return "en_US-ljspeech-medium-int8";   // 5.11: public domain (lessac: research-only data)
         }
     }
 
     static File root(Context c) { File d = new File(c.getFilesDir(), "tts"); d.mkdirs(); return d; }
     static File dir(Context c, String lang) {
-        if (!"tr".equals(lang)) return new File(root(c), lang);
-        File old = new File(root(c), "tr");   // 5.9: the old Turkish voice goes; the new one is downloaded on request
+        // 5.9 / 5.11: voices replaced for their licences: the old one goes, the new one is downloaded on request
+        String now = "tr".equals(lang) ? "tr-fettah" : "en".equals(lang) || "ru".equals(lang) || "zh".equals(lang) ? lang + "-2" : null;
+        if (now == null) return new File(root(c), lang);
+        File old = new File(root(c), lang);
         if (old.isDirectory()) { deleteAll(old.listFiles()); old.delete(); }
-        return new File(root(c), "tr-fettah");
+        return new File(root(c), now);
     }
     static File espeak(Context c) { return new File(root(c), "espeak-ng-data"); }
 
