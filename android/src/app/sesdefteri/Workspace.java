@@ -269,6 +269,7 @@ final class Workspace {
                     if (e - s < fs) { s = 0; e = an.samples; }
                     rep.put("start", Math.round(s * 100.0 / fs) / 100.0);
                     rep.put("end", Math.round((an.samples - e) * 100.0 / fs) / 100.0);
+                    rep.put("keep", new JSONArray().put(new JSONArray().put(s * 1000.0 / fs).put(e * 1000.0 / fs)));   // 5.2: the same cut for the clip's other versions
                     m = new Meter(ch, fs);
                     head = new Stages.Trim(s, e);
                     head.to(m);
@@ -633,7 +634,7 @@ final class Workspace {
         Keep kk = new Keep(ranges, inf.rate);
         kk.to(m).to(new Studio.WavNode(out, inf.rate));
         wav(in, inf, part(p, 0.4, 1), new double[] { 0, 1 }, cancel).run(kk);
-        rep.put("count", cuts.length()); rep.put("saved", Math.round(saved * 10) / 10.0); rep.put("cuts", cuts);
+        rep.put("count", cuts.length()); rep.put("saved", Math.round(saved * 10) / 10.0); rep.put("cuts", cuts); rep.put("keep", ranges);
         return done(out, m, rep);
     }
 
@@ -697,6 +698,7 @@ final class Workspace {
         rep.put("count", cuts.length());
         rep.put("saved", Math.round(saved * 10) / 10.0);
         rep.put("cuts", cuts);
+        rep.put("keep", ranges);
         return done(out, m, rep);
     }
 

@@ -238,6 +238,7 @@
 <script src="i18n50.js"></script>
 <script src="i18n51.js"></script>
 <script src="i18n52.js"></script>
+<script src="i18n53.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -249,7 +250,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.1';
+const VERSION = '5.2';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
@@ -2601,7 +2602,7 @@ function tlUndo(redo) {
   tlChanged();
 }
 function tlClean() {
-  const keep = new Set(), cb = tlClip(), add = c => { keep.add(c.path); if (c.prev) keep.add(c.prev); if (c.src) keep.add(c.src); for (const h of c.hc || []) keep.add(h.path); for (const f of c.fx || []) if (f.b) keep.add(f.b.path); };
+  const keep = new Set(), cb = tlClip(), add = c => { keep.add(c.path); if (c.prev) keep.add(c.prev); if (c.src) keep.add(c.src); for (const h of c.hc || []) keep.add(h.path); for (const f of c.fx || []) if (f.b) { keep.add(f.b.path); if (f.b.src) keep.add(f.b.src); for (const h of f.b.hc || []) keep.add(h.path); } };
   TL.p.clips.forEach(add);
   if (cb) keep.add(cb.path);
   for (const s of TL.undo.concat(TL.redo)) try { JSON.parse(s).clips.forEach(add); } catch (e) {}
@@ -2935,11 +2936,19 @@ async function tlEffect(c, op, extra) {
   tlStop();
   let res;
   let b0 = null;
-  if (hvHas(c)) { b0 = tlSnap(); hvBake(c); }   // a cut / speed / … works on the sound as heard: computed effects become part of it
+  // 5.2: a cut / trim / pause removal / speed is made on the clip's own sound and on every computed step too, so the
+  // effect list stays changeable; anything else works on the sound as heard and the computed effects become part of it
+  let steps = null;
+  if (hvHas(c)) {
+    b0 = tlSnap();
+    const trimmedRender = (op === 'trim' || op === 'pauses') && (c.in > 0.02 || c.out < c.dur - 0.02);
+    steps = HV_FOLLOW.includes(op) && !trimmedRender ? hvSteps(c) : null;
+    if (!steps) hvBake(c);
+  }
   if ((op === 'cut' || op === 'aipauses') && extra && Array.isArray(extra.keep)) extra.keep = extra.keep.map(([a, b]) => [Math.max(a, c.in * 1000), Math.min(b, c.out * 1000)]).filter(([a, b]) => b - a > 5);
   else if ((op === 'trim' || op === 'pauses') && (c.in > 0.02 || c.out < c.dur - 0.02)) {   // 4.4: a trimmed clip: work on what is seen, the cut-off parts stay gone
     let sg; try { sg = await tlRunJob(t('op_' + op), 'tlRender', { clips: [{ path: c.path, at: 0, in: c.in, len: tlLen(c), g: 1, fi: 0, fo: 0, xi: 0, xo: 0, env: null, eq: null, bass: 0, treble: 0 }], dir: 'proj', limit: false }); } catch (e) { toast(errText(e), 5000); return; }
-    b0 = tlSnap();
+    b0 = b0 || tlSnap();
     if (c.env) c.env = c.env.map(([x, d]) => [Math.round((x - c.in) * 1000) / 1000, d]).filter(([x]) => x >= 0);
     Object.assign(c, { path: sg.path, dur: sg.dur / 1000, ch: sg.ch, in: 0 }); c.out = c.dur;
   }
@@ -2958,6 +2967,7 @@ async function tlEffect(c, op, extra) {
   if (!same && res.report && Array.isArray(res.report.cuts)) cutsAt = res.report.cuts.map(x => Math.round(x[0] * 100) / 100);
   else if (!same && extra && Array.isArray(extra.keep)) { let o = 0; cutsAt = []; extra.keep.forEach(([a, b], i) => { if (i) cutsAt.push(Math.round(o * 100) / 100); o += (b - a) / 1000; }); }
   Object.assign(c, { path: res.path, dur: nd, ch: res.ch, prev: old });
+  if (steps && !(await hvFollow(c, op, extra || {}, res, steps))) hvBake(c);
   delete c.chg; delete c.cuts;
   if (cutsAt && cutsAt.length) { c.cuts = cutsAt; tlMarkTip(); }
   c.out = Math.min(c.out, nd); c.in = Math.min(c.in, c.out - 0.05);
@@ -3593,12 +3603,43 @@ async function tlHeavyRun(c) {
   if (!hvHas(c)) { c.path = c.src; delete c.src; delete c.hc; delete c.hcOut; }
   if (old !== c.path) tlDiff(c.id, old, c.path);
 }
+const HV_FOLLOW = ['cut', 'pauses', 'aipauses', 'trim', 'speed', 'insert'];
+/** the computed steps as they stand (null when one is missing or the sound was changed elsewhere) */
+function hvSteps(c) {
+  if (!c.src || hvStale(c)) return null;
+  const hs = (c.rk || []).filter(f => HEAVY.includes(f.k) && f.on !== false), hc = c.hc || [], out = [];
+  let cur = c.src;
+  for (const f of hs) {
+    const args = Object.assign({}, f.v, { op: f.k, direct: true }), h = hc.find(x => x.key === cur + '|' + JSON.stringify(args));
+    if (!h) return null;
+    out.push({ args, path: h.path, ch: h.ch }); cur = h.path;
+  }
+  return cur === c.path ? out : null;
+}
+/** the edit just made on the heard sound (res) is made the same way on the clip's own sound and the earlier steps */
+async function hvFollow(c, op, extra, res, steps) {
+  let how;
+  if (op === 'speed' || op === 'insert') how = Object.assign({}, extra, { op });
+  else { const keep = op === 'cut' ? extra.keep : res.report && res.report.keep; if (!keep) return false; how = { op: 'cut', keep }; }
+  if (!steps.length) { c.src = res.path; c.hc = []; c.hcOut = res.path; return true; }
+  const outs = [];
+  try {
+    for (const f of [c.src].concat(steps.slice(0, -1).map(x => x.path))) { const r = await tlRunJob(t('op_' + op), 'wsOp', Object.assign({ path: f }, how)); outs.push(r.same ? f : r.path); }
+  } catch (e) { return false; }
+  outs.push(res.path);
+  c.src = outs[0]; c.hc = [];
+  let cur = c.src;
+  steps.forEach((x, i) => { c.hc.push({ key: cur + '|' + JSON.stringify(x.args), path: outs[i + 1], ch: x.ch }); cur = outs[i + 1]; });
+  c.hcOut = res.path;
+  return true;
+}
 async function tlHeavyAdd(c, k, v) {
   tlStop();
-  const before = tlSnap();
+  const before = tlSnap(), b4 = tlState(c);
   if (hvStale(c)) hvBake(c);
   c.rk = (c.rk || []).concat([{ k, on: true, v: Object.assign({ strength: 1 }, v) }]);
   try { await tlHeavyRun(c); } catch (e) { TL.p = JSON.parse(before); tlChanged(); toast(errText(e), 5000); return; }
+  tlStep(c, { op: k, r: t('hvStep') }, b4);
   tlCommit(before);
   toast(t('hvAdded', { x: t('op_' + k) }), 4000);
 }
@@ -3665,7 +3706,14 @@ function tlRack(c, before0) {
   });
   live();
   card.querySelector('[data-x]').onclick = closeModal;
-  card.querySelector('[data-ok]').onclick = () => { if (TL.busy) return; ok = true; closeModal(); tlCommit(before); };
+  card.querySelector('[data-ok]').onclick = () => {
+    if (TL.busy) return;
+    ok = true; closeModal();
+    // 5.2: a changed list is a step in the clip's edit history (with "go back here")
+    const was = JSON.parse(before).clips.find(x => x.id === c.id);
+    if (was && JSON.stringify(was.rk || null) !== JSON.stringify(c.rk || null)) tlStep(c, { op: 'rack', r: (c.rk || []).filter(f => f.on !== false).map(f => t('op_' + f.k)).join(', ') || t('rkNone') }, tlState(was));
+    tlCommit(before);
+  };
 }
 /* mastering: one style for the whole mix, heard live; "before" switches it off for a moment to compare */
 const MASTERS = ['natural', 'warm', 'tape', 'loud'];
@@ -6117,7 +6165,7 @@ async function tlDiff(id, a, b) {
   } catch (e) {}
 }
 /** 4.11.2: a step of the history keeps the clip as it was before it; only the last 5 keep that sound (space) */
-const tlState = c => ({ path: c.path, dur: c.dur, ch: c.ch, in: c.in, out: c.out, env: c.env || null });
+const tlState = c => ({ path: c.path, dur: c.dur, ch: c.ch, in: c.in, out: c.out, env: c.env || null, rk: c.rk ? JSON.parse(JSON.stringify(c.rk)) : null, src: c.src || null, hc: c.hc ? JSON.parse(JSON.stringify(c.hc)) : null, hcOut: c.hcOut || null });
 function tlStep(c, entry, b4) {
   entry.b = b4; c.fx = (c.fx || []).concat([entry]);
   let n = 0; for (let i = c.fx.length - 1; i >= 0; i--) if (c.fx[i].b && ++n > 5) delete c.fx[i].b;
@@ -6563,6 +6611,7 @@ function tlHistory() {
       tlStop(); closeModal();
       const before = tlSnap(), cur = c.path;
       Object.assign(c, { path: s0.path, dur: s0.dur, ch: s0.ch, in: s0.in, out: s0.out, prev: cur });
+      if ('rk' in s0) for (const k of ['rk', 'src', 'hc', 'hcOut']) { if (s0[k]) c[k] = JSON.parse(JSON.stringify(s0[k])); else delete c[k]; }   // 5.2: the effect list goes back too
       if (s0.env) c.env = s0.env; else delete c.env;
       c.fx = fx.slice(0, i); delete c.chg; delete c.cuts;
       tlCommit(before);
