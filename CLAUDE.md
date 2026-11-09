@@ -1,6 +1,6 @@
 # Ses Defteri — Claude için proje rehberi
 
-Bu dosyayı her oturumun başında oku. Ayrıntılar: `docs/DURUM.md` (sürüm geçmişi, ne çalışıyor, ne kaldı) ve `docs/MIMARI.md` (kod haritası, köprüler, veri yapıları).
+Bu dosyayı her oturumun başında oku. Ayrıntılar: `docs/DEVIR-4.12-5.14.md` (son dönem, en güncel), `docs/DEVIR-4.3-4.12.md`, `docs/DURUM.md` (eski sürüm geçmişi), `docs/MIMARI.md` (kod haritası; 4.x öncesi), `docs/LISANSLAR.md`, `docs/TEST-LISTESI.md`.
 
 ## Proje
 Ses Defteri, **internetsiz çalışan bir Android uygulaması**: ses kaydı, müzik çalar ve çok katmanlı ses stüdyosu (düzenleme, gürültü temizliği, yapay zekâ ile ses ayırma/temizleme, sesten metne). Sahibi Türk; uygulama 9 dilde (tr, en, de, fr, es, pt, ru, ar, zh), varsayılan dil İngilizce (ilk açılışta dil seçilir).
