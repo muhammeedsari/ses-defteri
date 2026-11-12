@@ -54,6 +54,14 @@ final class LiveText {
         return true;
     }
 
+    /** the wanted model if downloaded, else the other one, else null */
+    static String pick(Context c, String want) {
+        String m = name(want);
+        if (ready(c, m)) return m;
+        String o = "v1".equals(m) ? "v2" : "v1";
+        return ready(c, o) ? o : null;
+    }
+
     static JSONObject status(Context c) throws Exception {
         JSONObject o = new JSONObject();
         o.put("v1", ready(c, "v1"));
@@ -106,6 +114,7 @@ final class LiveText {
 
     private final ArrayBlockingQueue<Chunk> q = new ArrayBlockingQueue<Chunk>(4096);
     private final int rate;
+    private String lang = "tr";
     private final long maxLag;
     private long fed;             // input frames handed over, skipped ones included (recorder thread only)
     private final java.util.concurrent.atomic.AtomicLong queued = new java.util.concurrent.atomic.AtomicLong(); // frames waiting
@@ -114,11 +123,14 @@ final class LiveText {
     private volatile boolean stop, failed;
     private final Thread th;
 
-    LiveText(final Context c, final String model, int rate) {
+    /** model: v1 / v2 (seda, Turkish) or "w" (5.17: Whisper, any language; wmodel = base / small, lang "" = detect) */
+    LiveText(final Context c, final String model, int rate, final String lang, final String wmodel) {
         this.rate = rate;
         maxLag = rate * 30L;
-        final File d = dir(c, model);
-        th = new Thread(new Runnable() { @Override public void run() { work(c, d); } }, "livetext");
+        final boolean w = "w".equals(model);
+        this.lang = w ? (lang == null ? "" : lang) : "tr";
+        final File d = w ? null : dir(c, model);
+        th = new Thread(new Runnable() { @Override public void run() { if (w) whisper(c, lang, wmodel); else work(c, d); } }, "livetext");
         th.start();
     }
 
@@ -181,6 +193,50 @@ final class LiveText {
         }
     }
 
+    /** 5.17: other languages: voice detection cuts sentences, Whisper writes each one (a few seconds later, no partial text) */
+    private void whisper(Context c, String lang, String wmodel) {
+        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+        Transcriber tr = null;
+        try {
+            String m = AsrModels.pick(c, wmodel);
+            if (m == null) throw new IllegalStateException("asr-missing");
+            final Transcriber t = tr = new Transcriber(null, AsrModels.dir(c, m).getAbsolutePath(), m, lang == null ? "" : lang, Math.min(2, Device.threads(2)));
+            t.setListener(new Transcriber.Listener() {
+                @Override public void onSegment(Transcriber.Segment x) { synchronized (segs) { segs.add(x); } part = ""; }
+            });
+            app.sesdefteri.dsp.Resampler rs = new app.sesdefteri.dsp.Resampler(1, (double) rate, (double) Transcriber.RATE);
+            rs.to(new app.sesdefteri.dsp.Node() {
+                @Override public void push(float[][] b, int n) { t.accept(b[0], n); }
+                @Override public void end() { }
+            });
+            float[][] one = new float[1][];
+            long pos = 0;
+            while (true) {
+                Chunk k = q.poll(200, TimeUnit.MILLISECONDS);
+                if (k == null) { if (stop) break; continue; }
+                queued.addAndGet(-k.x.length);
+                if (k.at > pos) {   // skipped audio: silence keeps the times right (the voice detector closes the sentence)
+                    long gap = k.at - pos;
+                    float[][] z = new float[1][(int) Math.min(gap, rate)];
+                    while (gap > 0) { int n = (int) Math.min(gap, z[0].length); rs.push(z, n); gap -= n; }
+                }
+                one[0] = k.x;
+                rs.push(one, k.x.length);
+                pos = k.at + k.x.length;
+                part = "…";
+            }
+            rs.end();
+            t.finish();
+            part = "";
+        } catch (Throwable e) {
+            failed = true;
+            MainActivity.saveNote(c, "live text (whisper): " + e);
+        } finally {
+            if (tr != null) tr.release();
+            q.clear();
+        }
+    }
+
     /** the sentence so far becomes a segment; returns where the next one starts */
     private long close(OnlineRecognizer rec, OnlineStream st, long seg0, long pos) {
         OnlineRecognizerResult r = rec.getResult(st);
@@ -238,7 +294,7 @@ final class LiveText {
             for (String s : Keywords.tags(text, 5)) tags.put(s);
             res.put("tags", tags);
             res.put("title", Keywords.title(l));
-            res.put("lang", "tr");
+            res.put("lang", lang);
             res.put("live", true);
             if (th.isAlive()) res.put("short", true);   // the phone was still behind: the end of the text is missing
             return res;

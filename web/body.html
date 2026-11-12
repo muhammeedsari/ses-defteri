@@ -257,6 +257,7 @@
 <script src="i18n63.js"></script>
 <script src="i18n64.js"></script>
 <script src="i18n65.js"></script>
+<script src="i18n66.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -268,7 +269,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.16';
+const VERSION = '5.17';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   // 5.14.2: a project that cannot be stored (storage full) says so once instead of silently losing edits
@@ -804,7 +805,7 @@ async function runBackground() {
     .sort((a, b) => b.created - a.created)[0];
   if (!next) {
     // speech-to-text in the background, newest first, so every recording becomes searchable by its words
-    const tn = S.autoText && CAPS.asr && hasAsr() ? recItems().filter(r => r.src && !r.ttext && !textTried.has(r.id) && !BUSY.has(r.id) && r.duration > 2 && r.duration < 3600)
+    const tn = S.autoText && CAPS.asr && txReady() ? recItems().filter(r => r.src && !r.ttext && !textTried.has(r.id) && !BUSY.has(r.id) && r.duration > 2 && r.duration < 3600)
       .sort((a, b) => b.created - a.created)[0] : null;
     if (!tn) return;
     textTried.add(tn.id); bgBusy = true;
@@ -2046,7 +2047,7 @@ async function lyricsGet(r) {
     const v = await step('wsOp', { path: w.path, op: 'sepdenoise' }, 0.05, 0.45);
     if (stop) return false;
     const el = $('#lyStep'); if (el) el.textContent = t('lyrTx');
-    const tx = await step('transcribe', { src: { path: v.path }, lang: S.textLang || '', model: S.asrModel || '' }, 0.45, 1);
+    const tx = await step('transcribe', { src: { path: v.path }, lang: S.textLang || '', model: wModel() }, 0.45, 1);
     if (stop) return false;
     r.lyrics = (tx.segments || []).map(([a, b, x]) => [Math.round(a * 100) / 100, Math.round(b * 100) / 100, x]);
     await saveRec(r);
@@ -2076,7 +2077,7 @@ async function karaoke(r) {
   voc.gain = guide === 'low' ? -14 : -60;
   let segs = r.lyrics;
   if (!segs && CAPS.asr && hasAsr()) {
-    try { const tx = await tlRunJob(t('lyrTx'), 'transcribe', { src: { path: voc.path }, lang: S.textLang || '', model: S.asrModel || '' }); segs = (tx.segments || []).map(([a, b, x]) => [a, b, x]); if (segs.length) { r.lyrics = segs; saveRec(r); } } catch (e) {}
+    try { const tx = await tlRunJob(t('lyrTx'), 'transcribe', { src: { path: voc.path }, lang: S.textLang || '', model: wModel() }); segs = (tx.segments || []).map(([a, b, x]) => [a, b, x]); if (segs.length) { r.lyrics = segs; saveRec(r); } } catch (e) {}
   }
   if (segs && segs.length) TL.p.lyrics = segs.map(([a, b, x]) => [voc.at + a - voc.in, voc.at + b - voc.in, x]);
   TL.p.name = t('karName', { t: r.title || '' }); TL.pos = 0;
@@ -2485,10 +2486,10 @@ async function addVoiceProfile(tone) {
 
 async function transcribeItem(it, auto) {
   if (!NATIVE || !CAPS.asr || !it.src || BUSY.has(it.id)) { if (!auto && NATIVE && !CAPS.asr) toast(t('textNoAsr'), 4000); return; }
-  if (!hasAsr()) { if (auto || !(await asrOffer())) return; }
+  if (!txReady()) { if (auto || !(await asrOffer())) return; }
   let res;
   setBusy(it.id, 'transcribe', 0);
-  try { res = await bgStart('transcribe', 'tx:' + it.id, t('bgTx', { t: it.title || '' }), { src: it.src, lang: S.textLang, model: S.asrModel }, f => setBusy(it.id, 'transcribe', f)); }
+  try { res = await bgStart('transcribe', 'tx:' + it.id, t('bgTx', { t: it.title || '' }), { src: it.src, lang: S.textLang, model: S.asrModel, live: ls.get('liveModel', 'v2') }, f => setBusy(it.id, 'transcribe', f)); }
   catch (e) { setBusy(it.id); const m = String(e.message); if (!m.includes('pause') && (!auto || !m.includes('cancel'))) toast(errText(e), 4000); return; }
   setBusy(it.id);
   await txApply(it, res, auto);
@@ -2660,9 +2661,9 @@ async function addTopicChapters(r) {
 /* ----- 4.5: speech to text on a timeline clip: read it, copy it, subtitles, or cut by ticking sentences ----- */
 async function tlTx(c) {
   if (!CAPS.asr) { toast(t('textNoAsr'), 4000); return null; }
-  if (!hasAsr() && !(await asrOffer())) return null;
+  if (!txReady() && !(await asrOffer())) return null;
   if (!c.tx || c.tx.path !== c.path) {
-    let r; try { r = await tlRunJob(t('sh_stt'), 'transcribe', { src: { path: c.path }, lang: S.textLang, model: S.asrModel }); } catch (e) { toast(errText(e), 5000); return null; }
+    let r; try { r = await tlRunJob(t('sh_stt'), 'transcribe', { src: { path: c.path }, lang: S.textLang, model: S.asrModel, live: ls.get('liveModel', 'v2') }); } catch (e) { toast(errText(e), 5000); return null; }
     c.tx = { path: c.path, segs: r.segments || [] }; ls.set('proj', TL.p);
   }
   const segs = c.tx.segs.filter(x => x[1] > c.in + 0.05 && x[0] < c.out - 0.05);
@@ -2719,7 +2720,7 @@ async function tlTextEdit() {
   };
 }
 /** 4.7: with the speech-to-text model on the phone, every hesitation is double-checked by Whisper (and more are found) */
-const flAi = () => CAPS.asr && hasAsr() ? { ai: true, model: S.asrModel || '', lang: S.textLang || '' } : {};
+const flAi = () => CAPS.asr && hasAsr() ? { ai: true, model: wModel(), lang: S.textLang || '' } : {};
 /** hesitation sounds in a timeline clip: listed, ticked, cut out */
 async function tlFillers(c, ai) {
   let res;
@@ -2743,6 +2744,10 @@ async function tlFillers(c, ai) {
 /** the larger speech model: download / remove */
 /* speech-to-text is optional: the models are downloaded only when wanted */
 const hasAsr = () => !!(S.asrSt.base || S.asrSt.small);
+/** 5.17: "seda" (Turkish live text model) may write recordings' text; Whisper-only tools keep using Whisper */
+const useSeda = () => S.asrModel === 'seda' && !!liveModel() && (!S.textLang || S.textLang === 'tr');
+const txReady = () => hasAsr() || useSeda();
+const wModel = () => S.asrModel === 'seda' ? '' : S.asrModel || '';
 async function asrRefresh() { try { S.asrSt = await runJob('asrStatus', {}); } catch (e) {} return S.asrSt; }
 const ASR_MODELS = [['base', 95], ['small', 375]];
 /** downloads one model with a progress bar; resolves true when it is ready */
@@ -2752,7 +2757,7 @@ function asrDownload(m, onProg) {
   return { key, done: pr.then(st => { asrGot(m, st); return true; },
     x => { const e = String(x.message); if (!e.includes('cancel') && !e.includes('pause')) toast(t('asrFail'), 5000); return false; }) };
 }
-function asrGot(m, st) { S.asrSt = st || S.asrSt; if (!S.asrSt[S.asrModel]) S.asrModel = m; ls.set('asrModel', S.asrModel); toast(t('asrReady'), 3500); }
+function asrGot(m, st) { S.asrSt = st || S.asrSt; if (S.asrModel !== 'seda' && !S.asrSt[S.asrModel]) S.asrModel = m; ls.set('asrModel', S.asrModel); toast(t('asrReady'), 3500); }
 /** asked when "to text" is used before any model is on the phone */
 async function asrOffer() {
   const v = await chooseBox(t('asrNeedT'), t('asrNeedD'), ASR_MODELS.map(([m, mb]) => ({ value: m, label: t('asr_' + m) + ' · ' + mb + ' MB', desc: t('asrD_' + m) })));
@@ -2778,15 +2783,17 @@ async function asrModelUi(card) {
       return `<div class="asr-row"><label class="asr-pick"><input type="radio" name="asrM" data-asr="${m}"${S.asrModel === m && have ? ' checked' : ''}${have ? '' : ' disabled'}><span><b>${esc(t('asr_' + m))}</b><small>${mb} MB · ${esc(t('asrD_' + m))}</small></span></label>
         ${busy === m ? `<div class="prog"><i style="width:${Math.round(prog * 100)}%"></i></div><button class="btn sm" type="button" data-asr-cancel>${esc(t('bgPause'))}</button>`
           : have ? `<button class="btn sm danger" type="button" data-asr-del="${m}">${esc(t('asrDel'))}</button>` : `<button class="btn sm primary" type="button" data-asr-get="${m}"${busy ? ' disabled' : ''}>${ic('import')}${esc(t('asrGet'))}</button>`}</div>`;
-    }).join('') + `<small class="hint">${esc(t(hasAsr() ? 'asrHaveD' : 'asrNoneD'))}</small>`;
+    }).join('') + `<div class="asr-row"><label class="asr-pick"><input type="radio" name="asrM" data-asr="seda"${S.asrModel === 'seda' && liveModel() ? ' checked' : ''}${liveModel() ? '' : ' disabled'}><span><b>${esc(t('asr_seda'))}</b><small>${esc(t('asrD_seda'))}</small></span></label>
+      ${liveModel() ? '' : `<button class="btn sm primary" type="button" data-asr-seda>${ic('import')}${esc(t('asrGet'))}</button>`}</div>` + `<small class="hint">${esc(t(txReady() ? 'asrHaveD' : 'asrNoneD'))}</small>`;
   };
   draw();
   box.onclick = async e => {
     const m = e.target.closest('[data-asr]');
     if (m && !m.disabled) { S.asrModel = m.dataset.asr; ls.set('asrModel', S.asrModel); return; }
     if (e.target.closest('[data-asr-cancel]') && job) { try { AND.bgPause(job); } catch (x) {} return; }
+    if (e.target.closest('[data-asr-seda]')) { if (await liveOffer()) { S.asrModel = 'seda'; ls.set('asrModel', 'seda'); } draw(); return; }
     const del = e.target.closest('[data-asr-del]');
-    if (del) { try { S.asrSt = await runJob('asrDelete', { model: del.dataset.asrDel }); } catch (x) {} if (!S.asrSt[S.asrModel]) { S.asrModel = S.asrSt.base ? 'base' : 'small'; ls.set('asrModel', S.asrModel); } draw(); return; }
+    if (del) { try { S.asrSt = await runJob('asrDelete', { model: del.dataset.asrDel }); } catch (x) {} if (S.asrModel !== 'seda' && !S.asrSt[S.asrModel]) { S.asrModel = S.asrSt.base ? 'base' : 'small'; ls.set('asrModel', S.asrModel); } draw(); return; }
     const get = e.target.closest('[data-asr-get]');
     if (get && !busy) {
       busy = get.dataset.asrGet; prog = 0; draw();
@@ -4002,7 +4009,7 @@ async function tlFwords() {
   const c = tlSel(); if (!c || TL.busy) return;
   const segs = await tlTx(c); if (!segs) return;
   let res;
-  try { res = await tlRunJob(t('op_fwords'), 'fwords', { src: { path: c.path }, segs, lang: S.textLang || '', model: S.asrModel || '' }); } catch (e) { toast(errText(e), 5000); return; }
+  try { res = await tlRunJob(t('op_fwords'), 'fwords', { src: { path: c.path }, segs, lang: S.textLang || '', model: wModel() }); } catch (e) { toast(errText(e), 5000); return; }
   const fl = (res.ranges || []).filter(([s, e]) => e > c.in && s < c.out);
   if (!fl.length) { toast(t('fwNone'), 3500); return; }
   tlPickCut(t('op_fwords'), t('fwFound', { n: fl.length }), fl.map(([s, e, w]) => ({ s, e, label: '“' + w + '”' })), c, false);
@@ -4868,14 +4875,14 @@ async function tlAiDuck() {
 async function tlCapVideo() {
   if (!TL.p.clips.length || TL.busy) return;
   if (!CAPS.asr) { toast(t('textNoAsr'), 4000); return; }
-  if (!hasAsr() && !(await asrOffer())) return;
+  if (!txReady() && !(await asrOffer())) return;
   const fm = await chooseBox(t('sh_capvid'), t('cvD'), [{ value: '720x1280', label: t('cv_v'), desc: 'Reels · Shorts · TikTok' }, { value: '720x720', label: t('cv_s'), desc: 'Instagram' }, { value: '1280x720', label: t('cv_h'), desc: 'YouTube' }]);
   if (!fm) return;
   tlStop();
   const [w, h] = fm.split('x').map(Number);
   try {
     const mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips: tlMix() });
-    const tx = await tlRunJob(t('sh_stt'), 'transcribe', { src: { path: mix.path }, lang: S.textLang, model: S.asrModel });
+    const tx = await tlRunJob(t('sh_stt'), 'transcribe', { src: { path: mix.path }, lang: S.textLang, model: S.asrModel, live: ls.get('liveModel', 'v2') });
     const segs = [], MAX = w > h ? 70 : 48;   // long sentences become several short captions, time shared by length
     for (const [a, b, text] of tx.segments || []) {
       const ws = String(text).split(/\s+/).filter(Boolean), parts = []; let cur = '';
@@ -5005,7 +5012,7 @@ function askParams(title, desc, rows) {
 const liteOn = () => { const v = ls.get('lite', null); return v === null ? !!CAPS.weak : !!v; };
 function applyLite() { try { AND.setLite(liteOn()); AND.setLowLat(!!ls.get('lowLat', false)); AND.setAccel(!!ls.get('accel', false)); } catch (e) {} }
 /* ---------- 1.8: export format, file names, trash ---------- */
-const recOpts = live => { const s = recSet(); return JSON.stringify({ live: live && liveOn() ? liveModel() : '', q: 'std', src: S.micSrc, call: !!S.callPause, agc: S.agc !== false, fmt: s.fmt, rate: s.rate, ch: s.ch, kbps: s.kbps,
+const recOpts = live => { const s = recSet(); return JSON.stringify({ live: live && liveOn() ? liveEngine() : '', liveLang: S.textLang || (liveTr() ? 'tr' : ''), liveW: S.asrSt.base ? 'base' : 'small', q: 'std', src: S.micSrc, call: !!S.callPause, agc: S.agc !== false, fmt: s.fmt, rate: s.rate, ch: s.ch, kbps: s.kbps,
   ns: !!ls.get('recNs', false), aec: !!ls.get('recAec', false), bt: !!ls.get('recBt', false), dir: ls.get('recDir', ''), lowlat: !!ls.get('lowLat', false) }); };
 const FMTS = () => ['mp3_192', 'mp3_320', 'm4a', 'wav', 'flac'].concat(CAPS.opus ? ['ogg'] : []);
 /** default export format as job arguments: {format, kbps} */
@@ -5519,6 +5526,7 @@ function addRecMark(x, at) {
   if (x && x.tag && !x.label) m.label = t('tag_' + x.tag);
   R.marks.push(m); R.marks.sort((a, c) => a.t - c.t);
   keepRecMarks();
+  if (R.live) { R.live.lines.push({ m: m.label + (m.note ? ' · ' + m.note : ''), g: m.tag || '' }); livePaint(); }   // 5.17: the mark shows in the live text
   updateRecUI(); drawLive();
   toast(`${m.label} · ${fmt(tm)}`, 1400);
   if (navigator.vibrate) try { navigator.vibrate(18); } catch (e) {}
@@ -5527,7 +5535,11 @@ function addRecMark(x, at) {
 const LIVE_MODELS = [['v2', 73], ['v1', 73]];
 async function liveRefresh() { try { S.liveSt = await runJob('liveStatus', {}); } catch (e) {} return S.liveSt || {}; }
 const liveModel = () => { const st = S.liveSt || {}, m = ls.get('liveModel', 'v2'); return st[m] ? m : st.v2 ? 'v2' : st.v1 ? 'v1' : ''; };
-const liveOn = () => NATIVE && ls.get('liveOn', false) && !!liveModel();
+// 5.17: Turkish uses seda; other languages (or no seda) use Whisper sentence by sentence ("w")
+const liveTr = () => (S.textLang || LANG) === 'tr';
+const liveEngine = () => liveTr() && liveModel() ? liveModel() : hasAsr() ? 'w' : '';
+const liveOn = () => NATIVE && ls.get('liveOn', false) && !!liveEngine();
+const liveGetModel = () => liveTr() ? liveOffer() : asrOffer();
 function liveDownload(m, onProg) {
   const key = 'dl:live-' + m;
   const pr = bgStart('liveGet', key, t('bgDl', { t: t('live_' + m) }), { model: m }, onProg);
@@ -5565,7 +5577,7 @@ async function liveModelUi(card) {
   draw();
   box.onclick = async e => {
     const on = e.target.closest('[data-lv-on]');
-    if (on) { const want = on.checked; if (want && !liveModel()) { on.checked = false; if (!(await liveOffer())) return; } ls.set('liveOn', want); draw(); updateRecUI(); return; }
+    if (on) { const want = on.checked; if (want && !liveEngine()) { on.checked = false; if (!(await liveGetModel())) return; } ls.set('liveOn', want); draw(); updateRecUI(); return; }
     const m = e.target.closest('[data-lv]');
     if (m && !m.disabled) { ls.set('liveModel', m.dataset.lv); return; }
     if (e.target.closest('[data-lv-cancel]') && job) { try { AND.bgPause(job); } catch (x) {} return; }
@@ -5581,7 +5593,7 @@ async function liveModelUi(card) {
 }
 $('#recLiveB').addEventListener('click', async () => {
   if (R.state !== 'idle') return;
-  if (!liveModel()) { await liveRefresh(); if (!liveModel() && !(await liveOffer())) return; ls.set('liveOn', true); }
+  if (!liveEngine()) { await liveRefresh(); if (!liveEngine() && !(await liveGetModel())) return; ls.set('liveOn', true); }
   else ls.set('liveOn', !ls.get('liveOn', false));
   updateRecUI();
   if (liveOn()) toast(t('liveTip'), 3500);
@@ -5590,9 +5602,12 @@ function livePoll() {
   let o = null; try { const j = AND.liveText(R.live.n); o = j ? JSON.parse(j) : null; } catch (e) {}
   if (!o) return;
   if (o.segs && o.segs.length) { R.live.lines.push(...o.segs); if (R.live.lines.length > 40) R.live.lines.splice(0, R.live.lines.length - 40); }
-  R.live.n = o.n || R.live.n; R.live.part = o.part || '';
-  const box = $('#recLive');
-  box.innerHTML = R.live.lines.slice(-4).map(x => `<p>${esc(x)}</p>`).join('') + (R.live.part ? `<p class="pt">${esc(R.live.part)}</p>` : '')
+  R.live.n = o.n || R.live.n; R.live.part = o.part || ''; R.live.o = o;
+  livePaint();
+}
+function livePaint() {
+  const L = R.live, o = L.o || {}, box = $('#recLive');
+  box.innerHTML = L.lines.slice(-5).map(x => typeof x === 'string' ? `<p>${esc(x)}</p>` : `<p class="mk">${ic('flag')}${tagChip(x.g)}${esc(x.m)}</p>`).join('') + (L.part ? `<p class="pt">${esc(L.part)}</p>` : '')
     + (o.failed ? `<p class="lag">${esc(t('liveFailRun'))}</p>` : o.lag > 5 ? `<p class="lag">${esc(t('liveLag', { s: Math.round(o.lag) }))}</p>` : '')
     || `<p class="pt">${esc(t('liveWait'))}</p>`;
   box.scrollTop = box.scrollHeight;
@@ -6706,7 +6721,7 @@ function showIntro(again) {
   });
   document.body.appendChild(d); draw();
 }
-const NEWS = ['n516live', 'n516draft', 'n516models'];   // 5.16: renew with every minor version
+const NEWS = ['n516live', 'n517fast', 'n517lang', 'n517marks', 'n517music'];   // 5.17: renew with every minor version
 function showNews() {
   const card = openModal(`<h3>${esc(t('newsT', { v: VERSION.split('.').slice(0, 2).join('.') }))}</h3><ul class="news">${NEWS.map(k => `<li>${esc(t('news_' + k))}</li>`).join('')}</ul>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('newsOk'))}</button></div>`, () => setTimeout(coachMaybe, 300));

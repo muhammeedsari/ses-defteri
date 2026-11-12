@@ -1328,6 +1328,7 @@ public class MainActivity extends Activity implements Player.Listener {
                         } else if ("transcribe".equals(kind)) {
                             JSONObject tsrc = a.getJSONObject("src");
                             tsrc.put("_model", a.optString("model", ""));
+                            tsrc.put("_live", a.optString("live", ""));
                             res = Studio.transcribe(MainActivity.this, tsrc, a.optString("lang", ""), p, cancel);
                         } else if ("musicKey".equals(kind)) {
                             res = Studio.musicKey(MainActivity.this, a.getJSONObject("src"), p, cancel);

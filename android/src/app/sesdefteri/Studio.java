@@ -252,9 +252,12 @@ final class Studio {
         int threads = Device.threads(4);
         final Transcriber tr;
         try {
-            String model = AsrModels.pick(c, src.optString("_model", ""));
-            if (model == null) throw new IllegalStateException("asr-missing");
-            tr = new Transcriber(null, AsrModels.dir(c, model).getAbsolutePath(), model, lang == null ? "" : lang, threads);
+            // 5.17: "seda" = the downloaded Turkish live text model (Turkish or automatic language only)
+            String sm = "seda".equals(src.optString("_model", "")) && (lang == null || lang.isEmpty() || "tr".equals(lang)) ? LiveText.pick(c, src.optString("_live", "")) : null;
+            String model = sm != null ? null : AsrModels.pick(c, src.optString("_model", ""));
+            if (sm != null) tr = new Transcriber(LiveText.dir(c, sm).getAbsolutePath(), Math.min(2, threads));
+            else if (model == null) throw new IllegalStateException("asr-missing");
+            else tr = new Transcriber(null, AsrModels.dir(c, model).getAbsolutePath(), model, lang == null ? "" : lang, threads);
         } catch (IllegalStateException e) {
             throw e;
         } catch (Throwable e) {

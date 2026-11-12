@@ -45,7 +45,7 @@ final class Recorder {
     private static int rate, chans;
     // 5.16: live text (null when off); liveModel from the start options
     private static volatile LiveText live;
-    private static String liveModel = "";
+    private static String liveModel = "", liveLang = "", liveW = "";
 
     private Recorder() { }
 
@@ -74,6 +74,8 @@ final class Recorder {
         ns = o.optBoolean("ns", false); aec = o.optBoolean("aec", false); bt = !temp && o.optBoolean("bt", false);
         dir = o.optString("dir", "");
         liveModel = temp ? "" : o.optString("live", "");
+        liveLang = o.optString("liveLang", "");
+        liveW = o.optString("liveW", "");
         int dot = displayName.lastIndexOf('.');
         displayName = (dot > 0 ? displayName.substring(0, dot) : displayName) + "." + fmt;
         return start(c, mode, displayName, o.optString("q", "std"), o.optString("src", "auto"));
@@ -134,7 +136,7 @@ final class Recorder {
             th.setPriority(Thread.MAX_PRIORITY);
             th.start();
             startService(c, true);
-            if (!liveModel.isEmpty() && LiveText.ready(c, liveModel)) try { live = new LiveText(c, liveModel, rate); } catch (Throwable e) { live = null; }
+            if (!liveModel.isEmpty() && ("w".equals(liveModel) ? AsrModels.pick(c, liveW) != null : LiveText.ready(c, liveModel))) try { live = new LiveText(c, liveModel, rate, liveLang, liveW); } catch (Throwable e) { live = null; }
             res.put("ok", true);
             res.put("name", target.name);
         } catch (Exception e) {

@@ -187,6 +187,7 @@ final class Bg {
             else if ("transcribe".equals(t.kind)) {
                 JSONObject src = a.getJSONObject("src");
                 src.put("_model", a.optString("model", ""));
+                src.put("_live", a.optString("live", ""));
                 Device.begin(app, "transcribe");
                 try { res = Studio.transcribe(app, src, a.optString("lang", ""), p, cancel, partFile(t.key)); } finally { Device.end(); }
             } else throw new IllegalArgumentException("unknown");
