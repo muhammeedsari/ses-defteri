@@ -238,7 +238,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
                     synchronized (Player.this) {
                         if (x == preparing) preparing = null;
                         if (x == nmp) { nmp = null; npos = -1; try { if (mp != null) mp.setNextMediaPlayer(null); } catch (Exception ignored) { } }
-                        if (x != mp) { try { x.release(); } catch (Exception ignored) { } return true; }
+                        if (x != mp) { detachFx(x); try { x.release(); } catch (Exception ignored) { } return true; }   // 5.14.3: its EQ / bass too
                     }
                     return Player.this.onError(x, what, extra);
                 }
@@ -500,6 +500,11 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         error = "";
         art = null;
         loopA = loopB = -1;
+        // 5.14.3: the decoded copy of an earlier track was cleared from the cache: back to the original file
+        try {
+            JSONObject s0 = it.optJSONObject("src0"), sc = it.optJSONObject("src");
+            if (s0 != null && it.optBoolean("pcm") && (sc == null || !new File(sc.optString("path", "")).isFile())) { it.put("src", s0); it.remove("pcm"); it.remove("src0"); }
+        } catch (Exception ignored) { }
         try {
             mp = newPlayer(it);
             mp.prepareAsync();
@@ -584,6 +589,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
                 File out = new File(app.getCacheDir(), "play-" + Math.abs(it.optString("id").hashCode()) + ".wav");
                 boolean ok = false;
                 try { ok = toWav(src, out); } catch (Throwable e) { MainActivity.saveNote(app, "player fallback failed: " + e); }
+                if (!ok) out.delete();
                 final boolean done = ok;
                 final File f = out;
                 main.post(new Runnable() {
@@ -593,6 +599,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
                             if (!done) { error = "play"; playing = false; wantPlay = false; PlayerService.update(app, false); emit("error"); return; }
                             try {
                                 JSONObject s2 = new JSONObject(); s2.put("path", f.getAbsolutePath());
+                                if (src != null) it.put("src0", src);
                                 it.put("src", s2); it.put("pcm", true);
                             } catch (Exception ignored) { }
                             stalls = 0; noFx = false;
@@ -614,11 +621,14 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         try {
             raf.setLength(0);
             raf.write(new byte[44]);
+            // 5.14.3: a long file could fill the phone: stop while 300 MB are still free
+            final long room = app.getCacheDir().getUsableSpace() - (300L << 20);
             AudioTools.decode(app, src, new AudioTools.PcmSink() {
                 byte[] b = new byte[0];
                 @Override public void pcm(short[] x, int n, int ch, int rate) throws java.io.IOException {
                     if (rateOut[0] == 0) rateOut[0] = rate;
                     int fr = n / ch;
+                    if ((frames[0] + fr) * 4 > room) throw new java.io.IOException("cache full");
                     if (b.length < fr * 4) b = new byte[fr * 4];
                     for (int i = 0; i < fr; i++) {
                         short l = x[i * ch], r = ch > 1 ? x[i * ch + 1] : l;
@@ -643,7 +653,8 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
             return;
         }
         if (!prepared) { wantPlay = true; return; }
-        if (!requestFocus()) return;
+        // 5.14.3: another app (a call) holds the sound: say so instead of a button that does nothing
+        if (!requestFocus()) { wantPlay = false; playing = false; emit("busy"); return; }
         startInternal();
     }
 
@@ -946,6 +957,13 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
 
     void timelineFocus() {
         if (app == null) return;
+        if (Timeline.onIdle == null) Timeline.onIdle = new Runnable() {
+            @Override public void run() {
+                AudioManager a = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
+                if (a == null) return;
+                try { if (Build.VERSION.SDK_INT >= 26) { if (tlReq != null) a.abandonAudioFocusRequest(tlReq); } else a.abandonAudioFocus(tlFocus); } catch (Exception ignored) { }
+            }
+        };
         AudioManager am = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
         if (am == null) return;
         try {

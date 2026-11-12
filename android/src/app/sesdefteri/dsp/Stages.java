@@ -359,7 +359,7 @@ public final class Stages {
         final float fb, mix;
         final float[][] buf;
         int w;
-        final long tail;
+        final long tail, fade;
         public Delay(int ch, double fs, double ms, double feedback, double mixAmt) {
             this.ch = ch;
             d = Math.max(1, (int) Math.round(fs * ms / 1000));
@@ -367,7 +367,9 @@ public final class Stages {
             mix = (float) Math.max(0, Math.min(1, mixAmt));
             buf = new float[ch][d];
             double rep = fb > 0.01 ? Math.log(0.001) / Math.log(fb) : 1;
-            tail = Math.min((long) (fs * 4), (long) (d * (rep + 1)));
+            // 5.14.3: up to 12 s (was 4) and the last half second fades, so a long echo no longer stops dead
+            tail = Math.min((long) (fs * 12), (long) (d * (rep + 1)));
+            fade = Math.min(tail, (long) (fs * 0.5));
         }
         @Override public void push(float[][] b, int n) throws Exception {
             for (int i = 0; i < n; i++) {
@@ -382,7 +384,16 @@ public final class Stages {
         }
         @Override public void end() throws Exception {
             float[][] z = new float[ch][4096];
-            for (long t = 0; t < tail; t += 4096) { for (float[] q : z) java.util.Arrays.fill(q, 0); push(z, (int) Math.min(4096, tail - t)); }
+            for (long t = 0; t < tail; t += 4096) {
+                int n = (int) Math.min(4096, tail - t);
+                for (int i = 0; i < n; i++) {
+                    long left = tail - t - i;
+                    float g = left < fade ? (float) left / fade : 1f;
+                    for (int c = 0; c < ch; c++) { float y = buf[c][w]; buf[c][w] = fb * y; z[c][i] = mix * y * g; }
+                    if (++w == d) w = 0;
+                }
+                next.push(z, n);
+            }
             next.end();
         }
     }

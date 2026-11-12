@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="app.sesdefteri"
-    android:versionCode="89"
-    android:versionName="5.14.2">
+    android:versionCode="90"
+    android:versionName="5.14.3">
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
 
@@ -21,6 +21,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
@@ -74,7 +75,7 @@
         <service
             android:name=".WorkService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="0x2001" />
 
         <provider
             android:name=".ShareProvider"

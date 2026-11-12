@@ -67,7 +67,7 @@ public class MainActivity extends Activity implements Player.Listener {
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
     private PermissionRequest pendingPermission;
-    private boolean pageReady = false;
+    private volatile boolean pageReady = false;
     private String barMode = "page";
     private String pendingDeleteJob;
     private org.json.JSONArray pendingDeleteDone, pendingDeleteAsk;
@@ -92,6 +92,16 @@ public class MainActivity extends Activity implements Player.Listener {
         Tts.cleanup(this);   // 5.12: AI voices removed
         hookCrashes(getApplicationContext());
         Player.I.init(this, this);
+        // 5.14.3: a recording a crash left half written is finished and shown once the page is up
+        bgPool.execute(new Runnable() {
+            @Override
+            public void run() {
+                final org.json.JSONObject it = Recorder.recover(getApplicationContext());
+                if (it == null) return;
+                for (int i = 0; i < 120 && !pageReady; i++) { try { Thread.sleep(500); } catch (InterruptedException e) { return; } }
+                js("window.__sdRecovered && window.__sdRecovered(" + it.toString() + ")");
+            }
+        });
         web = new WebView(this);
         web.setBackgroundColor(isDark() ? 0xFF0F1412 : 0xFFEDF1EE);
         // 3.6 (target API 36): Android 15+ always draws edge to edge, so the page sits inside the system bars and the keyboard

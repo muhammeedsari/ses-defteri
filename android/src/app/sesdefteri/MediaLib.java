@@ -109,13 +109,15 @@ final class MediaLib {
                         rel = p != null ? p.getName() + "/" : "";
                     }
                     String owner = Build.VERSION.SDK_INT >= 29 ? str(cur, MediaStore.Audio.Media.OWNER_PACKAGE_NAME) : null;
-                    boolean own = pkg.equals(owner) || (rel != null && rel.contains(FOLDER));
+                    // 5.14.3: after a reinstall the old files are no longer ours on Android 10+ (rename / move would be refused)
+                    boolean inFolder = rel != null && rel.contains(FOLDER), own = Build.VERSION.SDK_INT >= 29 ? pkg.equals(owner) : inFolder;
                     boolean isRecFlag = Build.VERSION.SDK_INT >= 31 && cur.getInt(cur.getColumnIndexOrThrow(MediaStore.Audio.Media.IS_RECORDING)) != 0;
                     boolean isMusic = cur.getInt(cur.getColumnIndexOrThrow(MediaStore.Audio.Media.IS_MUSIC)) != 0;
-                    String hay = ((rel == null ? "" : rel) + " " + (name == null ? "" : name)).toLowerCase(Locale.ROOT);
-                    boolean rec = own || isRecFlag || !isMusic
+                    // 5.14.3: the words count in the folder only, so a song named "Call Me" or "The Voice" stays a song
+                    String hay = (rel == null ? "" : rel).toLowerCase(Locale.ROOT), nm = name == null ? "" : name.toLowerCase(Locale.ROOT);
+                    boolean rec = own || inFolder || isRecFlag || !isMusic
                         || hay.contains("record") || hay.contains("voice") || hay.contains("kayıt") || hay.contains("kayit")
-                        || hay.contains("sound_recorder") || hay.contains("call") || hay.contains("ptt-") || hay.contains("aud-");
+                        || hay.contains("sound_recorder") || hay.contains("call") || nm.startsWith("ptt-") || nm.startsWith("aud-");
                     JSONObject o = new JSONObject();
                     o.put("id", "m:" + id);
                     o.put("mediaId", id);

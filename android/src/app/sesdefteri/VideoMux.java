@@ -120,7 +120,10 @@ final class VideoMux {
             mux.stop();
             mux.release();
             mux = null;
-            return publish(c, mp4, a.optString("name", "Video") + ".mp4");
+            JSONObject o = publish(c, mp4, a.optString("name", "Video") + ".mp4");
+            // 5.14.3: the sound runs past the picture: say how much of it was left out
+            if (inf.frames - frames > inf.rate / 2) o.put("cut", (inf.frames - frames) / (double) inf.rate);
+            return o;
         } finally {
             vx.release();
             if (ax != null) ax.release();

@@ -110,7 +110,9 @@ final class Workspace {
         double[] p = r.noisePower, l = r.ltasPower;
         if (p == null) return null;
         double[] o = new double[p.length];
-        for (int i = 0; i < o.length; i++) o[i] = Math.max(p[i] * 1.4, l != null && l.length == o.length && l[i] > 0 ? l[i] : 0);
+        double sum = 0;
+        for (int i = 0; i < o.length; i++) { o[i] = Math.max(p[i] * 1.4, l != null && l.length == o.length && l[i] > 0 ? l[i] : 0); sum += o[i]; }
+        if (sum < 1e-14) throw new IllegalArgumentException("learn-silent");
         return o;
     }
 
@@ -224,6 +226,7 @@ final class Workspace {
                         wav(in, inf, null, new double[] { 0, 1 }, cancel).run(kk);
                         double[] pr = ln.profile();
                         if (pr == null) throw new IllegalArgumentException("short");
+                        if (ln.rmsDb() < -85) throw new IllegalArgumentException("learn-silent");   // 5.14.3: pure silence is no noise profile
                         double red = Math.max(3, Math.min(40, a.optDouble("red", 12))), sens = Math.max(0, Math.min(24, a.optDouble("sens", 6)));
                         app.sesdefteri.dsp.NoiseGate ng = new app.sesdefteri.dsp.NoiseGate(ch, fs, pr, red, sens);
                         Analyzer after = new Analyzer(ch, fs);

@@ -118,6 +118,7 @@ final class Recorder {
             if (temp) { target = new MediaLib.Target(); target.file = new File(c.getCacheDir(), "latency.m4a"); target.name = target.file.getName(); }
             else target = MediaLib.create(c, displayName, mime, dir);
             sink = openSink(c);
+            if (!temp) journal(c, true);
             meter = new Timeline.Meter(rate);
             fail = null;
             peak = 0;
@@ -328,6 +329,7 @@ final class Recorder {
             try { if (ok) s.finish(); else if (s != null) s.abort(); } catch (Exception e) { ok = false; }
             try { if (pfd != null) pfd.close(); } catch (Exception ignored) { }
             pfd = null;
+            journal(c, false);
             startService(c, false);
             state = "idle";
             meter = null;
@@ -381,10 +383,69 @@ final class Recorder {
         try { if (pfd != null) pfd.close(); } catch (Exception ignored) { }
         pfd = null;
         if (discard && target != null) MediaLib.discard(c, target);
+        if (discard) journal(c, false);
         target = null;
         meter = null;
         state = "idle";
         startService(c, false);
+    }
+
+    /* ---------- 5.14.3: a recording cut off by a crash or a kill ---------- */
+
+    private static File rawFile(Context c) { return new File(c.getFilesDir(), "rec-active.aac"); }
+
+    private static void journal(Context c, boolean on) {
+        File j = new File(c.getFilesDir(), "rec-active.json");
+        if (!on) { j.delete(); return; }
+        try {
+            JSONObject o = new JSONObject();
+            o.put("uri", target.uri != null ? target.uri.toString() : "");
+            o.put("file", target.file != null ? target.file.getAbsolutePath() : "");
+            o.put("name", target.name); o.put("fmt", fmt); o.put("rate", rate); o.put("ch", chans);
+            FileOutputStream w = new FileOutputStream(j);
+            w.write(o.toString().getBytes("UTF-8"));
+            w.close();
+        } catch (Exception ignored) { }
+    }
+
+    /** at start-up: finishes the recording a crash left half written (still hidden on Android 10+); the saved item or null */
+    static synchronized JSONObject recover(Context c) {
+        File j = new File(c.getFilesDir(), "rec-active.json");
+        if (!"idle".equals(state) || !j.exists()) return null;
+        File rf = rawFile(c);
+        MediaLib.Target t = new MediaLib.Target();
+        boolean ok = false;
+        try {
+            byte[] b = new byte[(int) Math.min(j.length(), 1 << 16)];
+            java.io.DataInputStream in = new java.io.DataInputStream(new java.io.FileInputStream(j));
+            in.readFully(b);
+            in.close();
+            JSONObject o = new JSONObject(new String(b, "UTF-8"));
+            String u = o.optString("uri", ""), f = o.optString("file", ""), fm = o.optString("fmt", "m4a");
+            if (!u.isEmpty()) t.uri = android.net.Uri.parse(u);
+            if (!f.isEmpty()) t.file = new File(f);
+            t.name = o.optString("name", "rec");
+            int ch = Math.max(1, o.optInt("ch", 1));
+            android.os.ParcelFileDescriptor p = t.uri != null ? c.getContentResolver().openFileDescriptor(t.uri, "m4a".equals(fm) ? "rwt" : "rw") : null;
+            try {
+                java.io.FileDescriptor fd = p != null ? p.getFileDescriptor() : null;
+                if ("m4a".equals(fm)) ok = rf.exists() && AudioTools.remux(rf, fd, t.file) > 0;
+                else {
+                    FileChannel fc = fd != null ? new FileOutputStream(fd).getChannel() : new RandomAccessFile(t.file, "rw").getChannel();
+                    long sz = fc.size();
+                    if ("wav".equals(fm)) {
+                        long fr = Math.max(0, (sz - 44) / (2L * ch));
+                        if (fr > 0) fc.write(ByteBuffer.wrap(app.sesdefteri.dsp.Wav.header(ch, o.optInt("rate", 48000), false, fr)), 0);
+                        ok = fr > o.optInt("rate", 48000) / 10;
+                    } else ok = sz > 4096;
+                    fc.close();
+                }
+            } finally { if (p != null) p.close(); }
+        } catch (Exception e) { ok = false; }
+        rf.delete();
+        j.delete();
+        if (!ok) { if (t.uri != null || t.file != null) MediaLib.discard(c, t); return null; }
+        return MediaLib.publish(c, t);
     }
 
     /* ---------- where the samples go ---------- */
@@ -407,13 +468,23 @@ final class Recorder {
         if ("m4a".equals(fmt)) {
             final AudioTools.Encoder enc = fd != null ? new AudioTools.Encoder(fd) : new AudioTools.Encoder(target.file);
             if (optKbps > 0) enc.bitrate = optKbps * 1000;
+            // 5.14.3: an .m4a is unreadable until it is closed; the frames first go to a side file that survives a crash
+            final File rf = rawFile(c);
+            final java.io.FileDescriptor ofd = fd;
+            final File of = target.file;
+            enc.raw = new java.io.DataOutputStream(new java.io.BufferedOutputStream(new FileOutputStream(rf), 1 << 16));
             enc.start(rate, chans);
             return new Sink() {
                 long fr;
                 @Override public void write(short[] s, int n) throws Exception { enc.feed(s, n); fr += n / chans; }
                 @Override public long frames() { return fr; }
-                @Override public void finish() throws Exception { enc.finish(); }
-                @Override public void abort() { enc.release(); }
+                @Override public void finish() throws Exception {
+                    enc.finish();
+                    int n = AudioTools.remux(rf, ofd, of);
+                    rf.delete();
+                    if (n == 0) throw new IllegalStateException("empty");
+                }
+                @Override public void abort() { enc.release(); rf.delete(); }
             };
         }
         fc = fd != null ? new FileOutputStream(fd).getChannel() : new RandomAccessFile(target.file, "rw").getChannel();

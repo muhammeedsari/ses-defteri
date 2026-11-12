@@ -33,7 +33,9 @@ final class Str {
     static String lang(Context c) {
         String l = prefs(c).getString("lang", "");
         if (T.containsKey(l)) return l;
-        return "en";   // until the user picks a language on first start
+        // 5.14.3: until the user picks one, the phone's language when the app has it
+        String p = Locale.getDefault().getLanguage();
+        return T.containsKey(p) ? p : "en";
     }
 
     static String get(Context c, String key) {

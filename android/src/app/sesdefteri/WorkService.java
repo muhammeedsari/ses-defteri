@@ -121,7 +121,9 @@ public class WorkService extends Service {
             .setContentIntent(pi);
         nb = b; lastPct = -1;
         try {
-            if (Build.VERSION.SDK_INT >= 29) startForeground(ID, b.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            // 5.14.3: Android 15+ has a type for audio work (0x2000 = MEDIA_PROCESSING), downloads and older phones keep dataSync
+            if (Build.VERSION.SDK_INT >= 35) startForeground(ID, b.build(), 0x2000);
+            else if (Build.VERSION.SDK_INT >= 29) startForeground(ID, b.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
             else startForeground(ID, b.build());
         } catch (Exception e) {
             stopSelf();

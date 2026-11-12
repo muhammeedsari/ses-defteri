@@ -12,18 +12,27 @@ import java.util.List;
  * Passes the audio on unchanged.
  */
 public final class SongMap extends Node {
-    static final int N = 8192, HOP = 2048, BANDS = 6;
+    // 5.14.3: the analysis always runs at 24 kHz (the file is resampled inside), so 8 kHz and 96 kHz files get the same
+    // frequency and time resolution as 48 kHz ones had; half a frame of silence in front puts frame 0 on the very start
+    static final int N = 4096, HOP = 1024, BANDS = 6;
+    static final double R = 24000;
     static final String[] NAMES = { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
     final Fft fft = new Fft(N);
     final double[] win = Fft.hann(N, false), re = new double[N], im = new double[N];
     final int[] pc, bpc, band;
     final float[] buf = new float[N];
     final double fs;
-    int fill;
+    int fill = N / 2;
+    final Resampler rs;
+    float[][] mono = new float[1][0];
     final List<double[]> frames = new ArrayList<>();   // 12 chroma, 12 bass, 6 bands, 1 level
 
-    public SongMap(double fs) {
-        this.fs = fs;
+    public SongMap(double inRate) {
+        this.fs = R;
+        if (Math.abs(inRate - R) > 0.5) {
+            rs = new Resampler(1, inRate, R);
+            rs.to(new Node() { @Override public void push(float[][] b, int n) { feed(b[0], n); } @Override public void end() { } });
+        } else rs = null;
         pc = new int[N / 2]; bpc = new int[N / 2]; band = new int[N / 2];
         double[] edges = { 60, 250, 500, 1000, 2000, 4000, 12000 };
         for (int k = 0; k < N / 2; k++) {
@@ -38,12 +47,18 @@ public final class SongMap extends Node {
 
     @Override public void push(float[][] b, int n) throws Exception {
         int ch = b.length;
+        if (mono[0].length < n) mono = new float[1][n];
+        float[] m = mono[0];
+        for (int i = 0; i < n; i++) { float s = 0; for (int c = 0; c < ch; c++) s += b[c][i]; m[i] = s / ch; }
+        if (rs != null) rs.push(mono, n); else feed(m, n);
+        if (next != null) next.push(b, n);
+    }
+
+    private void feed(float[] m, int n) {
         for (int i = 0; i < n; i++) {
-            float s = 0; for (int c = 0; c < ch; c++) s += b[c][i];
-            buf[fill++] = s / ch;
+            buf[fill++] = m[i];
             if (fill == N) { frame(); System.arraycopy(buf, HOP, buf, 0, N - HOP); fill = N - HOP; }
         }
-        if (next != null) next.push(b, n);
     }
 
     private void frame() {
@@ -64,7 +79,7 @@ public final class SongMap extends Node {
     }
 
     /** frame index → its centre in seconds */
-    double ft(int i) { return (i * HOP + N / 2.0) / fs; }
+    double ft(int i) { return i * HOP / fs; }
 
     public static final class Result {
         public final List<Object[]> chords = new ArrayList<>();     // {time, name}

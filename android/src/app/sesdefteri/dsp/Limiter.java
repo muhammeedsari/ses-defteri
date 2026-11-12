@@ -37,7 +37,14 @@ public final class Limiter extends Node {
         envRing = new double[L];
         for (int i = 0; i < L; i++) envRing[i] = 1;
         envSum = L;
+        // 5.14.3: L silent samples ahead of the start fill the smoothing window, so a peak in the first 3 ms is caught too
+        float[][] z = new float[ch][1];
+        ensureOut(L);
+        for (int i = 0; i < L; i++) step(z, 0, true);
+        pre = n;
     }
+
+    private long pre;
 
     public void setPreGainDb(double db) { preGain = Math.pow(10, db / 20); }
 
@@ -105,7 +112,7 @@ public final class Limiter extends Node {
                 if (gain > 1) gain = 1;
                 if (gain < minGain) minGain = gain;
                 if (gain < 0.999) limitedSamples++;
-                if (total < 0 || emitted < total) {
+                if (k >= pre && (total < 0 || emitted < total)) {
                     for (int c = 0; c < ch; c++) out[c][outN] = (float) (ring[c][ki] * gain);
                     outN++;
                     emitted++;
@@ -116,7 +123,7 @@ public final class Limiter extends Node {
     }
 
     @Override public void end() throws Exception {
-        total = n;
+        total = n - pre;
         int pad = delay + 1;
         float[][] z = new float[ch][1];
         ensureOut(pad);

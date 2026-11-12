@@ -124,6 +124,30 @@ final class AsrModels {
         return status(c);
     }
 
+    /** 5.14.3: SHA-256 of the files that come from fixed GitHub releases; a download that does not match is thrown away */
+    static final java.util.Map<String, String> SHA = new java.util.HashMap<String, String>();
+    static {
+        String lv = "https://github.com/Topping1/LavaSR-ONNX/releases/download/Alpha-v0.1/", k2 = "https://github.com/k2-fsa/sherpa-onnx/releases/download/";
+        SHA.put(lv + "enhancer_backbone.onnx", "841e96d261dffdf1dc974f3d29e2cfcf1b16fd0b358749c1ace0bbfa1d4c8ddd");
+        SHA.put(lv + "enhancer_backbone.onnx.data", "a125a4ede7cfdd1073d906a3cadf2171a30be6a40f296ad28772e0ba258de8c5");
+        SHA.put(lv + "enhancer_spec_head.onnx", "f66fd164c55fd1b07e5cea5e687c71522b192f452691128fd7ae4e6b26dbc683");
+        SHA.put(lv + "enhancer_spec_head.onnx.data", "b855e309b027af9aa75285b97b345571b6bd695a30fde434d06c979d83885fd6");
+        SHA.put(k2 + "source-separation-models/UVR-MDX-NET-Inst_HQ_5.onnx", "487e35ae87ed9af9914c85c357e60800c07b8196949e274fe884c18a0c620dbb");
+        SHA.put(k2 + "audio-tagging-models/sherpa-onnx-ced-tiny-audio-tagging-2024-04-19.tar.bz2", "84baf315b57d61aa69480c4fee878dab54cbc7be3e877db334e65d8b087e23c3");
+        SHA.put(k2 + "speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx", "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2");
+        SHA.put(k2 + "asr-models/sherpa-onnx-whisper-base.tar.bz2", "911b2083efd7c0dca2ac3b358b75222660dc09fb716d64fbfc417ba6c99ff3de");
+        SHA.put(k2 + "asr-models/sherpa-onnx-whisper-small.tar.bz2", "486a46afbb7ba798507190ffe02fea2dd726049af212e774537efac6afb210a6");
+    }
+
+    static String sha256(File f) throws Exception {
+        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+        InputStream in = new java.io.FileInputStream(f);
+        try { byte[] b = new byte[1 << 16]; int n; while ((n = in.read(b)) > 0) md.update(b, 0, n); } finally { in.close(); }
+        StringBuilder sb = new StringBuilder();
+        for (byte x : md.digest()) sb.append(String.format("%02x", x & 0xff));
+        return sb.toString();
+    }
+
     /** downloads url into f (resumable through f.part); progress counts from done of total bytes */
     static void fetch(String url, File f, long size, long done, long total, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         File part = new File(f.getParentFile(), f.getName() + ".part");
@@ -155,6 +179,8 @@ final class AsrModels {
             con.disconnect();
         }
         if (part.length() != size) throw new IllegalStateException("download-short");
+        String want = SHA.get(url);
+        if (want != null && !want.equals(sha256(part))) { part.delete(); throw new IllegalStateException("download-bad"); }
         if (!part.renameTo(f)) throw new IllegalStateException("download-rename");
     }
 

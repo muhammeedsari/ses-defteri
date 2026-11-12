@@ -440,6 +440,9 @@ final class AudioTools {
         boolean opus;                // Opus in Ogg (Android 10+, 48 kHz) instead of AAC in MP4
         java.io.FileDescriptor fd;   // write straight into an open file (Android 8+), out is then null
 
+        java.io.DataOutputStream raw;   // 5.14.3: frames go to a crash-safe side file, muxed at the end (see remux)
+        int rawN;
+
         Encoder(File out) { this.out = out; }
         Encoder(java.io.FileDescriptor fd) { this.out = null; this.fd = fd; }
 
@@ -455,7 +458,7 @@ final class AudioTools {
             codec.configure(f, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
             codec.start();
             int of = opus ? MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG : MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4;
-            muxer = fd != null && Build.VERSION.SDK_INT >= 26 ? new MediaMuxer(fd, of) : new MediaMuxer(out.getAbsolutePath(), of);
+            if (raw == null) muxer = fd != null && Build.VERSION.SDK_INT >= 26 ? new MediaMuxer(fd, of) : new MediaMuxer(out.getAbsolutePath(), of);
             started = true;
         }
 
@@ -483,7 +486,7 @@ final class AudioTools {
         void finish() throws Exception {
             if (!started) throw new IllegalStateException("no audio");
             boolean queued = false;
-            for (int tries = 0; tries < 500 && !queued; tries++) {
+            for (int tries = 0; tries < 1000 && !queued; tries++) {
                 int ii = codec.dequeueInputBuffer(10000);
                 if (ii >= 0) {
                     codec.queueInputBuffer(ii, 0, 0, framesIn * 1_000_000L / rate, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
@@ -492,7 +495,9 @@ final class AudioTools {
                     drain(false);
                 }
             }
+            if (!queued) throw new IllegalStateException("encoder stuck");
             drain(true);
+            if (raw != null) { raw.close(); raw = null; }
             if (muxing) muxer.stop();
             release();
         }
@@ -502,15 +507,32 @@ final class AudioTools {
             while (true) {
                 int oi = codec.dequeueOutputBuffer(info, 10000);
                 if (oi == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                    if (!untilEos || ++idle > 300) return;
+                    // 5.14.3: wait up to ~5 s of silence from the encoder after the end flag, not 3 s in total
+                    if (!untilEos || ++idle > 500) return;
                 } else if (oi == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    track = muxer.addTrack(codec.getOutputFormat());
-                    muxer.start();
+                    MediaFormat of = codec.getOutputFormat();
+                    if (raw != null) {
+                        ByteBuffer csd = of.getByteBuffer("csd-0");
+                        byte[] cb = new byte[csd == null ? 0 : csd.remaining()];
+                        if (csd != null) csd.duplicate().get(cb);
+                        raw.writeInt(0x53444131); raw.writeInt(rate); raw.writeInt(channels); raw.writeShort(cb.length); raw.write(cb);
+                        raw.flush();
+                    } else {
+                        track = muxer.addTrack(of);
+                        muxer.start();
+                    }
                     muxing = true;
                 } else if (oi >= 0) {
+                    idle = 0;
                     ByteBuffer ob = codec.getOutputBuffer(oi);
                     boolean config = (info.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0;
-                    if (ob != null && info.size > 0 && muxing && !config) {
+                    if (ob != null && info.size > 0 && muxing && !config && raw != null) {
+                        byte[] b = new byte[info.size];
+                        ob.position(info.offset);
+                        ob.get(b);
+                        raw.writeInt(b.length); raw.writeLong(info.presentationTimeUs); raw.write(b);
+                        if (++rawN % 40 == 0) raw.flush();   // about once a second: what the system has survives an app kill
+                    } else if (ob != null && info.size > 0 && muxing && !config) {
                         ob.position(info.offset);
                         ob.limit(info.offset + info.size);
                         muxer.writeSampleData(track, ob, info);
@@ -522,6 +544,8 @@ final class AudioTools {
         }
 
         void release() {
+            try { if (raw != null) raw.close(); } catch (Exception ignored) { }
+            raw = null;
             try { if (codec != null) { codec.stop(); codec.release(); } } catch (Exception ignored) { }
             try { if (muxer != null) muxer.release(); } catch (Exception ignored) { }
             codec = null;
@@ -531,6 +555,48 @@ final class AudioTools {
         void abort() {
             release();
             if (out != null) out.delete();
+        }
+    }
+
+    /** 5.14.3: the side file of a recording (header + frames) into an .m4a; a file cut off mid-frame keeps every whole frame. Returns the frames written. */
+    static int remux(File raw, java.io.FileDescriptor fd, File out) throws Exception {
+        java.io.DataInputStream in = new java.io.DataInputStream(new java.io.BufferedInputStream(new java.io.FileInputStream(raw), 1 << 16));
+        MediaMuxer mx = null;
+        int n = 0;
+        try {
+            if (in.readInt() != 0x53444131) return 0;
+            int rate = in.readInt(), ch = in.readInt();
+            byte[] cb = new byte[in.readUnsignedShort()];
+            in.readFully(cb);
+            MediaFormat f = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, rate, ch);
+            f.setByteBuffer("csd-0", ByteBuffer.wrap(cb));
+            mx = fd != null && Build.VERSION.SDK_INT >= 26 ? new MediaMuxer(fd, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+                : new MediaMuxer(out.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+            int tr = mx.addTrack(f);
+            mx.start();
+            MediaCodec.BufferInfo bi = new MediaCodec.BufferInfo();
+            ByteBuffer bb = ByteBuffer.allocate(8192);
+            long last = -1;
+            while (true) {
+                int len;
+                long pts;
+                try { len = in.readInt(); pts = in.readLong(); } catch (java.io.EOFException e) { break; }
+                if (len <= 0 || len > 1 << 20) break;
+                if (bb.capacity() < len) bb = ByteBuffer.allocate(len);
+                bb.clear();
+                try { in.readFully(bb.array(), 0, len); } catch (java.io.EOFException e) { break; }
+                bb.limit(len);
+                if (pts <= last) pts = last + 1;
+                last = pts;
+                bi.set(0, len, pts, MediaCodec.BUFFER_FLAG_KEY_FRAME);
+                mx.writeSampleData(tr, bb, bi);
+                n++;
+            }
+            if (n > 0) mx.stop();
+            return n;
+        } finally {
+            try { in.close(); } catch (Exception ignored) { }
+            try { if (mx != null) mx.release(); } catch (Exception ignored) { }
         }
     }
 }

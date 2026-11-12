@@ -120,7 +120,7 @@ final class Timeline {
                 double ms = v.optDouble("ms", 300), fb = Math.min(0.9, v.optDouble("fb", 35) / 100);
                 n = new app.sesdefteri.dsp.Stages.Delay(ch, RATE, ms, fb, v.optDouble("mix", 35) / 100);
                 double rep = fb > 0.01 ? Math.log(0.001) / Math.log(fb) : 1;
-                t = Math.max(t, Math.min(RATE * 4L, (long) (RATE * ms / 1000 * (rep + 1))));
+                t = Math.max(t, Math.min(RATE * 12L, (long) (RATE * ms / 1000 * (rep + 1))));   // 5.14.3: as long as the export (was 4 s)
             } else if ("comp".equals(kind)) {
                 double a = v.optDouble("amt", 50) / 100, thr = -12 - 24 * a, ratio = 1.5 + 4.5 * a;
                 n = new app.sesdefteri.dsp.Stages.Compressor(ch, RATE, thr, ratio);
@@ -410,10 +410,15 @@ final class Timeline {
                 eng.close();
                 Engine p = pending;
                 if (p != null) p.close();
-                synchronized (Play.class) { if (cur == this) cur = null; }
+                boolean idle;
+                synchronized (Play.class) { if (cur == this) cur = null; idle = cur == null; }
+                Runnable r = onIdle;
+                if (idle && r != null) try { r.run(); } catch (Exception ignored) { }   // 5.14.3: gives the sound back to other apps
             }
         }
     }
+
+    static volatile Runnable onIdle;
 
     static synchronized void play(String json, double sec) throws Exception {
         fixedClicks = null;

@@ -174,6 +174,8 @@ public final class TimePitch extends Node {
         }
         fft.transform(cre, cim, false);
         for (int k = 0; k < bins; k++) env[k] = cre[k];
+        double e0 = 0, e1 = 0;
+        for (int k = 0; k < bins; k++) e0 += mag[k] * mag[k];
         for (int k = 0; k < bins; k++) {
             double src = k * pitch;
             double e;
@@ -182,7 +184,10 @@ public final class TimePitch extends Node {
             double d = e - env[k];
             if (d > 2.3) d = 2.3;                                 // at most +20 dB
             mag[k] *= Math.exp(d);
+            e1 += mag[k] * mag[k];
         }
+        // 5.14.3: the frame keeps its energy, so keeping the voice's character no longer makes it 6–9 dB louder
+        if (e1 > 1e-20) { double g = Math.sqrt(e0 / e1); for (int k = 0; k < bins; k++) mag[k] *= g; }
     }
 
     private void flushOut(long upto) throws Exception {
