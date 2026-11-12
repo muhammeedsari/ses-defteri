@@ -1116,6 +1116,7 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public String recInfo() { return Recorder.info(); }
         @JavascriptInterface public float recLevel() { return Recorder.level(); }
         @JavascriptInterface public String recMeter() { return Recorder.meter(); }
+        @JavascriptInterface public String liveText(int from) { return Recorder.liveText(from); }
         @JavascriptInterface public boolean recMonitor(boolean on) { return Recorder.monitor(on); }
         @JavascriptInterface public void recMonFx(double rev, double echo) { Recorder.monitorFx(rev, echo); }
         @JavascriptInterface public void setLowLat(boolean on) { Timeline.lowLat = on; }
@@ -1203,7 +1204,7 @@ public class MainActivity extends Activity implements Player.Listener {
             jobs.put(id, cancel);
             boolean bg = false;
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
-            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"spectro".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind) && !"ttsStatus".equals(kind) && !"ttsDelete".equals(kind);
+            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"spectro".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind) && !"liveStatus".equals(kind) && !"liveDelete".equals(kind) && !"ttsStatus".equals(kind) && !"ttsDelete".equals(kind);
             if (heavy) {
                 heavyIds.add(id);
                 WorkService.label(null);
@@ -1272,6 +1273,10 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = AsrModels.delete(MainActivity.this, a);
                         } else if ("asrStatus".equals(kind)) {
                             res = AsrModels.status(MainActivity.this);
+                        } else if ("liveStatus".equals(kind)) {
+                            res = LiveText.status(MainActivity.this);
+                        } else if ("liveDelete".equals(kind)) {
+                            res = LiveText.delete(MainActivity.this, a);
                         } else if ("sounds".equals(kind)) {
                             res = Sounds.scan(MainActivity.this, a, p, cancel);
                         } else if ("fwords".equals(kind)) {

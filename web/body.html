@@ -93,7 +93,9 @@
       <div class="rec-state"><span class="led"></span><span id="recStateText"></span></div>
       <div class="timecode" id="recTime">0:00<small>,0</small></div>
       <div class="meter"><span id="recPeak">−∞ dB</span><span class="mk" id="recMarkCount" hidden></span><span id="recLufs" hidden></span></div>
+      <button class="live-tg" id="recLiveB" type="button" aria-pressed="false" hidden></button>
       <canvas class="live" id="liveWave"></canvas>
+      <div class="rec-live" id="recLive" hidden aria-live="polite"></div>
       <canvas class="rec-spec" id="recSpec" hidden></canvas>
       <p class="rec-warn" id="recWarn" hidden></p>
     </div>
@@ -254,6 +256,7 @@
 <script src="i18n62.js"></script>
 <script src="i18n63.js"></script>
 <script src="i18n64.js"></script>
+<script src="i18n65.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -265,7 +268,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.15';
+const VERSION = '5.16';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   // 5.14.2: a project that cannot be stored (storage full) says so once instead of silently losing edits
@@ -928,6 +931,7 @@ function openSettings() {
     ${NATIVE ? `<div class="set-sec"><h4>${esc(t('setStudio'))}</h4>
       <div class="set-sub"><span>${esc(t('setTarget'))}</span>
         <div class="seg2" role="radiogroup">${['youtube', 'podcast', 'whatsapp'].map(v => `<button type="button" role="radio" data-target-v="${v}" aria-checked="${S.target === v}">${esc(t('tg_' + v))}</button>`).join('')}</div></div>
+      ${CAPS.asr ? `<div class="set-sub"><span>${esc(t('setLive'))}</span><div id="liveModel"></div></div>` : ''}
       ${CAPS.asr ? `<div class="set-sub"><span>${esc(t('setAsrModel'))}</span><div id="asrModel"></div></div>
       <label class="switch"><input type="checkbox" id="setAutoText"${S.autoText ? ' checked' : ''}><span>${esc(t('setAutoText'))}<small>${esc(t('setAutoTextD'))}</small></span></label>` : ''}
       ${CAPS.asr ? `<div class="set-sub"><span>${esc(t('setTextLang'))}</span><select id="setTextLang" class="sel-full"><option value="">${esc(t('langAuto'))}</option>${LANGS.map(([c, n]) => `<option value="${c}"${S.textLang === c ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>` : ''}
@@ -1008,7 +1012,7 @@ function openSettings() {
   const bind = (id, key) => { const el = card.querySelector(id); if (el) el.onchange = () => { S[key] = el.type === 'checkbox' ? el.checked : el.value; ls.set(key, S[key]); }; };
   S.nameTpl = ls.get('nameTpl', '{name}');   // the template examples above borrowed it
   bind('#setTextLang', 'textLang'); bind('#setLearn', 'learnVoice'); bind('#setAutoText', 'autoText');
-  asrModelUi(card);
+  asrModelUi(card); liveModelUi(card);
   const at = card.querySelector('#setAutoText'); if (at) at.addEventListener('change', () => { if (S.autoText) scheduleBackground(1500); });
   bind('#setNorm', 'normalize'); bind('#setGap', 'gapless'); bind('#setRoom', 'roomLearn'); bind('#setArtist', 'artist'); { const q = card.querySelector('#setEqB'); if (q) q.onclick = () => openEq(); }
   const xf = card.querySelector('#setXf'); if (xf) xf.onchange = () => { S.xfade = +xf.value; ls.set('xfade', S.xfade); applyPlayerPrefs(); };
@@ -2490,7 +2494,7 @@ async function transcribeItem(it, auto) {
   await txApply(it, res, auto);
 }
 async function txApply(it, res, auto) {
-  const rec = { id: it.id, segments: res.segments || [], srt: res.srt || '', lang: res.lang || '' };
+  const rec = { id: it.id, segments: res.segments || [], srt: res.srt || '', lang: res.lang || '', live: !!res.live };
   await db.put('texts', rec).catch(() => {});
   S.texts.set(it.id, rec);
   it.tags = res.tags || []; it.ttext = res.text || '';
@@ -2515,6 +2519,7 @@ function renderText(r) {
   if (bz && bz.kind === 'transcribe') {
     h = `<p class="st-desc"><b>${esc(busyLabel(bz))}</b></p><div class="prog"><i style="width:${Math.round(bz.p * 100)}%"></i></div>`;
   } else if (tx && tx.segments && tx.segments.length) {
+    if (tx.live) h += `<p class="hint">${esc(t('liveDraft'))}</p>`;
     if (r.tags && r.tags.length) h += `<div class="tags">${r.tags.map(x => `<button class="tag" type="button" data-tag="${esc(x)}">#${esc(x)}</button>`).join('')}</div>`;
     // 5.15: marks, notes and photos sit in the text at their moment
     const bms = (r.bookmarks || []).filter(b => !b.chapter && !b.topic); let k = 0;
@@ -5000,7 +5005,7 @@ function askParams(title, desc, rows) {
 const liteOn = () => { const v = ls.get('lite', null); return v === null ? !!CAPS.weak : !!v; };
 function applyLite() { try { AND.setLite(liteOn()); AND.setLowLat(!!ls.get('lowLat', false)); AND.setAccel(!!ls.get('accel', false)); } catch (e) {} }
 /* ---------- 1.8: export format, file names, trash ---------- */
-const recOpts = () => { const s = recSet(); return JSON.stringify({ q: 'std', src: S.micSrc, call: !!S.callPause, agc: S.agc !== false, fmt: s.fmt, rate: s.rate, ch: s.ch, kbps: s.kbps,
+const recOpts = live => { const s = recSet(); return JSON.stringify({ live: live && liveOn() ? liveModel() : '', q: 'std', src: S.micSrc, call: !!S.callPause, agc: S.agc !== false, fmt: s.fmt, rate: s.rate, ch: s.ch, kbps: s.kbps,
   ns: !!ls.get('recNs', false), aec: !!ls.get('recAec', false), bt: !!ls.get('recBt', false), dir: ls.get('recDir', ''), lowlat: !!ls.get('lowLat', false) }); };
 const FMTS = () => ['mp3_192', 'mp3_320', 'm4a', 'wav', 'flac'].concat(CAPS.opus ? ['ogg'] : []);
 /** default export format as job arguments: {format, kbps} */
@@ -5360,14 +5365,15 @@ async function startRecNative() {
   if (!audio.paused) audio.pause();
   const name = t(R.mode === 'music' ? 'fileMusic' : 'fileVoice', { d: stamp(Date.now()) }) + '.m4a';
   let res = {};
-  try { res = JSON.parse(AND.recStart(R.mode, name, recOpts())); } catch (e) { res = { ok: false }; }
+  try { res = JSON.parse(AND.recStart(R.mode, name, recOpts(true))); } catch (e) { res = { ok: false }; }
   if (!res.ok && res.error === 'perm') {
     const ok = await askPerm('mic');
     if (!ok) { R.state = 'idle'; updateRecUI(); toast(t('micPerm'), 4500); return; }
-    try { res = JSON.parse(AND.recStart(R.mode, name, recOpts())); } catch (e) { res = { ok: false }; }
+    try { res = JSON.parse(AND.recStart(R.mode, name, recOpts(true))); } catch (e) { res = { ok: false }; }
   }
   if (!res.ok) { R.state = 'idle'; updateRecUI(); toast(t('recFail'), 4200); return; }
   R.native = true; R.levels = []; R.marks = []; R.acc = 0; R.curMax = 0; R.cancel = false; R.mon = false; R.mv = null;
+  R.live = liveOn() ? { n: 0, lines: [], part: '' } : null; $('#recLive').innerHTML = ''; $('#recLive').hidden = !R.live;
   R.state = 'rec'; R.t0 = performance.now(); R.started = Date.now();
   loopRec(); updateRecUI();
 }
@@ -5441,11 +5447,11 @@ window.__sdRecovered = async o => {
 async function finishNative() {
   cancelAnimationFrame(R.raf);
   dropRecMarks();
-  if (R.cancel) { try { AND.recCancel(); } catch (e) {} R.state = 'idle'; R.native = false; closeOverlay('rec'); updateRecUI(); return; }
+  if (R.cancel) { try { AND.recCancel(); } catch (e) {} R.live = null; $('#recLive').hidden = true; R.state = 'idle'; R.native = false; closeOverlay('rec'); updateRecUI(); return; }
   let res = {};
   try { res = JSON.parse(AND.recStop()); } catch (e) { res = { ok: false }; }
   R.native = false;
-  if (!res.ok || !res.item) { R.state = 'idle'; updateRecUI(); closeOverlay('rec'); toast(t(res.error === 'empty' ? 'recShort' : 'recSaveFail'), 4000); return; }
+  if (!res.ok || !res.item) { R.live = null; $('#recLive').hidden = true; R.state = 'idle'; updateRecUI(); closeOverlay('rec'); toast(t(res.error === 'empty' ? 'recShort' : 'recSaveFail'), 4000); return; }
   const it = fromNative(res.item, null);
   it.title = defaultTitle(R.mode, R.started); it.userTitle = true; it.created = R.started;
   if (!it.duration) it.duration = R.endEl;
@@ -5453,6 +5459,9 @@ async function finishNative() {
   it.peaks = downsample(R.levels, 240);
   it.autoTitle = true;
   S.items.set(it.id, it); await saveRec(it);
+  // 5.16: the live text becomes the recording's text (a draft: "Transcribe again" gives the accurate one)
+  if (R.live && res.live && res.live.segments && res.live.segments.length) await txApply(it, res.live, true).catch(() => {});
+  R.live = null; $('#recLive').hidden = true;
   if (res.cut) toast(t('recCut'), 6000);
   await storePeaks(it.id, toBytes(R.levels), LR); storedPeakIds.add(it.id);
   it.purpose = R.purpose; await saveRec(it);
@@ -5513,6 +5522,80 @@ function addRecMark(x, at) {
   updateRecUI(); drawLive();
   toast(`${m.label} · ${fmt(tm)}`, 1400);
   if (navigator.vibrate) try { navigator.vibrate(18); } catch (e) {}
+}
+/* ---------- 5.16: live text while recording (seda, Turkish streaming models, downloaded on request) ---------- */
+const LIVE_MODELS = [['v2', 73], ['v1', 73]];
+async function liveRefresh() { try { S.liveSt = await runJob('liveStatus', {}); } catch (e) {} return S.liveSt || {}; }
+const liveModel = () => { const st = S.liveSt || {}, m = ls.get('liveModel', 'v2'); return st[m] ? m : st.v2 ? 'v2' : st.v1 ? 'v1' : ''; };
+const liveOn = () => NATIVE && ls.get('liveOn', false) && !!liveModel();
+function liveDownload(m, onProg) {
+  const key = 'dl:live-' + m;
+  const pr = bgStart('liveGet', key, t('bgDl', { t: t('live_' + m) }), { model: m }, onProg);
+  return { key, done: pr.then(st => { S.liveSt = st || S.liveSt; ls.set('liveModel', m); toast(t('liveReady'), 3500); return true; },
+    x => { const e = String(x.message); if (!e.includes('cancel') && !e.includes('pause')) toast(t('liveFail'), 5000); return false; }) };
+}
+async function liveOffer() {
+  const v = await chooseBox(t('liveNeedT'), t('liveNeedD'), LIVE_MODELS.map(([m, mb]) => ({ value: m, label: t('live_' + m) + ' · ' + mb + ' MB', desc: t('liveD_' + m) })));
+  if (!v) return false;
+  const card = openModal(`<h3>${esc(t('asrGetting'))}</h3><p class="mtext">${esc(t('live_' + v))}</p><div class="prog"><i id="lvBar" style="width:0%"></i></div>
+    <p class="hint">${esc(t('bgNote'))}</p>
+    <div class="modal-actions"><button class="btn" type="button" data-bgx>${esc(t('cancel'))}</button><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('bgHide'))}</button></div>`);
+  const d = liveDownload(v, f => { const b = card.querySelector('#lvBar'); if (b) b.style.width = Math.round(f * 100) + '%'; });
+  card.querySelector('[data-bgx]').onclick = () => { try { AND.bgCancel(d.key); } catch (e) {} BG.waits.delete(d.key); closeModal(); };
+  card.querySelector('[data-x]').onclick = () => closeModal();
+  const ok = await d.done;
+  if (stack.includes('modal') && card.isConnected) closeModal();
+  return ok;
+}
+async function liveModelUi(card) {
+  const box = card.querySelector('#liveModel'); if (!box) return;
+  await liveRefresh();
+  let busy = null, prog = 0, job = null;
+  const draw = () => {
+    if (!box.isConnected) return;
+    const st = S.liveSt || {}, cur = liveModel();
+    box.innerHTML = `<label class="switch"><input type="checkbox" data-lv-on${ls.get('liveOn', false) ? ' checked' : ''}><span>${esc(t('liveSw'))}<small>${esc(t('liveSwD'))}</small></span></label>` +
+      LIVE_MODELS.map(([m, mb]) => {
+      const have = !!st[m];
+      return `<div class="asr-row"><label class="asr-pick"><input type="radio" name="lvM" data-lv="${m}"${cur === m ? ' checked' : ''}${have ? '' : ' disabled'}><span><b>${esc(t('live_' + m))}</b><small>${mb} MB · ${esc(t('liveD_' + m))}</small></span></label>
+        ${busy === m ? `<div class="prog"><i style="width:${Math.round(prog * 100)}%"></i></div><button class="btn sm" type="button" data-lv-cancel>${esc(t('bgPause'))}</button>`
+          : have ? `<button class="btn sm danger" type="button" data-lv-del="${m}">${esc(t('asrDel'))}</button>` : `<button class="btn sm primary" type="button" data-lv-get="${m}"${busy ? ' disabled' : ''}>${ic('import')}${esc(t('asrGet'))}</button>`}</div>`;
+    }).join('');
+  };
+  draw();
+  box.onclick = async e => {
+    const on = e.target.closest('[data-lv-on]');
+    if (on) { const want = on.checked; if (want && !liveModel()) { on.checked = false; if (!(await liveOffer())) return; } ls.set('liveOn', want); draw(); updateRecUI(); return; }
+    const m = e.target.closest('[data-lv]');
+    if (m && !m.disabled) { ls.set('liveModel', m.dataset.lv); return; }
+    if (e.target.closest('[data-lv-cancel]') && job) { try { AND.bgPause(job); } catch (x) {} return; }
+    const del = e.target.closest('[data-lv-del]');
+    if (del) { try { S.liveSt = await runJob('liveDelete', { model: del.dataset.lvDel }); } catch (x) {} draw(); return; }
+    const get = e.target.closest('[data-lv-get]');
+    if (get && !busy) {
+      busy = get.dataset.lvGet; prog = 0; draw();
+      const d = liveDownload(busy, f => { prog = f; draw(); }); job = d.key;
+      await d.done; busy = null; job = null; draw();
+    }
+  };
+}
+$('#recLiveB').addEventListener('click', async () => {
+  if (R.state !== 'idle') return;
+  if (!liveModel()) { await liveRefresh(); if (!liveModel() && !(await liveOffer())) return; ls.set('liveOn', true); }
+  else ls.set('liveOn', !ls.get('liveOn', false));
+  updateRecUI();
+  if (liveOn()) toast(t('liveTip'), 3500);
+});
+function livePoll() {
+  let o = null; try { const j = AND.liveText(R.live.n); o = j ? JSON.parse(j) : null; } catch (e) {}
+  if (!o) return;
+  if (o.segs && o.segs.length) { R.live.lines.push(...o.segs); if (R.live.lines.length > 40) R.live.lines.splice(0, R.live.lines.length - 40); }
+  R.live.n = o.n || R.live.n; R.live.part = o.part || '';
+  const box = $('#recLive');
+  box.innerHTML = R.live.lines.slice(-4).map(x => `<p>${esc(x)}</p>`).join('') + (R.live.part ? `<p class="pt">${esc(R.live.part)}</p>` : '')
+    + (o.failed ? `<p class="lag">${esc(t('liveFailRun'))}</p>` : o.lag > 5 ? `<p class="lag">${esc(t('liveLag', { s: Math.round(o.lag) }))}</p>` : '')
+    || `<p class="pt">${esc(t('liveWait'))}</p>`;
+  box.scrollTop = box.scrollHeight;
 }
 /* ---------- 5.15: notes while recording (tags, written note, photo) ---------- */
 // native recordings keep their marks here, so a recording the crash recovery brings back keeps them too
@@ -5591,6 +5674,7 @@ function loopRec() {
     showRecTime(el);
     if (R.state === 'rec') recWarnCheck(m);
     if (R.native && frame % 20 === 0) recCallSync();
+    if (R.live && frame % 15 === 0) livePoll();
     if (R.native && frame % 3 === 0) { try { const j = AND.recMeter(); R.mv = j ? JSON.parse(j) : null; } catch (e) {} drawRecSpec(); }
     const lvl = m > 0 ? 20 * Math.log10(m) : -Infinity, now = performance.now();
     if (lvl > R.peakDb || now - R.peakAt > 900) { R.peakDb = lvl; R.peakAt = now; }
@@ -5803,6 +5887,8 @@ function updateRecUI() {
   else { main.innerHTML = '<span class="dot"></span>'; main.setAttribute('aria-label', t(R.state === 'paused' ? 'recResume' : 'recStart')); }
   main.disabled = R.state === 'starting' || R.state === 'stopping';
   $('#recMark').disabled = !active; $('#recDone').disabled = !active; $('#recQuick').hidden = !active; $('#recPhotoB').hidden = !R.native;
+  const lb = $('#recLiveB'); lb.hidden = !NATIVE || !CAPS.asr || R.state !== 'idle';
+  if (!lb.hidden) { const on = liveOn(); lb.setAttribute('aria-pressed', on); lb.innerHTML = `${ic('textic')}${esc(t(on ? 'liveOnB' : 'liveOffB'))}`; }
   $('#modeSeg').querySelectorAll('button').forEach(b => { b.disabled = R.state !== 'idle'; });
   $('#roomBox').hidden = R.state !== 'idle' || !NATIVE; renderPurpose();
   if (R.state === 'idle' || R.state === 'stopping') showRecWarn(null);
@@ -6532,6 +6618,7 @@ async function bgFinish(x, w) {
   // finished while the page was away
   if (x.key.startsWith('tx:')) { const it = S.items.get(x.key.slice(3)); setBusy(x.key.slice(3)); if (it) { await txApply(it, res, true); toast(t('bgTxDone', { t: it.title }), 4000); } }
   else if (x.kind === 'asrDownload') { await asrRefresh(); toast(t('asrReady'), 3500); }
+  else if (x.kind === 'liveGet') { await liveRefresh(); toast(t('liveReady'), 3500); }
   else toast(t('bgDlDone', { t: x.label }), 3500);
 }
 function renderBgChip() {
@@ -6619,7 +6706,7 @@ function showIntro(again) {
   });
   document.body.appendChild(d); draw();
 }
-const NEWS = ['n515tags', 'n515note', 'n515photo', 'n515text'];   // 5.15: renew with every minor version
+const NEWS = ['n516live', 'n516draft', 'n516models'];   // 5.16: renew with every minor version
 function showNews() {
   const card = openModal(`<h3>${esc(t('newsT', { v: VERSION.split('.').slice(0, 2).join('.') }))}</h3><ul class="news">${NEWS.map(k => `<li>${esc(t('news_' + k))}</li>`).join('')}</ul>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('newsOk'))}</button></div>`, () => setTimeout(coachMaybe, 300));
@@ -7116,7 +7203,7 @@ async function boot() {
       }
     }, 1500);
     applyPlayerPrefs();
-    if (CAPS.asr) asrRefresh();
+    if (CAPS.asr) { asrRefresh(); liveRefresh().then(() => updateRecUI()); }
     if (!S.media && !ls.get('askedMedia', false)) { ls.set('askedMedia', true); requestLibrary(); }
     window.__sdQuickRec();
     setTimeout(welcome, 700);

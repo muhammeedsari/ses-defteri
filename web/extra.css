@@ -604,3 +604,11 @@ html:not(.tech) .pu-card small{display:none}
 .seg-mk .bm-ph{display:block;margin:6px 0 0}
 .segs li.seg-mk{background:var(--mark-soft)}
 .ph-big{display:block;width:100%;max-height:70vh;object-fit:contain;border-radius:12px;background:#000}
+/* 5.16: live text */
+.live-tg{display:inline-flex;align-items:center;gap:6px;margin:6px auto 0;height:32px;padding:0 13px;border-radius:999px;border:1px solid var(--stage-line);background:var(--stage-2);color:var(--stage-muted);font-size:13px}
+.live-tg .ic{width:15px;height:15px}
+.live-tg[aria-pressed="true"]{color:var(--stage-ink);border-color:var(--stage-ink)}
+.rec-live{align-self:stretch;max-height:132px;overflow:auto;margin-top:8px;padding:8px 12px;border-radius:12px;background:var(--stage-2);color:var(--stage-ink);font-size:15px;line-height:1.45;text-align:start}
+.rec-live p{margin:0 0 4px}
+.rec-live .pt{color:var(--stage-muted)}
+.rec-live .lag{color:var(--stage-mark);font-size:12.5px}

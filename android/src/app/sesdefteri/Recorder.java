@@ -43,6 +43,9 @@ final class Recorder {
     private static volatile Timeline.RackOut monOut;
     private static boolean lowLat;
     private static int rate, chans;
+    // 5.16: live text (null when off); liveModel from the start options
+    private static volatile LiveText live;
+    private static String liveModel = "";
 
     private Recorder() { }
 
@@ -70,6 +73,7 @@ final class Recorder {
         optRate = o.optInt("rate", 0); optCh = o.optInt("ch", 0); optKbps = o.optInt("kbps", 0);
         ns = o.optBoolean("ns", false); aec = o.optBoolean("aec", false); bt = !temp && o.optBoolean("bt", false);
         dir = o.optString("dir", "");
+        liveModel = temp ? "" : o.optString("live", "");
         int dot = displayName.lastIndexOf('.');
         displayName = (dot > 0 ? displayName.substring(0, dot) : displayName) + "." + fmt;
         return start(c, mode, displayName, o.optString("q", "std"), o.optString("src", "auto"));
@@ -130,6 +134,7 @@ final class Recorder {
             th.setPriority(Thread.MAX_PRIORITY);
             th.start();
             startService(c, true);
+            if (!liveModel.isEmpty() && LiveText.ready(c, liveModel)) try { live = new LiveText(c, liveModel, rate); } catch (Throwable e) { live = null; }
             res.put("ok", true);
             res.put("name", target.name);
         } catch (Exception e) {
@@ -246,6 +251,8 @@ final class Recorder {
                 if (pk > peak) peak = pk;
                 meter.feed(fl, fr);
                 sink.write(buf, n);
+                LiveText lt = live;
+                if (lt != null) lt.feed(fl[0], fl[1], fr, chans);
             }
         } catch (Exception e) {
             fail = e;
@@ -273,6 +280,12 @@ final class Recorder {
     }
 
     /** live spectrum + loudness of what is being recorded, "" when idle */
+    /** 5.16: live text for the recording screen */
+    static String liveText(int from) {
+        LiveText lt = live;
+        return lt == null ? "" : lt.poll(from);
+    }
+
     static String meter() {
         Timeline.Meter m = meter;
         return m == null || "idle".equals(state) ? "" : m.json(Long.MAX_VALUE);
@@ -322,6 +335,8 @@ final class Recorder {
             if (ar == null) { res.put("ok", false); res.put("error", "idle"); return res.toString(); }
             boolean cut = fail != null;
             halt();
+            LiveText lt = live;
+            live = null;
             Sink s = sink;
             sink = null;
             // 5.14.2: a recording cut short by an error (full storage, mic taken) keeps what was written
@@ -336,16 +351,19 @@ final class Recorder {
             if (!ok) {
                 MediaLib.discard(c, target);
                 target = null;
+                if (lt != null) lt.end(0);
                 res.put("ok", false);
                 res.put("error", "empty");
                 return res.toString();
             }
             JSONObject item = MediaLib.publish(c, target);
             target = null;
-            if (item == null) { res.put("ok", false); res.put("error", "publish"); return res.toString(); }
+            if (item == null) { if (lt != null) lt.end(0); res.put("ok", false); res.put("error", "publish"); return res.toString(); }
             res.put("ok", true);
             res.put("item", item);
             if (cut) res.put("cut", true);
+            // the recording is safe first; then the text gets up to 5 s to catch up
+            if (lt != null) { JSONObject lr = lt.end(5000); if (lr != null) res.put("live", lr); }
         } catch (Exception e) {
             try { res.put("ok", false); res.put("error", String.valueOf(e.getMessage())); } catch (Exception ignored) { }
         }
@@ -378,6 +396,9 @@ final class Recorder {
 
     private static void cleanup(Context c, boolean discard) {
         halt();
+        LiveText lt = live;
+        live = null;
+        if (lt != null) lt.end(0);
         if (sink != null) sink.abort();
         sink = null;
         try { if (pfd != null) pfd.close(); } catch (Exception ignored) { }
