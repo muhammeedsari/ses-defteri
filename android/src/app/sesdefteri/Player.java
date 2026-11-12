@@ -68,6 +68,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     private long seekWait;                       // no loop / skip seek before this (uptime ms)
     private int lastSkip = -1;                   // the silence just skipped: never twice in a row
     private long sleepAt;                        // wall clock, 0 = off
+    private int loadFails;                       // 5.14.2: files in a row that would not open
     private boolean sleepEnd;                    // stop when this track ends
     private MediaPlayer nmp;                     // the next track, prepared ahead
     private int npos = -1;
@@ -505,6 +506,12 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         } catch (Exception e) {
             error = "load";
             releasePlayer();
+            // 5.14.2: a file that cannot be opened (deleted, moved) goes on to the next one, else the player stops
+            playing = false; wantPlay = false;
+            if (autoplay && pos + 1 < order.size() && ++loadFails < order.size()) { pos++; load(0, true); return; }
+            loadFails = 0;
+            abandonFocus();
+            PlayerService.update(app, false);
         }
         updateMeta(it);
         loadArt(it);
@@ -516,6 +523,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         synchronized (this) {
             if (p != mp) return;
             prepared = true;
+            loadFails = 0;
             attachFx(mp, current());
             setVol(mp, current(), 1);
             if (pendingSeek > 0) seekInternal(pendingSeek);
@@ -629,6 +637,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     /* ---------- controls ---------- */
 
     synchronized void play() {
+        if (sleepAt > 0 && System.currentTimeMillis() >= sleepAt) sleepAt = 0;   // 5.14.2: a sleep timer that already ran out does not stop the new start
         if (mp == null) {
             if (current() != null) load(0, true);
             return;

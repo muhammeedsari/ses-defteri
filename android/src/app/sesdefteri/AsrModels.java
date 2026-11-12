@@ -95,6 +95,7 @@ final class AsrModels {
         p.on(0.91);
         final java.util.List<String> want = java.util.Arrays.asList(files(m));
         InputStream in = new java.io.BufferedInputStream(new java.io.FileInputStream(arc), 1 << 16);
+        boolean ok = false;
         try {
             Untar.extract(in, new Untar.Place() {
                 @Override public File to(String name) {
@@ -102,7 +103,12 @@ final class AsrModels {
                     return want.contains(base) ? new File(d, base) : null;
                 }
             });
-        } finally { in.close(); }
+            ok = true;
+        } finally {
+            in.close();
+            // 5.14.2: a damaged archive is fetched again next time, and no half-unpacked model stays behind
+            if (!ok) { arc.delete(); for (String f : want) new File(d, f).delete(); }
+        }
         arc.delete();
         for (String f : files(m)) if (!new File(d, f).isFile()) throw new IllegalStateException("download-short");
     }

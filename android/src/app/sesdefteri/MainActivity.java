@@ -528,6 +528,7 @@ public class MainActivity extends Activity implements Player.Listener {
     protected void onPause() {
         resumed = false;
         visible = false;
+        Tuner.stop();   // 5.14.2: the tuner's microphone does not stay open behind the app
         super.onPause();
     }
 
@@ -561,6 +562,7 @@ public class MainActivity extends Activity implements Player.Listener {
     protected void onDestroy() {
         Player.I.init(this, null);
         Timeline.stop();
+        Tuner.stop();
         if (web != null) {
             web.removeJavascriptInterface("SesDefteriAndroid");
             web.destroy();
@@ -1043,6 +1045,12 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public String tlPlayFrom(String json, double sec, double minSec) { try { Player.I.timelineFocus(); Timeline.fixedClicks = null; Timeline.play(json, sec, Math.round(minSec * Timeline.RATE)); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
         @JavascriptInterface public void tlUpdate(String json) { try { Timeline.update(json); } catch (Exception ignored) { } }
         @JavascriptInterface public void tlStop() { Timeline.stop(); }
+        /** 5.14.2: how many of these files are gone (a project clip whose file was deleted) */
+        @JavascriptInterface public int missing(String pathsJson) {
+            int n = 0;
+            try { org.json.JSONArray a = new org.json.JSONArray(pathsJson); for (int i = 0; i < a.length(); i++) if (!new java.io.File(a.getString(i)).exists()) n++; } catch (Exception ignored) { }
+            return n;
+        }
         @JavascriptInterface public double tlPos() { return Timeline.pos(); }
         @JavascriptInterface public String tlMeter() { return Timeline.meter(); }
         @JavascriptInterface public void tlClick(String json) { Timeline.click(json); }

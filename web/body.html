@@ -250,6 +250,7 @@
 <script src="i18n59.js"></script>
 <script src="i18n60.js"></script>
 <script src="i18n61.js"></script>
+<script src="i18n62.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -261,10 +262,11 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.14.1';
+const VERSION = '5.14.2';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
+  // 5.14.2: a project that cannot be stored (storage full) says so once instead of silently losing edits
+  set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); if (k === 'proj') ls.bad = 0; return true; } catch (e) { if (k === 'proj' && !ls.bad) { ls.bad = 1; try { toast(t('tlSaveFail'), 6000); } catch (x) {} } return false; } }
 };
 const bars = m => { if (AND) { try { AND.setBars(m); } catch (e) {} } };
 const POL = document.permissionsPolicy || document.featurePolicy;
@@ -1453,6 +1455,7 @@ async function loadLibrary() {
 let resumeT = 0;
 window.__sdResume = () => {
   if (booted) bgPoll(true);   // 4.1: work may have finished while away
+  if (window.__sdTune) try { AND.tunerStart(); } catch (e) {}   // 5.14.2: the tuner's mic is closed while the app is away
   if (!NATIVE || !booted) return;
   clearTimeout(resumeT);
   resumeT = setTimeout(async () => { await loadLibrary(); render(); if (audio.refresh) audio.refresh(); scheduleBackground(); }, 300);
@@ -2795,6 +2798,13 @@ function tlLoad() {
     if (!TL.p.clips.some(c => c.tr === i)) { TL.p.tracks.splice(i, 1); for (const c of TL.p.clips) if (c.tr > i) c.tr--; }
 }
 const tlLen = c => c.out - c.in;
+/** 5.14.2: clips whose file is gone are skipped by the engine: say how many instead of staying silent */
+function tlMissing() {
+  if (!TL.p || !TL.p.clips.length || !AND || !AND.missing) return 0;
+  let n = 0; try { n = AND.missing(JSON.stringify([...new Set(TL.p.clips.map(c => c.path))])); } catch (e) {}
+  if (n > 0) toast(t('tlMissing', { n }), 6000);
+  return n;
+}
 const tlEnd = () => TL.p.clips.reduce((m, c) => Math.max(m, c.at + tlLen(c)), 0);
 const tlSel = () => TL.p.clips.find(c => c.id === TL.sel) || null;
 const tlSnap = () => JSON.stringify(TL.p);
@@ -2841,14 +2851,14 @@ function tlUndo(redo) {
 function tlClean() {
   const keep = new Set(), cb = tlClip(), add = c => { keep.add(c.path); if (c.prev) keep.add(c.prev); if (c.src) keep.add(c.src); for (const h of c.hc || []) keep.add(h.path); for (const f of c.fx || []) if (f.b) { keep.add(f.b.path); if (f.b.src) keep.add(f.b.src); for (const h of f.b.hc || []) keep.add(h.path); } };
   TL.p.clips.forEach(add);
-  if (cb) keep.add(cb.path);
+  if (cb) add(cb);
   for (const s of TL.undo.concat(TL.redo)) try { JSON.parse(s).clips.forEach(add); } catch (e) {}
   try { runJob('tlClean', { keep: [...keep], since: Date.now() - 60000 }).catch(() => {}); } catch (e) {}
 }
 /** what the native mixer plays: one entry per audible clip */
 function tlMix() {
   const tr = TL.p.tracks;
-  return TL.p.clips.filter(c => tr[c.tr] && !tr[c.tr].mute).map(c => { const [xi, xo] = tlXf(c); return { path: c.path, at: c.at, in: c.in, len: tlLen(c),
+  return TL.p.clips.filter(c => tr[c.tr] && !tr[c.tr].mute).map(c => { const [xi, xo] = tlXf(c); return { id: c.id, path: c.path, at: c.at, in: c.in, len: tlLen(c),
     g: Math.pow(10, ((c.gain || 0) + (tr[c.tr].vol || 0)) / 20), pan: c.pan || 0, fx: c.rk && c.rk.some(f => RACK[f.k]) ? c.rk.filter(f => RACK[f.k]) : null, fi: c.fi || 0, fo: c.fo || 0, xi, xo, env: tlEnvMix(c), duck: tr[c.tr].duck ? (tr[c.tr].duckDb || -12) : 0, eq: c.eq || null, bass: c.bass || 0, treble: c.treble || 0,
     talk: TL.p.aiDuck && !tr[c.tr].duck && c.vad && c.vad.path === c.path ? c.vad.segs : null }; }).concat(TL.p.master && TL.p.master.on && !TL.abOff ? [{ master: TL.p.master }] : []);
 }
@@ -3350,8 +3360,9 @@ async function tlExport() {
     const fa = { format: f }; if (EXQ[f]) fa.kbps = EXQ[f][q];
     if (S.chans === 'mono' || S.chans === 'stereo') fa.chans = S.chans;
     let clips = tlMix();
-    if (solo) clips = clips.filter(m => m.path === sel.path && m.at === sel.at).map(m => Object.assign(m, { at: 0, xi: 0, xo: 0, duck: 0 }));
+    if (solo) clips = clips.filter(m => m.id === sel.id).map(m => Object.assign(m, { at: 0, xi: 0, xo: 0, duck: 0 }));
     if (!clips.length) { toast(t('exMuted'), 3500); return; }
+    tlMissing();
     try {
       const mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips });
       if (how === 'ring') {
@@ -4555,6 +4566,7 @@ async function tlRec() {
     const len = (performance.now() - r.t0) / 1000;
     if (!TL.play) TL.pos = Math.max(0, r.at + len);
     const el = $('#tlRecT'); if (el) el.textContent = len < r.pre ? '−' + Math.ceil(r.pre - len) : fmt(len - r.pre);
+    if ((r.n = (r.n || 0) + 1) % 30 === 0) { let i = {}; try { i = JSON.parse(AND.recInfo()); } catch (e) {} if (i.fail) { tlRecStop(); return; } }
     drawTl();
     requestAnimationFrame(loop);
   };
@@ -4567,6 +4579,7 @@ async function tlRecStop() {
   try { res = JSON.parse(AND.recStop()); } catch (e) { res = {}; }
   renderTlBar(); drawTl();
   if (!res.ok || !res.item) { toast(t(res.error === 'empty' ? 'recShort' : 'recSaveFail'), 4000); return; }
+  if (res.cut) toast(t('recCut'), 6000);
   const it = fromNative(res.item, null);
   Object.assign(it, { title: defaultTitle('voice', r.started), userTitle: true, created: r.started, categoryId: defaultCat(), notes: '', bookmarks: [], source: 'mic', mode: 'voice', fav: false, kind: 'rec' });
   S.items.set(it.id, it); await saveRec(it);
@@ -5412,6 +5425,7 @@ async function finishNative() {
   it.peaks = downsample(R.levels, 240);
   it.autoTitle = true;
   S.items.set(it.id, it); await saveRec(it);
+  if (res.cut) toast(t('recCut'), 6000);
   await storePeaks(it.id, toBytes(R.levels), LR); storedPeakIds.add(it.id);
   it.purpose = R.purpose; await saveRec(it);
   R.state = 'idle'; R.levels = [];
@@ -5529,6 +5543,7 @@ function showRecWarn(k) {
 }
 function recCallSync() {
   let i = {}; try { i = JSON.parse(AND.recInfo()); } catch (e) { return; }
+  if (i.fail && (R.state === 'rec' || R.state === 'paused')) { stopRec(); return; }
   if (i.call && R.state === 'rec') { R.acc = elapsed(); R.state = 'paused'; R.callPaused = true; updateRecUI(); showRecWarn('wCall'); }
   else if (R.callPaused && i.state === 'rec' && R.state === 'paused') { R.callPaused = false; R.t0 = performance.now(); R.state = 'rec'; updateRecUI(); showRecWarn(null); }
 }
@@ -5944,7 +5959,9 @@ const pauseArgs = () => ({ pmax: S.pauseMax, pkeep: PAUSE_KEEP[S.pauseMax] || 0.
 const tlClip = () => ls.get('tlClip', null);
 function tlCopy(cut) {
   const c = tlSel(); if (!c) return;
-  ls.set('tlClip', { path: c.path, ch: c.ch, dur: c.dur, in: c.in, out: c.out, gain: c.gain || 0, fi: c.fi || 0, fo: c.fo || 0, eq: c.eq || null, bass: c.bass || 0, treble: c.treble || 0, env: c.env || null, fx: c.fx || [], name: c.name || '', kind: c.kind || tlKind(c.tr), at: c.at });
+  ls.set('tlClip', { path: c.path, ch: c.ch, dur: c.dur, in: c.in, out: c.out, gain: c.gain || 0, fi: c.fi || 0, fo: c.fo || 0, eq: c.eq || null, bass: c.bass || 0, treble: c.treble || 0, env: c.env || null, fx: c.fx || [], name: c.name || '', kind: c.kind || tlKind(c.tr), at: c.at,
+    // 5.14.2: the effect list, balance and the files behind heavy effects come along too
+    pan: c.pan || 0, rk: c.rk ? JSON.parse(JSON.stringify(c.rk)) : undefined, src: c.src || undefined, hc: c.hc ? JSON.parse(JSON.stringify(c.hc)) : undefined, hcOut: c.hcOut || undefined });
   if (cut) tlDelete(); else renderTlBar();
   toast(t(cut ? 'tlCutDone' : 'tlCopied'));
 }
@@ -6525,7 +6542,8 @@ function welcome() {
   if (stack.length) return;   // a shortcut opened the recorder: try again next start
   const last = ls.get('lastVer', '');
   ls.set('lastVer', VERSION);
-  if (!ls.get('introDone', false) && !last && !S.items.size) { showIntro(false); return; }
+  // 5.14.2: a fresh install has seen everything new, so the 4.10.1 one-off card does not pop up on the next start
+  if (!ls.get('introDone', false) && !last && !S.items.size) { ls.set('news4101', true); showIntro(false); return; }
   ls.set('introDone', true);
   const mm = v => String(v).split('.').slice(0, 2).join('.');   // a fix release (4.0.1) does not show the card again
   // 4.10.1: the card was out of date in 4.10, so it shows once more; the edit-screen hint is new too
@@ -6675,7 +6693,7 @@ function renderEdit() {
   const box = $('#editTab');
   if (!box || S.tab !== 'edit') return;
   if (!NATIVE) { box.innerHTML = `<div class="empty">${ic('scissors', 1.6)}<b>${esc(t('tabEdit'))}</b>${esc(t('wsNative'))}</div>`; return; }
-  if (!TL.p) tlLoad();
+  if (!TL.p) { tlLoad(); tlMissing(); }
   const empty = !TL.p.clips.length;
   box.innerHTML = `<div class="tl-top">
       <button class="icon-btn" type="button" data-tl="undo" aria-label="${esc(t('undo'))}"${TL.undo.length && !TL.busy ? '' : ' disabled'}>${ic('undo')}</button>

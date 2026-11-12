@@ -166,7 +166,13 @@ final class VideoMux {
             if (base == null) base = new File(c.getFilesDir(), "movies");
             File d = new File(base, MediaLib.FOLDER);
             if (!d.exists()) d.mkdirs();
+            name = MediaLib.safeName(name);
             f = new File(d, name);
+            // 5.14.2: never over an earlier video with the same name: "name (2).mp4", "name (3).mp4"…
+            int dot = name.lastIndexOf('.');
+            String stem = dot > 0 ? name.substring(0, dot) : name, ext = dot > 0 ? name.substring(dot) : "";
+            for (int i = 2; f.exists(); i++) f = new File(d, stem + " (" + i + ")" + ext);
+            name = f.getName();
             out = new FileOutputStream(f);
         }
         InputStream in = new FileInputStream(from);

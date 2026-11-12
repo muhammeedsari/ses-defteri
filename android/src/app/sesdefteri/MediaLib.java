@@ -204,7 +204,22 @@ final class MediaLib {
     }
 
     /** a ringtone: Ringtones/ on Android 10+, flagged so the system sound picker lists it */
+    /** 5.14.2: a name from outside (shared file, title) without folders or control characters, at most ~120 characters */
+    static String safeName(String n) {
+        if (n == null) n = "";
+        n = n.replace('/', '_').replace('\\', '_').replaceAll("[\\x00-\\x1f:*?\"<>|]", "_").trim();
+        while (n.startsWith(".")) n = n.substring(1);
+        if (n.isEmpty()) n = "Ses Defteri";
+        if (n.length() > 120) {
+            int dot = n.lastIndexOf('.');
+            String ext = dot > 0 && n.length() - dot <= 6 ? n.substring(dot) : "";
+            n = n.substring(0, 120 - ext.length()).trim() + ext;
+        }
+        return n;
+    }
+
     static Target createRingtone(Context c, String displayName, String mime) throws IOException {
+        displayName = safeName(displayName);
         if (!scoped()) return create(c, displayName, mime);
         ContentValues v = new ContentValues();
         v.put(MediaStore.MediaColumns.DISPLAY_NAME, displayName);
@@ -227,6 +242,7 @@ final class MediaLib {
 
     /** 3.7: recordings can go to Music (default), Recordings (Android 12+), Podcasts or Download, always in a "Ses Defteri" folder */
     static Target create(Context c, String displayName, String mime, String dir) throws IOException {
+        displayName = safeName(displayName);
         Target t = new Target();
         t.name = displayName;
         if (scoped()) {
@@ -346,6 +362,7 @@ final class MediaLib {
     static JSONObject copyInTarget(Context c, Target t, File from) throws IOException {
         InputStream in = null;
         OutputStream out = null;
+        boolean done = false;
         try {
             in = new FileInputStream(from);
             out = open(c, t);
@@ -353,8 +370,12 @@ final class MediaLib {
             int n;
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
             out.close(); out = null;
-            return publish(c, t);
+            JSONObject item = publish(c, t);
+            done = item != null;
+            return item;
         } finally {
+            // 5.14.2: a copy that failed half way (storage full) leaves no broken file behind, in every format
+            if (!done) { try { if (out != null) out.close(); } catch (IOException ignored) { } out = null; discard(c, t); }
             try { if (in != null) in.close(); } catch (IOException ignored) { }
             try { if (out != null) out.close(); } catch (IOException ignored) { }
         }

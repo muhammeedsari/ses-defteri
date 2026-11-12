@@ -49,6 +49,7 @@ final class Sounds {
         if (!arc.isFile() || arc.length() != n) AsrModels.fetch(URL, arc, n, 0, n, p, cancel);
         final java.util.List<String> want = java.util.Arrays.asList(FILES);
         InputStream in = new java.io.BufferedInputStream(new java.io.FileInputStream(arc), 1 << 16);
+        boolean ok = false;
         try {
             Untar.extract(in, new Untar.Place() {
                 @Override public File to(String name) {
@@ -56,7 +57,11 @@ final class Sounds {
                     return want.contains(base) ? new File(d, base) : null;
                 }
             });
-        } finally { in.close(); }
+            ok = true;
+        } finally {
+            in.close();
+            if (!ok) { arc.delete(); for (String f : want) new File(d, f).delete(); }   // 5.14.2: as for Whisper
+        }
         arc.delete();
         if (!ready(c)) throw new IllegalStateException("download-short");
         return new JSONObject().put("ready", true);

@@ -319,10 +319,13 @@ final class Recorder {
         JSONObject res = new JSONObject();
         try {
             if (ar == null) { res.put("ok", false); res.put("error", "idle"); return res.toString(); }
-            boolean ok = halt();
+            boolean cut = fail != null;
+            halt();
             Sink s = sink;
             sink = null;
-            try { if (ok && s != null) s.finish(); else if (s != null) s.abort(); } catch (Exception e) { ok = false; }
+            // 5.14.2: a recording cut short by an error (full storage, mic taken) keeps what was written
+            boolean ok = s != null && s.frames() > rate / 10;
+            try { if (ok) s.finish(); else if (s != null) s.abort(); } catch (Exception e) { ok = false; }
             try { if (pfd != null) pfd.close(); } catch (Exception ignored) { }
             pfd = null;
             startService(c, false);
@@ -340,6 +343,7 @@ final class Recorder {
             if (item == null) { res.put("ok", false); res.put("error", "publish"); return res.toString(); }
             res.put("ok", true);
             res.put("item", item);
+            if (cut) res.put("cut", true);
         } catch (Exception e) {
             try { res.put("ok", false); res.put("error", String.valueOf(e.getMessage())); } catch (Exception ignored) { }
         }
@@ -432,7 +436,10 @@ final class Recorder {
             bb.flip();
             while (bb.hasRemaining()) fc.write(bb);
             fr += n / chans;
+            // 5.14.2: the header follows every ~5 s, so a file cut off by a crash still plays
+            if (fr - hdr >= rate * 5L) { hdr = fr; fc.write(ByteBuffer.wrap(app.sesdefteri.dsp.Wav.header(chans, rate, false, fr)), 0); }
         }
+        long hdr;
         @Override public long frames() { return fr; }
         @Override public void finish() throws Exception {
             fc.write(ByteBuffer.wrap(app.sesdefteri.dsp.Wav.header(chans, rate, false, fr)), 0);
@@ -556,7 +563,7 @@ final class Recorder {
 
     /** {"state": rec|paused|idle, "call": paused because of a call} */
     static synchronized String info() {
-        return "{\"state\":\"" + state + "\",\"call\":" + auto + "}";
+        return "{\"state\":\"" + state + "\",\"call\":" + auto + ",\"fail\":" + (fail != null) + "}";
     }
 
     static synchronized boolean resumeManual() { auto = false; return resume(); }

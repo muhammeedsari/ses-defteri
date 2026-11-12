@@ -187,6 +187,8 @@ public final class Pipeline {
             if (Double.isInfinite(got) || Math.abs(plan.target.lufs - got) < 0.2) break;
             gain = Enhancer.clamp(gain + (plan.target.lufs - got) * 1.1, -30, 36);
         }
+        // 5.14.2: with no speech found (noise, silence, hum) do not pump the background up by 30 dB
+        if (plan.analysis.speechFrames == 0) gain = Math.min(gain, 6);
         return gain;
     }
 

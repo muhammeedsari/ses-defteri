@@ -27,8 +27,9 @@ final class Tts {
 
     /** 5.12: the downloadable AI voices are gone (their pronunciation library is GPL); what they left on the phone goes too */
     static void cleanup(Context c) {
-        final File d = new File(c.getFilesDir(), "tts");
-        if (d.isDirectory()) new Thread(new Runnable() { @Override public void run() { deleteTree(d); } }).start();
+        // 5.14.2: also the speech pieces a stopped job left in the cache (where speak() writes them)
+        final File d = new File(c.getFilesDir(), "tts"), t = new File(c.getCacheDir(), "tts");
+        if (d.isDirectory() || t.isDirectory()) new Thread(new Runnable() { @Override public void run() { deleteTree(d); deleteTree(t); } }).start();
     }
     private static void deleteTree(File f) {
         File[] fs = f.listFiles();

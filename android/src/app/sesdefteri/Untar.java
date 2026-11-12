@@ -42,6 +42,7 @@ final class Untar {
                 f.getParentFile().mkdirs();
                 File part = new File(f.getPath() + ".part");
                 OutputStream os = new FileOutputStream(part);
+                boolean ok = false;
                 try {
                     long left = size;
                     while (left > 0) {
@@ -50,7 +51,8 @@ final class Untar {
                         os.write(b, 0, n);
                         left -= n;
                     }
-                } finally { os.close(); }
+                    ok = true;
+                } finally { os.close(); if (!ok) part.delete(); }   // 5.14.2: a broken download leaves no half file
                 if (!part.renameTo(f)) throw new IOException("rename");
                 skip(in, pad);
             } else {
@@ -86,6 +88,11 @@ final class Untar {
         int tPos, left, last = -1, run, repeat;
         byte repByte;
         boolean eof;
+        // 5.14.2: every block's CRC is checked, so a damaged download fails instead of giving a broken model
+        int crc, blockCrc;
+        boolean inBlock;
+        static final int[] CRC = new int[256];
+        static { for (int i = 0; i < 256; i++) { int c = i << 24; for (int k = 0; k < 8; k++) c = (c & 0x80000000) != 0 ? (c << 1) ^ 0x04c11db7 : c << 1; CRC[i] = c; } }
 
         Bz2(InputStream in) throws IOException { this.in = new java.io.BufferedInputStream(in, 1 << 16); header(); }
 
@@ -120,7 +127,8 @@ final class Untar {
                 if (magic != 0x314159265359L) throw new IOException("bz2 block");
                 break;
             }
-            bits(32);   // block CRC
+            blockCrc = bits(32);
+            crc = -1; inBlock = true;
             if (bit() != 0) throw new IOException("bz2 randomised");
             int origPtr = bits(24);
             // symbols in use
@@ -256,9 +264,11 @@ final class Untar {
                 int c = next();
                 if (c < 0) {
                     if (got > 0) return got;
+                    if (inBlock) { inBlock = false; if (~crc != blockCrc) throw new IOException("bz2 crc"); }
                     if (!block()) { eof = true; return -1; }
                     continue;
                 }
+                crc = (crc << 8) ^ CRC[((crc >>> 24) ^ c) & 0xff];
                 b[off + got++] = (byte) c;
             }
             return got;
