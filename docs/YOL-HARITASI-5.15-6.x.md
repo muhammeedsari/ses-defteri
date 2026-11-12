@@ -1,5 +1,19 @@
 # Ses Defteri — Konuşma Yol Haritası (5.15 → 6.x)
 
+
+> **Güncel sıra (2026-11-12, Doktor'un kararı; aşağıdaki numaralardan önce gelir):**
+> 1. 5.14.2 + 5.14.3 veri kaybı düzeltmelerinin telefon testi
+> 2. 5.15 Play'e hazırlık (Aşama 0)
+> 3. 5.16 Kayıt sırasında not alma (Aşama 1)
+> 4. Türkçe doğruluk karşılaştırması (Samsung, Otter, Whisper base/small, seda-v0.1; aynı kayıtlar)
+> 5. 5.17–5.18 Canlı yazıya dökme (Aşama 2; yol A = VAD + Whisper, yedek seda-v0.1 Apache 2.0)
+> 6. 5.19 Arama ve arşiv (Aşama 4)
+> 7. 5.20–5.22 Podcast stüdyosu (Aşama 5); ses seviyesi hedefleri zaten Temizle'de, MP3 bölümleri (ID3 CHAP/CTOC) araya girebilir
+> 8. 6.x Kalite ve hız (Aşama 6)
+> 9. **En son:** Özet ve başlıklar (Aşama 3), önce modelsiz özet, dil modeli ölçümden sonra
+>
+> Araştırma raporu: https://claude.ai/artifact/17fzuwrQ9RuPGuUoKyCbjq
+
 ## Hedef
 Her Android telefonda çalışan, internetsiz, reklamsız, aboneliksiz konuşma stüdyosu:
 kaydet → temizle → yazıya dök → düzenle → paylaş.
