@@ -117,3 +117,4 @@ Premium: dil modeliyle özet ve soru-cevap, podcast şablonu ve "Bölümü hazı
 
 ## Türkçe doğruluk karşılaştırması (2026-11-12, bitti)
 8 test sesi (test-sesleri-3), kelime hata oranı: Whisper base %40,8, Whisper small %17,8, seda-v0.1 %21,9, seda-v0.2-tiny %19,2, seda-v0.2 %10,9 (akış, greedy, LM yok). seda ~16× hızlı, müzik/sessizlikte uydurmuyor; Whisper müzikte "(Müzik çalıyor)" ekliyor. Rapor: https://claude.ai/artifact/McaTZBUfnw2wtvddTgc11C, betik `tests/asr/`. Lisans: v0.1 Apache 2.0, v0.2 CC BY-SA 4.0.
+Karar (2026-11-12): canlı yazıda iki model de sunulur, kullanıcı seçer (seda-v0.1 / seda-v0.2), ikisi de isteğe bağlı indirilir.
