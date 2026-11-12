@@ -58,6 +58,6 @@ final class Device {
         }
         if ("clean".equals(kind)) return a.optBoolean("ai", false) ? "aidenoise" : null;
         if ("fillers".equals(kind)) return a.optBoolean("ai", false) ? "flai" : null;
-        return "tlSep".equals(kind) || "sounds".equals(kind) || "fwords".equals(kind) || "transcribe".equals(kind) || "tlSpk".equals(kind) || "vad".equals(kind) || "ttsSpeak".equals(kind) ? kind : null;
+        return "tlSep".equals(kind) || "sounds".equals(kind) || "fwords".equals(kind) || "transcribe".equals(kind) || "tlSpk".equals(kind) || "recSpk".equals(kind) || "vad".equals(kind) || "ttsSpeak".equals(kind) ? kind : null;
     }
 }

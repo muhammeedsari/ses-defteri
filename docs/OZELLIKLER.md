@@ -111,6 +111,8 @@ Sonradan değişen ya da kaldırılan özellikler yanında **(şimdi: …)** not
 | 5.11–5.13 | Lisans temizliği: doğal okuma sesleri kaldırıldı, metinden ses yalnız telefonun sesiyle; YZ kütüphanesi GPL parça olmadan yeniden derlendi, APK ~2 MB küçüldü. |
 | 5.14 | İnceleme düzeltmeleri (Pratik'te "Akorları gizle" ikinci açılışta çalışıyor, Yapıştır yalnız kopya varken). Klip kartında Geçiş yerine **Çoğalt**; **işaret kaldırma** (İşareti kaldır, bayrağa iki dokunuş, Tüm işaretleri sil). |
 | 5.14.1 | Mastering'de (Doğal, Sıcak) ani yüksek seslerde çatırtı giderildi; ton değiştirme iptal edilince bellek boşaltılıyor. |
+| 5.15–5.17 | Not alma (fotoğraf, hızlı işaretler), canlı yazı (seda / Whisper), seda ile hızlı Türkçe yazıya dökme. |
+| 5.18 | **Arama ve arşiv:** arama sonucuna dokununca o andan çalar; **Süz** (tarih, süre, işaret türü, konuşmacı, metni olanlar); kayıt metninde **konuşmacılar** ve ad verme (adlar telefonda, sonraki kayıtlarda önerilir); **bulutsuz yedek** (Ayarlar › Depolama: tek .zip, geri yükleme; aynı dosya varsa notları tamamlanır). |
 
 ## Bilinen sınırlar (5.14.1)
 

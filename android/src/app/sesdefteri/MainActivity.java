@@ -63,6 +63,8 @@ public class MainActivity extends Activity implements Player.Listener {
     private static final int REQ_VIDEO = 16;
     private static final int REQ_VIDEO_TL = 17;
     private static final int REQ_PHOTO = 18;
+    private static final int REQ_BACKUP = 19;
+    private static final int REQ_RESTORE = 20;
     private static String photoPending;   // 5.15: the photo the camera is taking during a recording (id)
     private volatile String videoBusy;
 
@@ -420,6 +422,9 @@ public class MainActivity extends Activity implements Player.Listener {
         } else if (code == REQ_VIDEO) {
             Uri[] uris = result == RESULT_OK ? urisFrom(data) : null;
             if (uris != null && uris.length > 0) importVideos(uris);
+        } else if (code == REQ_BACKUP || code == REQ_RESTORE) {
+            Uri u = result == RESULT_OK && data != null ? data.getData() : null;
+            js("window.__sdArchive && window.__sdArchive(" + (code == REQ_BACKUP) + "," + (u != null ? q(u.toString()) : "null") + ")");
         } else if (code == REQ_VIDEO_TL) {
             Uri[] uris = result == RESULT_OK ? urisFrom(data) : null;
             js("window.__sdVideo && window.__sdVideo(" + (uris != null && uris.length > 0 ? q(uris[0].toString()) : "null") + ")");
@@ -865,6 +870,19 @@ public class MainActivity extends Activity implements Player.Listener {
             });
         }
 
+        /** 5.18: where the backup goes (save = true, a new .zip) or which backup to bring back; the answer comes through window.__sdArchive */
+        @JavascriptInterface public void pickArchive(final boolean save, final String name) {
+            ui(new Runnable() {
+                @Override public void run() {
+                    Intent i = new Intent(save ? Intent.ACTION_CREATE_DOCUMENT : Intent.ACTION_OPEN_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    if (save) { i.setType("application/zip"); i.putExtra(Intent.EXTRA_TITLE, name); }
+                    else i.setType("*/*");
+                    try { startActivityForResult(i, save ? REQ_BACKUP : REQ_RESTORE); } catch (Exception e) { js("window.__sdArchive && window.__sdArchive(" + save + ",null)"); }
+                }
+            });
+        }
+
         /** one video for the project's sound to go into; the answer comes back through window.__sdVideo */
         @JavascriptInterface public void pickVideoFor() {
             ui(new Runnable() {
@@ -1301,6 +1319,12 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Speakers.download(MainActivity.this, p, cancel);
                         } else if ("tlSpk".equals(kind)) {
                             res = Speakers.run(MainActivity.this, a, p, cancel);
+                        } else if ("recSpk".equals(kind)) {
+                            res = Speakers.rec(MainActivity.this, a, p, cancel);
+                        } else if ("backup".equals(kind)) {
+                            res = Archive.backup(MainActivity.this, a, p, cancel);
+                        } else if ("restore".equals(kind)) {
+                            res = Archive.restore(MainActivity.this, a, p, cancel);
                         } else if ("tlSep".equals(kind)) {
                             res = Separator.split(MainActivity.this, a, p, cancel);
                         } else if ("tlRender".equals(kind)) {

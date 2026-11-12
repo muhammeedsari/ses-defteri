@@ -962,6 +962,13 @@ html:not(.tech) .pu-card small{display:none}
 .rec-live .lag{color:var(--stage-mark);font-size:12.5px}
 .rec-live .mk{color:var(--stage-mark);font-size:13.5px;display:flex;align-items:center;gap:5px}
 .rec-live .mk .ic{width:13px;height:13px;flex:none}
+/* 5.18: filters, speakers in the text */
+#fltBtn{margin-left:auto}
+#fltBtn.on{color:var(--accent);font-weight:600}
+.flt-g{display:flex;flex-wrap:wrap;gap:6px}
+.segs li.seg-spk{display:block;padding:8px 4px 0}
+.spk-lab{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--c);padding:3px 10px 3px 8px;border-radius:999px;background:color-mix(in srgb,var(--c) 12%,transparent)}
+.spk-lab .ic{width:15px;height:15px}
 </style>
 
 <div class="seltop" id="selTop" hidden></div>
@@ -1006,7 +1013,7 @@ html:not(.tech) .pu-card small{display:none}
     <label class="search"><span id="searchIc"></span><input id="q" type="search" data-tp="searchRec" autocomplete="off" enterkeyhint="search"><button class="icon-btn" id="qClear" type="button" data-ta="clearSearch" hidden></button></label>
     <div class="chips" id="chips" role="toolbar" data-ta="categories"></div>
     <div class="listbar" id="listbar"><span id="count"></span><button class="tool" id="batchBtn" type="button" hidden></button>
-      <button class="sort-btn" id="sortBtn" type="button" data-ta="sort"></button>
+      <button class="sort-btn" id="fltBtn" type="button"></button><button class="sort-btn" id="sortBtn" type="button" data-ta="sort"></button>
     </div>
   </div>
 
@@ -1224,6 +1231,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n64.js"></script>
 <script src="i18n65.js"></script>
 <script src="i18n66.js"></script>
+<script src="i18n67.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -1235,7 +1243,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.17';
+const VERSION = '5.18';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   // 5.14.2: a project that cannot be stored (storage full) says so once instead of silently losing edits
@@ -1337,6 +1345,7 @@ const P = {
   b10: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 3.8v3.4h3.4"/><text x="12" y="15.2" text-anchor="middle" fill="currentColor" stroke="none" style="font:600 7px var(--f-mono)">10</text>',
   info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="7.8" r=".6" fill="currentColor"/>',
   sortic: '<path d="M7 4v16m0 0l-3-3m3 3l3-3M13 6h8M13 11h6M13 16h4"/>',
+  funnel: '<path d="M4 5h16l-6.2 7.4V19l-3.6-1.8v-4.8z"/>',
   f10: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 3.8v3.4h-3.4"/><text x="12" y="15.2" text-anchor="middle" fill="currentColor" stroke="none" style="font:600 7px var(--f-mono)">10</text>'
 };
 const ic = (n, sw) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="${sw || 1.8}" stroke-linecap="round" stroke-linejoin="round">${P[n]}</svg>`;
@@ -1458,7 +1467,7 @@ const recItems = () => visibleItems().filter(it => kindOf(it) === 'rec');
 const musicItems = () => visibleItems().filter(it => kindOf(it) === 'music' && !(S.minSong && it.duration > 0 && it.duration < S.minSong));
 const META_KEYS = ['id', 'title', 'userTitle', 'created', 'duration', 'mime', 'size', 'categoryId', 'notes', 'bookmarks', 'fav', 'peaks',
   'source', 'mode', 'sample', 'fileName', 'kind', 'pos', 'src',
-  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose', 'trashed', 'lufs', 'cats', 'cover', 'uArtist', 'mkey', 'lyrics', 'smap'];
+  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose', 'trashed', 'lufs', 'cats', 'cover', 'uArtist', 'mkey', 'lyrics', 'smap', 'spkNames'];
 function metaOf(it) { const o = {}; for (const k of META_KEYS) if (it[k] !== undefined) o[k] = it[k]; return o; }
 const saveRec = r => db.put('recordings', metaOf(r)).catch(() => toast(t('saveFail')));
 function fromNative(n, meta) {
@@ -1945,6 +1954,7 @@ function openSettings() {
     <div class="set-sec"><h4>${esc(t('setStorage'))}</h4>
       <div class="set-sub"><span>${esc(t('setTrash'))}</span><select id="setTrash" class="sel-full">${[30, 7, 0].map(v => `<option value="${v}"${S.trashDays === v ? ' selected' : ''}>${esc(t('trash_' + v))}</option>`).join('')}</select></div>
       <div><button class="btn sm" type="button" id="openTrash">${esc(t('trash'))} (${trashItems().length})</button></div>
+      <div class="set-sub"><span>${esc(t('bkT'))}</span><div class="st-acts"><button class="btn sm" type="button" id="setBk">${ic('share')}${esc(t('bkBtn'))}</button><button class="btn sm" type="button" id="setRs">${ic('import')}${esc(t('rsBtn'))}</button></div><small class="hint">${esc(t('bkD'))}</small></div>
       ${(CAPS.sdk || 0) >= 31 && !(() => { try { return AND.canManageMedia(); } catch (e) { return true; } })() ? `<div class="set-sub"><span>${esc(t('setMM'))}</span><button class="btn sm" type="button" id="setMM">${esc(t('mmGo'))}</button><small class="hint">${esc(t('setMMD'))}</small></div>` : ''}</div>` : ''}
     <p class="about">Ses Defteri ${VERSION}</p>
     <p class="about">${esc(t('licenses'))}</p>
@@ -2012,6 +2022,8 @@ function openSettings() {
   // 4.0: the intro, what's new and the screen tips can be seen again
   const on = (q, f) => { const el = card.querySelector(q); if (el) el.onclick = f; };
   on('#setNews', () => { closeModal(); showNews(); });
+  on('#setBk', () => { closeModal(); archivePick(true); });
+  on('#setRs', () => { closeModal(); archivePick(false); });
   on('#setIntro', () => { closeModal(); showIntro(true); });
   on('#setCoach', () => { ls.set('coach', {}); ls.set('coachOff', false); toast(t('coResetDone'), 3000); });
   const cdS = card.querySelector('#setCd'); if (cdS) cdS.onchange = () => ls.set('recCd', +cdS.value);
@@ -2045,12 +2057,20 @@ function openSettings() {
 $('#setBtn').addEventListener('click', openSettings);
 
 /* ---------- recordings list ---------- */
+/* 5.18: the lowered text of long fields is kept per item, so typing stays quick with hundreds of transcripts */
+const NC = new WeakMap();
+function normC(r, k) {
+  const v = r[k] || ''; let c = NC.get(r); if (!c) NC.set(r, c = {});
+  const e = c[k]; if (e && e[0] === v) return e[1];
+  const n = norm(v); c[k] = [v, n]; return n;
+}
 function matchRec(r, q) {
-  if (norm(r.title).includes(q)) return { kind: 'title' };
+  if (normC(r, 'title').includes(q)) return { kind: 'title' };
   for (const b of r.bookmarks || []) if (norm(b.label).includes(q) || norm(b.note).includes(q) || (b.tag && norm(t('tag_' + b.tag)).includes(q))) return { kind: 'bm', b };
-  if (norm(r.notes).includes(q)) return { kind: 'note' };
+  if (normC(r, 'notes').includes(q)) return { kind: 'note' };
   if ((r.tags || []).some(x => norm(x).includes(q))) return { kind: 'tag' };
-  if (norm(r.ttext).includes(q)) return { kind: 'text' };
+  if (normC(r, 'ttext').includes(q)) return { kind: 'text' };
+  for (const k in r.spkNames || {}) if (r.spkNames[k] && norm(r.spkNames[k]).includes(q)) return { kind: 'spk', k: +k, name: r.spkNames[k] };
   const c = catById(r.categoryId); if (c && norm(c.name).includes(q)) return { kind: 'cat' };
   if (norm(r.folder).includes(q)) return { kind: 'folder' };
   return null;
@@ -2060,10 +2080,69 @@ function visibleRecs() {
   if (S.filter === 'fav') r = r.filter(x => x.fav);
   else if (S.filter === 'none') r = r.filter(x => !catsOf(x).length);
   else if (S.filter !== 'all') r = r.filter(x => inCat(x, S.filter));
+  if (fltN()) r = r.filter(fltPass);
   const q = norm(S.q.trim());
   r.forEach(x => { x._hit = null; });
   if (q) r = r.filter(x => (x._hit = matchRec(x, q)));
   return r.sort(sortCmp('rec'));
+}
+/* ---------- 5.18: filters (date, length, mark tag, speaker, with text) ---------- */
+let FLT = Object.assign({ d: '', l: '', tag: '', spk: '', tx: false }, ls.get('flt', {}));
+const fltN = () => ['d', 'l', 'tag', 'spk'].filter(k => FLT[k]).length + (FLT.tx ? 1 : 0);
+function fltPass(x) {
+  if (FLT.d && (x.created || 0) < (FLT.d === 'today' ? dayStart(Date.now()) : Date.now() - FLT.d * 864e5)) return false;
+  if (FLT.l) { const d = x.duration || 0; if (FLT.l === 's' ? d >= 60 : FLT.l === 'm' ? d < 60 || d > 600 : d <= 600) return false; }
+  if (FLT.tag && !(x.bookmarks || []).some(b => b.tag === FLT.tag)) return false;
+  if (FLT.spk && !Object.values(x.spkNames || {}).some(n => n && norm(n) === norm(FLT.spk))) return false;
+  return !FLT.tx || !!x.ttext;
+}
+function spkAll() {
+  const m = new Map();
+  for (const r of recItems()) for (const n of Object.values(r.spkNames || {})) if (n) m.set(norm(n), n);
+  return [...m.values()].sort((a, b) => a.localeCompare(b, LOC));
+}
+function fltShow() { const b = $('#fltBtn'), n = fltN(); b.innerHTML = `${ic('funnel')}<span>${esc(t('fltBtn'))}${n ? ' · ' + n : ''}</span>`; b.classList.toggle('on', !!n); }
+function openFilter() {
+  const f = Object.assign({}, FLT);
+  const card = openModal(`<h3>${esc(t('fltT'))}</h3><div class="modal-body" id="fltBody"></div>
+    <div class="modal-actions"><button class="btn" type="button" data-clr>${esc(t('fltClear'))}</button><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`);
+  const grp = (k, opts) => `<div class="flt-g">${opts.map(([v, lab]) => `<button class="chip" type="button" data-fk="${k}" data-fv="${esc(v)}" aria-pressed="${f[k] === v}">${esc(lab)}</button>`).join('')}</div>`;
+  const lab = k => `<p class="sort-lab">${esc(t(k))}</p>`;
+  const draw = () => {
+    const sp = spkAll();
+    card.querySelector('#fltBody').innerHTML = lab('fltDate') + grp('d', [['today', t('today')], ['7', t('flt7')], ['30', t('flt30')], ['365', t('flt365')]])
+      + lab('fltLen') + grp('l', [['s', t('fltS')], ['m', t('fltM')], ['l', t('fltL')]])
+      + lab('fltTag') + grp('tag', TAGS.map(x => [x, t('tag_' + x)]))
+      + (sp.length ? lab('fltSpk') + grp('spk', sp.map(n => [n, n])) : '')
+      + lab('fltMore') + `<div class="flt-g"><button class="chip" type="button" data-ftx aria-pressed="${f.tx}">${esc(t('fltTx'))}</button></div>`;
+  };
+  draw();
+  card.onclick = e => {
+    const b = e.target.closest('[data-fk]');
+    if (b) { const k = b.dataset.fk; f[k] = f[k] === b.dataset.fv ? '' : b.dataset.fv; draw(); return; }
+    if (e.target.closest('[data-ftx]')) { f.tx = !f.tx; draw(); return; }
+    if (e.target.closest('[data-clr]')) { f.d = f.l = f.tag = f.spk = ''; f.tx = false; draw(); return; }
+    if (e.target.closest('[data-x]')) { closeModal(); return; }
+    if (e.target.closest('[data-ok]')) { FLT = f; ls.set('flt', FLT); closeModal(); fltShow(); listLimit = 120; renderList(); }
+  };
+}
+$('#fltBtn').addEventListener('click', openFilter);
+/** 5.18: a search hit opens the recording and plays from the moment the words (or the mark, or the speaker) are */
+async function openHit(id) {
+  const r = S.items.get(id), h = r && S.q.trim() ? r._hit : null;
+  let at = null;
+  if (h && h.kind === 'bm') at = h.b.t;
+  else if (h && (h.kind === 'text' || h.kind === 'spk')) {
+    let tx = S.texts.get(id);
+    if (!tx) { tx = await db.get('texts', id).catch(() => null); if (tx) S.texts.set(id, tx); }
+    const sg = (tx && tx.segments) || [], q = norm(S.q.trim());
+    const x = h.kind === 'spk' ? sg.find((_, i) => tx.spk && tx.spk[i] === h.k) : sg.find(z => norm(z[2]).includes(q));
+    if (x) at = x[0];
+  }
+  if (at == null) return openPlayer(id);
+  at = Math.max(0, at - 0.4);
+  if (S.cur === id && audio.src) { await openPlayer(id); seek(at); play(); }
+  else await openPlayer(id, { autoplay: true, at });
 }
 /* 3.6: sorting in a bottom sheet: what by (date, name, length, size; songs also artist, album) and which way, remembered per list */
 const SORTF = { rec: ['date', 'name', 'dur', 'size'], music: ['name', 'artist', 'album', 'date', 'dur', 'size'] };
@@ -2130,6 +2209,7 @@ function hitLine(r) {
     return `<span class="hit">${h.kind === 'note' ? esc(t('notePrefix')) + ' ' : ''}${mk((i ? '…' : '') + n.slice(i, i + 90))}</span>`;
   }
   if (h.kind === 'tag') return `<span class="hit">#${mk((r.tags || []).find(x => norm(x).includes(norm(q))))}</span>`;
+  if (h.kind === 'spk') return `<span class="hit">${ic('people', 1.6)} ${mk(h.name)}</span>`;
   return '';
 }
 const folderOf = s => (s.folder || '').replace(/\/$/, '') || t('phone');
@@ -2165,6 +2245,7 @@ function renderList() {
     list.innerHTML = '';
     let ti, b;
     if (S.q.trim()) { ti = t('noResults'); b = esc(t('noResultsRec', { q: S.q.trim() })); }
+    else if (fltN() && recItems().length) { ti = t('fltNone'); b = esc(t('fltNoneB')); }
     else if (!recItems().length) { ti = t('emptyRecs'); b = esc(t('emptyRecsB')); }
     else if (S.filter === 'fav') { ti = t('noFav'); b = esc(t('noFavB')); }
     else { ti = t('emptyCat'); b = esc(t('emptyCatB')); }
@@ -2253,7 +2334,7 @@ $('#chips').addEventListener('click', e => {
 });
 $('#list').addEventListener('click', e => {
   if (e.target.closest('[data-more]')) { listLimit += 200; renderList(); return; }
-  const o = e.target.closest('[data-open]'); if (o) return openPlayer(o.dataset.open);
+  const o = e.target.closest('[data-open]'); if (o) return openHit(o.dataset.open);
   const f = e.target.closest('[data-fav]');
   if (f) { const r = S.items.get(f.dataset.fav); if (r) { r.fav = !r.fav; saveRec(r); render(); } }
 });
@@ -2511,9 +2592,9 @@ function setCur(id) {
   S.cur = id;
 }
 
-async function loadAudio(r, autoplay) {
+async function loadAudio(r, autoplay, at) {
   if (NATIVE && r.src) {
-    const start = r.pos && r.duration && r.pos < r.duration - 5 ? r.pos : 0;
+    const start = at != null ? at : r.pos && r.duration && r.pos < r.duration - 5 ? r.pos : 0;
     audio.queue([qItem(r)], 0, start, !!autoplay);
     levelMatch(r); sendSkips(r); abReset();
     return true;
@@ -2524,6 +2605,7 @@ async function loadAudio(r, autoplay) {
   if (!b || !b.blob) { toast(t('noAudio')); return false; }
   curURL = URL.createObjectURL(b.blob);
   audio.src = curURL;
+  if (at != null) try { audio.currentTime = at; } catch (e) {}
   audio.defaultPlaybackRate = S.rate; audio.playbackRate = S.rate;
   setMediaSession(r);
   if (autoplay) play();
@@ -2780,7 +2862,7 @@ function setFav(r) {
 }
 async function openPlayer(id, opts) {
   const r = S.items.get(id); if (!r) return;
-  if (S.cur !== id || !audio.src) { setCur(id); if (!(await loadAudio(r, opts && opts.autoplay))) { S.cur = null; return; } }
+  if (S.cur !== id || !audio.src) { setCur(id); if (!(await loadAudio(r, opts && opts.autoplay, opts && opts.at))) { S.cur = null; return; } }
   else if (opts && opts.autoplay) play();
   S.miniOn = false;
   fillPlayer(r);
@@ -3492,12 +3574,16 @@ function renderText(r) {
     const bms = (r.bookmarks || []).filter(b => !b.chapter && !b.topic); let k = 0;
     const mk = b => `<li class="seg-mk"><button class="bm-time tc" type="button" data-seek="${b.t}">${fmt(b.t)}</button><span>${tagChip(b.tag)}<b>${esc(b.label)}</b>${b.note ? ` ${esc(b.note)}` : ''}${phThumb(b)}</span></li>`;
     const before = tm => { let o = ''; while (k < bms.length && bms[k].t < tm) o += mk(bms[k++]); return o; };
-    h += `<ol class="segs" id="segList">${tx.segments.map((s, i) => `${before(s[0])}<li data-i="${i}"><button class="bm-time tc" type="button" data-seek="${s[0]}">${fmt(s[0])}</button><span>${esc(s[2])}</span></li>`).join('')}${before(Infinity)}</ol>
+    // 5.18: who speaks, where the speaker changes; a tap gives them a name
+    const sp = tx.spk && tx.spk.length === tx.segments.length ? tx.spk : null;
+    const who = i => sp && sp[i] >= 0 && sp[i] !== sp[i - 1] ? `<li class="seg-spk"><button type="button" class="spk-lab" data-spkn="${sp[i]}" style="--c:${SPKC[sp[i] % SPKC.length]}">${ic('people', 1.6)}${esc(spkNameOf(r, sp[i]))}</button></li>` : '';
+    h += `<ol class="segs" id="segList">${tx.segments.map((s, i) => `${before(s[0])}${who(i)}<li data-i="${i}"><button class="bm-time tc" type="button" data-seek="${s[0]}">${fmt(s[0])}</button><span>${esc(s[2])}</span></li>`).join('')}${before(Infinity)}</ol>
       <div class="st-acts"><button class="btn sm" type="button" data-tx="srt">${ic('share')}${esc(t('textSrt'))}</button>
       <button class="btn sm" type="button" data-tx="copy">${ic('copy')}${esc(t('textCopy'))}</button>
       <button class="btn sm" type="button" data-tx="redo" ${bz ? 'disabled' : ''}>${esc(t('textRedo'))}</button></div>
       <div class="st-acts"><button class="btn sm primary" type="button" data-tx="edit" ${bz ? 'disabled' : ''}>${ic('scissors')}${esc(t('teBtn'))}</button>
-      ${(r.duration || 0) >= 180 ? `<button class="btn sm" type="button" data-tx="topics">${ic('flag')}${esc(t('topicBtn'))}</button>` : ''}</div>`;
+      ${(r.duration || 0) >= 180 ? `<button class="btn sm" type="button" data-tx="topics">${ic('flag')}${esc(t('topicBtn'))}</button>` : ''}
+      <button class="btn sm" type="button" data-tx="spk" ${bz ? 'disabled' : ''}>${ic('people')}${esc(t('tlSpk'))}</button></div>`;
   } else {
     if (!CAPS.asr) h = `<p class="hint">${esc(t('textNoAsr'))}</p>`;
     else h = `<p class="hint">${esc(tx ? t('textEmpty') : t('textHint'))}</p><div class="st-acts"><button class="btn sm primary" type="button" data-tx="run" ${bz ? 'disabled' : ''}>${ic('textic')}${esc(t('textRun'))}</button></div>`;
@@ -3519,14 +3605,131 @@ $('#textBlock').addEventListener('click', e => {
   const r = curRec(); if (!r) return;
   const tg = e.target.closest('[data-tag]');
   if (tg) { closeOverlay('player'); S.tab = 'rec'; S.q = tg.dataset.tag; $('#q').value = S.q; $('#qClear').hidden = false; render(); return; }
+  const sn = e.target.closest('[data-spkn]'); if (sn) return nameSpeaker(r, +sn.dataset.spkn);
   const b = e.target.closest('[data-tx]'); if (!b) return;
   const k = b.dataset.tx, tx = S.texts.get(r.id);
   if (k === 'run' || k === 'redo') transcribeItem(r, false);
   else if (k === 'srt' && tx) { try { AND.shareText(safeName(r.title) + '.srt', tx.srt || srtOf(tx.segments), 'application/x-subrip'); } catch (x) {} }
   else if (k === 'edit') openTextEdit(r);
   else if (k === 'topics') addTopicChapters(r);
-  else if (k === 'copy' && tx) { const text = tx.segments.map(s => s[2]).join('\n'); try { AND.copyText(text); toast(t('textCopied')); } catch (x) {} }
+  else if (k === 'spk') findSpeakers(r);
+  else if (k === 'copy' && tx) { const sp = tx.spk && tx.spk.length === tx.segments.length ? tx.spk : null;
+    const text = tx.segments.map((s, i) => (sp && sp[i] >= 0 && sp[i] !== sp[i - 1] ? (i ? '\n' : '') + spkNameOf(r, sp[i]) + ':\n' : '') + s[2]).join('\n'); try { AND.copyText(text); toast(t('textCopied')); } catch (x) {} }
 });
+/* ---------- 5.18: who speaks in a recording, and their names (kept on the phone only) ---------- */
+const SPKC = ['#2E7DBA', '#C2571A', '#2F8F5B', '#9B4DCA', '#B8395E', '#7A6A1E'];
+const spkNameOf = (r, k) => (r.spkNames && r.spkNames[k]) || t('spkName', { n: k + 1 });
+async function findSpeakers(r) {
+  const tx = S.texts.get(r.id); if (!tx || !tx.segments || !tx.segments.length || BUSY.has(r.id)) return;
+  const n = await chooseBox(t('tlSpk'), t('recSpkD'), [{ value: '0', label: t('spkAuto'), desc: t('spkAutoD') }]
+    .concat([2, 3, 4, 5].map(k => ({ value: String(k), label: t('spkN', { n: k }), desc: t('spkND') }))));
+  if (!n) return;
+  if (!CAPS.spk) {
+    if (!(await confirmBox({ title: t('spkGetQ'), text: t('spkGetD'), ok: t('spkGetOk') }))) return;
+    toast(t('bgNote'), 3500);
+    try { await bgStart('spkGet', 'dl:spk', t('spkGetting'), {}); CAPS.spk = true; } catch (e) { if (!String(e.message).includes('pause')) toast(errText(e), 5000); return; }
+  }
+  let res; try { res = await studioJob('recSpk', r, { n: +n }); } catch (e) { toast(errText(e), 5000); return; }
+  if (!res.n || !res.segs.length) { toast(t('spkNone'), 4000); return; }
+  // every piece of text belongs to whoever speaks most during it
+  tx.spk = tx.segments.map(s => {
+    const o = new Array(res.n).fill(0);
+    for (const [a, b, k] of res.segs) { const v = Math.min(b, s[1]) - Math.max(a, s[0]); if (v > 0) o[k] += v; }
+    let best = -1, bv = 0; o.forEach((v, k) => { if (v > bv) { bv = v; best = k; } }); return best;
+  });
+  await db.put('texts', tx).catch(() => {});
+  r.spkNames = {}; await saveRec(r);
+  if (S.cur === r.id) renderText(r);
+  toast(t('recSpkDone', { n: res.n }), 5000);
+}
+async function nameSpeaker(r, k) {
+  const known = ls.get('spkKnown', []);
+  const v = await nameBox(t('spkNameT'), (r.spkNames || {})[k] || '', known.filter(x => !Object.values(r.spkNames || {}).includes(x)));
+  if (v == null) return;
+  r.spkNames = Object.assign({}, r.spkNames, { [k]: v });
+  if (v) ls.set('spkKnown', [v].concat(known.filter(x => norm(x) !== norm(v))).slice(0, 20));
+  await saveRec(r); renderText(r);
+}
+function nameBox(title, value, sugg) {
+  return new Promise(res => {
+    let done = false; const fin = v => { if (!done) { done = true; res(v); } };
+    const card = openModal(`<h3>${esc(title)}</h3><div class="modal-body"><input class="sel-full" type="text" id="nbIn" maxlength="40" value="${esc(value)}" placeholder="${esc(t('spkNameP'))}">
+      ${sugg.length ? `<p class="sort-lab">${esc(t('spkSugg'))}</p><div class="flt-g">${sugg.map(x => `<button class="chip" type="button" data-sg="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}</div>
+      <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`, () => fin(null));
+    const inp = card.querySelector('#nbIn');
+    const ok = () => { fin(inp.value.trim()); closeModal(); };
+    card.querySelector('[data-ok]').onclick = ok;
+    inp.onkeydown = e => { if (e.key === 'Enter') ok(); };
+    card.querySelector('[data-x]').onclick = () => closeModal();
+    card.querySelectorAll('[data-sg]').forEach(b => { b.onclick = () => { fin(b.dataset.sg); closeModal(); }; });
+    setTimeout(() => inp.focus(), 50);
+  });
+}
+
+/* ---------- 5.18: cloud-free backup: one .zip with the recordings, their notes and texts, photos and the project ---------- */
+const AUD_EXT = { 'audio/mp4': '.m4a', 'audio/m4a': '.m4a', 'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/x-wav': '.wav', 'audio/flac': '.flac', 'audio/ogg': '.ogg', 'audio/opus': '.opus', 'audio/webm': '.webm', 'audio/aac': '.aac', 'audio/3gpp': '.3gp', 'audio/amr': '.amr' };
+const fileKey = r => (r.name || '') + '|' + (r.size || 0);
+function archivePick(save) {
+  if (!NATIVE || !AND.pickArchive) return;
+  try { AND.pickArchive(save, `Ses Defteri ${new Date().toISOString().slice(0, 10)}.zip`); } catch (e) {}
+}
+window.__sdArchive = (save, uri) => { if (uri) (save ? doBackup : doRestore)(uri); };
+const arProg = key => { let last = -1; return f => { const p = Math.round(f * 100); if (p !== last) { last = p; toast(t(key, { p }), 0); } }; };
+async function doBackup(uri) {
+  const recs = [], files = [], used = new Set();
+  toast(t('bkBusy', { p: 0 }), 0);
+  for (const r of recItems()) {
+    if (!r.src) continue;
+    let nm = r.name || safeName(r.title || 'Ses') + (AUD_EXT[r.mime] || '.m4a');
+    const e = `audio/${recs.length}/${nm}`;
+    const m = metaOf(r); for (const k of ['id', 'src', 'origId', 'origSrc', 'origMoved', 'peaks']) delete m[k];
+    const x = await db.get('texts', r.id).catch(() => null);
+    recs.push({ m, e, k: fileKey(r), x: x && x.segments ? x : null });
+    files.push([e, r.src]);
+  }
+  let proj = null;
+  if (TL.p && TL.p.clips.length) {
+    proj = TL.p;
+    for (const p of new Set(TL.p.clips.map(c => c.path))) { const b = p.split('/').pop(); if (!used.has(b)) { used.add(b); files.push(['proj/' + b, { path: p }]); } }
+  }
+  const json = JSON.stringify({ app: 'sesdefteri', v: 1, ver: VERSION, at: Date.now(), recs, cats: S.cats, proj, spkKnown: ls.get('spkKnown', []) });
+  try {
+    const res = await runJob('backup', { uri, json, files }, arProg('bkBusy'));
+    hideToast(); toast(t(res.missing ? 'bkDoneMiss' : 'bkDone', { n: recs.length - res.missing, m: res.missing }), 6000);
+  } catch (e) { hideToast(); toast(errText(e), 5000); }
+}
+async function doRestore(uri) {
+  const have = [...S.items.values()].filter(r => r.src).map(fileKey);
+  toast(t('rsBusy', { p: 0 }), 0);
+  let res, j = null;
+  try { res = await runJob('restore', { uri, have }, arProg('rsBusy')); j = JSON.parse(res.json); } catch (e) { hideToast(); toast(String(e && e.message).includes('cancel') ? errText(e) : t('rsBad'), 6000); return; }
+  if (!j || j.app !== 'sesdefteri') { hideToast(); toast(t('rsBad'), 6000); return; }
+  for (const c of j.cats || []) if (c && c.id && !catById(c.id)) { S.cats.push(c); await db.put('categories', c).catch(() => {}); }
+  const byKey = new Map([...S.items.values()].filter(r => r.src).map(r => [fileKey(r), r]));
+  let added = 0, merged = 0;
+  for (const o of j.recs || []) {
+    const n = res.items[o.e]; let it = null;
+    if (n) { it = fromNative(n, Object.assign({}, o.m)); it.kind = 'rec'; S.items.set(it.id, it); added++; }
+    else if (res.skip[o.e] && (it = byKey.get(o.k))) {
+      // the same recording is already here: only what it lacks is filled in
+      for (const k of META_KEYS) { const v = o.m[k], c = it[k]; if (v !== undefined && (c === undefined || c === '' || c === null || (Array.isArray(c) && !c.length))) it[k] = v; }
+      merged++;
+    }
+    if (!it) continue;
+    await saveRec(it);
+    if (o.x && !(await db.get('texts', it.id).catch(() => null))) { const x = Object.assign({}, o.x, { id: it.id }); await db.put('texts', x).catch(() => {}); S.texts.set(it.id, x); }
+  }
+  let proj = false;
+  if (j.proj && Array.isArray(j.proj.clips) && j.proj.clips.length && TL.p && !TL.p.clips.length) {
+    const p = JSON.parse(JSON.stringify(j.proj));
+    for (const c of p.clips) c.path = res.projDir + '/' + String(c.path).split('/').pop();
+    ls.set('proj', p); tlLoad(); proj = true;
+  }
+  if (Array.isArray(j.spkKnown)) ls.set('spkKnown', [...new Set(ls.get('spkKnown', []).concat(j.spkKnown))].slice(0, 20));
+  hideToast(); render();
+  toast(t('rsDone', { n: added, m: merged }) + (proj ? ' ' + t('rsProj') : ''), 7000);
+}
+
 /* ---------- 2.2: text-based editing, retakes, hesitation sounds, topic chapters ---------- */
 const STOP = new Set(('ve veya ile ama fakat ancak çünkü ki de da mi mı mu mü bir bu şu o ben sen biz siz onlar bunu şunu onu bunun onun için gibi kadar daha çok en her hiç hem ya ne nasıl neden niye niçin şey şeyi şimdi sonra önce yani işte evet hayır var yok olan olarak oldu olur olsun değil diye ise artık bile sadece aslında belki tabii böyle şöyle öyle burada orada zaman bazı tüm bütün kendi diğer başka the and for that this with are was you have not but they his her from what all were when your can there their will would about which them then than into just like more some also very had has its our out who how why where').split(' '));
 const words = s => String(s || '').toLocaleLowerCase('tr-TR').split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 1);
@@ -7687,7 +7890,7 @@ function showIntro(again) {
   });
   document.body.appendChild(d); draw();
 }
-const NEWS = ['n516live', 'n517fast', 'n517lang', 'n517marks', 'n517music'];   // 5.17: renew with every minor version
+const NEWS = ['n518search', 'n518filter', 'n518spk', 'n518backup'];   // 5.18: renew with every minor version
 function showNews() {
   const card = openModal(`<h3>${esc(t('newsT', { v: VERSION.split('.').slice(0, 2).join('.') }))}</h3><ul class="news">${NEWS.map(k => `<li>${esc(t('news_' + k))}</li>`).join('')}</ul>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('newsOk'))}</button></div>`, () => setTimeout(coachMaybe, 300));
@@ -8118,7 +8321,7 @@ async function boot() {
   if (needLang()) { showLangPick(); return; }
   applyStatic();
   { const rb = $('#recBtn'), lb = rb.querySelector('b') || rb.appendChild(document.createElement('b')); lb.textContent = t('sh_rec'); }
-  $('#importIc').innerHTML = ic('import'); $('#sortBtn').innerHTML = sortBtnHTML('rec'); $('#searchIc').innerHTML = ic('search'); $('#setBtn').innerHTML = ic('gear');
+  $('#importIc').innerHTML = ic('import'); $('#sortBtn').innerHTML = sortBtnHTML('rec'); fltShow(); $('#searchIc').innerHTML = ic('search'); $('#setBtn').innerHTML = ic('gear');
   $('#qClear').innerHTML = ic('close'); $('#micNoteX').innerHTML = ic('close'); $('#libNoteX').innerHTML = ic('close');
   $('#tabRecIc').innerHTML = ic('mic'); $('#tabMusicIc').innerHTML = ic('note'); $('#tabEditIc').innerHTML = ic('scissors');
   $('#recClose').innerHTML = ic('close'); $('#recMarkIc').innerHTML = ic('flag'); $('#recDoneIc').innerHTML = ic('check', 2.2);

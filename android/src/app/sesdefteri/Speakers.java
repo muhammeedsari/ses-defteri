@@ -70,15 +70,51 @@ final class Speakers {
             r.close();
         }
         p.on(0.05);
-        float[] mono = java.util.Arrays.copyOf(x, len[0]);
+        return diarize(c, java.util.Arrays.copyOf(x, len[0]), from / (double) inf.rate, a.optInt("n", 0), p, cancel);
+    }
 
+    /** 5.18: who speaks when in a recording of the library (any format). a: {src, n}; same result as run, in seconds of the recording */
+    static JSONObject rec(Context c, JSONObject a, AudioTools.Progress p, final AtomicBoolean cancel) throws Exception {
+        if (!ready(c)) throw new IllegalStateException("dia-model");
+        JSONObject src = a.getJSONObject("src");
+        Studio.Fmt f = Studio.probe(c, src);
+        final int cap = MAX_SEC * RATE;
+        final float[][] x = { new float[RATE * 60] };
+        final int[] len = { 0 };
+        final float[][] m = new float[1][4096];
+        Resampler rs = new Resampler(1, (double) f.rate, (double) RATE);
+        rs.to(new app.sesdefteri.dsp.Node() {
+            @Override public void push(float[][] b, int n) {
+                if (len[0] + n > x[0].length) x[0] = java.util.Arrays.copyOf(x[0], Math.min(cap, Math.max(len[0] + n, x[0].length * 2)));
+                int k = Math.min(n, x[0].length - len[0]);
+                System.arraycopy(b[0], 0, x[0], len[0], k); len[0] += k;
+            }
+            @Override public void end() { }
+        });
+        final Resampler head = rs;
+        final int ch = f.ch;
+        Studio.source(c, src, f, p, new double[][] { { 0, 0.3 } }, cancel).run(new app.sesdefteri.dsp.Node() {
+            @Override public void push(float[][] b, int n) throws Exception {
+                if (len[0] >= cap) return;   // longer than 30 min: the first half hour
+                for (int i = 0; i < n; i++) { float s = 0; for (int k = 0; k < ch; k++) s += b[k][i]; m[0][i] = s / ch; }
+                head.push(m, n);
+            }
+            @Override public void end() throws Exception { head.end(); }
+        });
+        if (len[0] < RATE) throw new IllegalStateException("dia-short");
+        final AudioTools.Progress pp = p;
+        return diarize(c, java.util.Arrays.copyOf(x[0], len[0]), 0, a.optInt("n", 0), new AudioTools.Progress() {
+            @Override public void on(double v) { pp.on(0.3 + 0.7 * v); }
+        }, cancel);
+    }
+
+    static JSONObject diarize(Context c, float[] mono, double off, int want, AudioTools.Progress p, final AtomicBoolean cancel) throws Exception {
         OfflineSpeakerDiarizationConfig cfg = new OfflineSpeakerDiarizationConfig();
         int th = Math.max(1, Device.threads(4) / 2 + 1);
         cfg.segmentation.pyannote.model = Separator.model(c, "pyannote.int8.onnx").getAbsolutePath();
         cfg.segmentation.numThreads = th;
         cfg.embedding.model = emb(c).getAbsolutePath();
         cfg.embedding.numThreads = th;
-        int want = a.optInt("n", 0);
         cfg.clustering.numClusters = want > 0 ? want : -1;
         cfg.clustering.threshold = 0.5f;
         cfg.minDurationOn = 0.3f;
@@ -105,7 +141,6 @@ final class Speakers {
         int n = 0;
         double[] e = new double[64];
         long[] cnt = new long[64];
-        double off = from / (double) inf.rate;
         JSONArray out = new JSONArray();
         for (OfflineSpeakerDiarizationSegment s : seg) {
             if (s.speaker < 0 || s.speaker >= 64) continue;
