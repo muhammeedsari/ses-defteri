@@ -259,6 +259,7 @@
 <script src="i18n65.js"></script>
 <script src="i18n66.js"></script>
 <script src="i18n67.js"></script>
+<script src="i18n68.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -270,7 +271,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.18';
+const VERSION = '5.21';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   // 5.14.2: a project that cannot be stored (storage full) says so once instead of silently losing edits
@@ -2531,7 +2532,7 @@ function errText(e) {
   if (m.includes('tts-lang')) return t('ttsLangNo');
   if (m.includes('tts-none')) return t('ttsNone');
   if (m.includes('tts-empty')) return t('ttsEmpty');
-  if (m.includes('dia-short')) return t('spkShort');
+  if (m.includes('dia-short') || m.includes('align-short')) return t('spkShort');
   if (m.includes('hd-model')) return t('hdFail');
   if (m.includes('tag-model')) return t('sndFail');
   if (m.includes('download-')) return t('spkNet');
@@ -2656,7 +2657,7 @@ async function findSpeakers(r) {
     toast(t('bgNote'), 3500);
     try { await bgStart('spkGet', 'dl:spk', t('spkGetting'), {}); CAPS.spk = true; } catch (e) { if (!String(e.message).includes('pause')) toast(errText(e), 5000); return; }
   }
-  let res; try { res = await studioJob('recSpk', r, { n: +n }); } catch (e) { toast(errText(e), 5000); return; }
+  let res; try { res = await studioJob('recSpk', r, { n: +n, dur: r.duration || 0 }); } catch (e) { toast(errText(e), 5000); return; }
   if (!res.n || !res.segs.length) { toast(t('spkNone'), 4000); return; }
   // every piece of text belongs to whoever speaks most during it
   tx.spk = tx.segments.map(s => {
@@ -3074,6 +3075,7 @@ function tlClean() {
   const keep = new Set(), cb = tlClip(), add = c => { keep.add(c.path); if (c.prev) keep.add(c.prev); if (c.src) keep.add(c.src); for (const h of c.hc || []) keep.add(h.path); for (const f of c.fx || []) if (f.b) { keep.add(f.b.path); if (f.b.src) keep.add(f.b.src); for (const h of f.b.hc || []) keep.add(h.path); } };
   TL.p.clips.forEach(add);
   if (cb) add(cb);
+  for (const x of Object.values(ls.get('pcTpl', {}))) if (x && x.path) keep.add(x.path);   // 5.19: the podcast template's sounds
   for (const s of TL.undo.concat(TL.redo)) try { JSON.parse(s).clips.forEach(add); } catch (e) {}
   try { runJob('tlClean', { keep: [...keep], since: Date.now() - 60000 }).catch(() => {}); } catch (e) {}
 }
@@ -3554,6 +3556,8 @@ async function tlExport() {
       <div><p class="sort-lab">${esc(t('infFmt'))}</p><div class="ex-chips">${fs.map(x => `<button class="chip" type="button" data-ef="${x}">${x.toUpperCase()}</button>`).join('')}</div></div>
       <div id="exQrow"><p class="sort-lab">${esc(t('exQual'))}</p><div class="seg2" role="radiogroup">${[0, 1, 2].map(i => `<button type="button" role="radio" data-eq="${i}">${esc(t('exQ' + i))}</button>`).join('')}</div></div>
       <p class="mtext" id="exInfo" style="margin:0"></p>
+      <label class="switch"><input type="checkbox" id="exLoud"${TL.p.loud ? ' checked' : ''}><span>${esc(t('exLoud'))}<small>${esc(t('exLoudD'))}</small></span></label>
+      ${(TL.p.markers || []).length ? `<p class="hint" id="exChap">${esc(t('exChap', { n: pcChapters().length }))}</p>` : ''}
       ${sel ? `<label class="switch"><input type="checkbox" id="exOnly"><span>${esc(t('exOnly'))}<small>${esc(t('exOnlyD'))}</small></span></label>` : ''}
       <div class="ex-more"><button class="btn sm" type="button" data-ex="ring">${ic('bell')}${esc(t('exRing'))}</button><button class="btn sm" type="button" data-ex="video">${ic('film')}${esc(t('tlVideo'))}</button></div>
     </div>
@@ -3564,6 +3568,7 @@ async function tlExport() {
     card.querySelectorAll('[data-ef]').forEach(b => b.setAttribute('aria-pressed', b.dataset.ef === f));
     card.querySelectorAll('[data-eq]').forEach(b => b.setAttribute('aria-checked', +b.dataset.eq === q));
     card.querySelector('#exQrow').hidden = !EXQ[f];
+    { const ch = card.querySelector('#exChap'); if (ch) ch.hidden = f !== 'mp3'; }
     const d = only() ? tlLen(sel) : tlEnd(), by = EXQ[f] ? EXQ[f][q] * 125 * d : 192000 * d * (f === 'flac' ? 0.6 : 1);
     card.querySelector('#exInfo').textContent = `${f.toUpperCase()} · ${EXQ[f] ? EXQ[f][q] + ' kbps' : t('exLossless')} · ${fmt(d)} · ≈ ${fmtSize(by)}`;
   };
@@ -3575,18 +3580,21 @@ async function tlExport() {
     if (eq) { q = +eq.dataset.eq; upd(); return; }
     const a = e.target.closest('[data-ex]'); if (!a) return;
     const how = a.dataset.ex, name = card.querySelector('#exN').value.trim() || name0, solo = only();
+    { const lo = card.querySelector('#exLoud').checked ? (TL.p.loud || 'podcast') : ''; if (lo !== (TL.p.loud || '')) { TL.p.loud = lo; ls.set('proj', TL.p); } }
     ls.set('exF', f); ls.set('exQ', q);
     card.onclick = card.onchange = null; closeModal();
     if (how === 'video') { tlVideo(); return; }
     tlStop();
     const fa = { format: f }; if (EXQ[f]) fa.kbps = EXQ[f][q];
     if (S.chans === 'mono' || S.chans === 'stereo') fa.chans = S.chans;
+    if (f === 'mp3' && !solo) { const ch = pcChapters(); if (ch.length) fa.chapters = ch; }
     let clips = tlMix();
     if (solo) clips = clips.filter(m => m.master || m.id === sel.id).map(m => m.master ? m : Object.assign(m, { at: 0, xi: 0, xo: 0, duck: 0 }));   // 5.14.3: mastering stays on
     if (!clips.some(m => !m.master)) { toast(t('exMuted'), 3500); return; }
     tlMissing();
     try {
-      const mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips });
+      let mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips });
+      if (TL.p.loud && how !== 'ring') { const lo = await tlRunJob(t('op_loud'), 'wsOp', { path: mix.path, op: 'loud', target: TL.p.loud }); if (lo && lo.path) mix = lo; }   // 5.19: broadcast level
       if (how === 'ring') {
         const len = Math.min(40000, Math.round(mix.dur));
         await tlRunJob(t('exRing'), 'ringtone', { src: { path: mix.path }, startMs: 0, lenMs: len, name: safeName(name) });
@@ -4272,6 +4280,9 @@ function tlDo(k, b) {
   if (k === 'sep4') { tlSep('four'); return; }
   if (k === 'keyfind') { tlKeyFind(); return; }
   if (k === 'capvid') { tlCapVideo(); return; }
+  if (k === 'podcast') { tlPodcast(); return; }
+  if (k === 'pcnotes') { pcNotes(); return; }
+  if (k === 'align') { tlAlign(); return; }
   if (k === 'aiduck') { tlAiDuck(); return; }
   if (k === 'levelall') { tlLevelAll(); return; }
   if (k === 'aibreaths') { const c = tlSel(); if (c) tlAiBreaths(c); return; }
@@ -5074,10 +5085,19 @@ async function tlCapVideo() {
   if (!txReady() && !(await asrOffer())) return;
   const fm = await chooseBox(t('sh_capvid'), t('cvD'), [{ value: '720x1280', label: t('cv_v'), desc: 'Reels · Shorts · TikTok' }, { value: '720x720', label: t('cv_s'), desc: 'Instagram' }, { value: '1280x720', label: t('cv_h'), desc: 'YouTube' }]);
   if (!fm) return;
+  // 5.21: a short promo piece from where the playhead is, or the whole project
+  let clips = tlMix();
+  const end = tlEnd(), from = clamp(TL.pos, 0, Math.max(0, end - 5));
+  if (end > 75) {
+    const len = await chooseBox(t('sh_capvid'), t('cvLenD', { t: fmt(from) }), [30, 45, 60].map(n => ({ value: String(n), label: t('cvLen', { n }), desc: `${fmt(from)} – ${fmt(Math.min(end, from + n))}` })).concat([{ value: 'all', label: t('cvAll'), desc: fmt(end) }]));
+    if (!len) return;
+    if (len !== 'all') clips = tlRange(from, Math.min(end, from + +len));
+  }
   tlStop();
   const [w, h] = fm.split('x').map(Number);
   try {
-    const mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips: tlMix() });
+    let mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips });
+    if (TL.p.loud) { const lo = await tlRunJob(t('op_loud'), 'wsOp', { path: mix.path, op: 'loud', target: TL.p.loud }); if (lo && lo.path) mix = lo; }
     const tx = await tlRunJob(t('sh_stt'), 'transcribe', { src: { path: mix.path }, lang: S.textLang, model: S.asrModel, live: ls.get('liveModel', 'v2') });
     const segs = [], MAX = w > h ? 70 : 48;   // long sentences become several short captions, time shared by length
     for (const [a, b, text] of tx.segments || []) {
@@ -5091,6 +5111,166 @@ async function tlCapVideo() {
     const res = await tlRunJob(t('sh_capvid'), 'audiogram', { path: mix.path, segs, w, h, title: TL.p.name || '', color: /^#[0-9a-f]{6}$/i.test(color) ? color : '#6A45B0', name: fileName(TL.p.name || t('tabEdit'), 'edit') });
     if (await confirmBox({ title: t('vidDone'), text: t(res.gallery ? 'vidDoneD' : 'vidDoneOld') + (res.cut ? ' ' + t('vidCut', { d: fmt(res.cut) }) : ''), ok: t('share'), cancel: t('ok') })) AND.share(JSON.stringify(res.src), res.name, 'video/mp4');
   } catch (e) { toast(errText(e), 5000); }
+}
+/* ---------- 5.19–5.21: podcast studio ---------- */
+const PC_SLOTS = ['intro', 'jingle', 'outro'];
+const pcTpl = () => ls.get('pcTpl', {});
+const waitIdle = () => new Promise(res => { const f = () => (TL.busy || stack.includes('modal') ? setTimeout(f, 300) : res()); setTimeout(f, 300); });
+const pcTalkIds = () => TL.p.clips.filter(c => !c.pc && tlKind(c.tr) !== 'music').map(c => c.id);
+const tlById = id => TL.p.clips.find(c => c.id === id);
+async function tlPodcast() {
+  if (TL.busy) return;
+  const tp = pcTpl(), has = PC_SLOTS.some(k => tp[k]);
+  const v = await chooseBox(t('sh_podcast'), t('pcD'), [
+    { value: 'prep', label: t('pcPrep'), desc: t('pcPrepD') },
+    { value: 'apply', label: t('pcApply'), desc: has ? PC_SLOTS.filter(k => tp[k]).map(k => t('pc_' + k)).join(' · ') : t('pcApplyNo') },
+    { value: 'tpl', label: t('pcTpl'), desc: t('pcTplD') },
+    { value: 'notes', label: t('pcNotes'), desc: t('pcNotesD') },
+    { value: 'align', label: t('sh_align'), desc: t('alD') }]);
+  if (v === 'prep') pcPrepare();
+  else if (v === 'apply') { if (has) pcApply(); else pcTemplate(); }
+  else if (v === 'tpl') pcTemplate();
+  else if (v === 'notes') pcNotes();
+  else if (v === 'align') tlAlign();
+}
+/** 5.19: the intro, break jingle and outro are chosen once and used in every episode */
+function pcTemplate() {
+  const tp = pcTpl();
+  const card = openModal(`<h3>${esc(t('pcTpl'))}</h3><p class="mtext">${esc(t('pcTplD'))}</p><div class="modal-body">${PC_SLOTS.map(k => `<div class="set-sub"><span>${esc(t('pc_' + k))}</span>
+      <div class="st-acts"><span class="hint">${esc(tp[k] ? tp[k].name + ' · ' + fmt(tp[k].dur) : t('pcNone'))}</span><button class="btn sm" type="button" data-pk="${k}">${esc(t('pcPick'))}</button>${tp[k] ? `<button class="icon-btn" type="button" data-px="${k}" aria-label="${esc(t('delete'))}">${ic('trash')}</button>` : ''}</div></div>`).join('')}
+      <small class="hint">${esc(t('pcTplH'))}</small></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('ok'))}</button></div>`);
+  card.onclick = e => {
+    const p = e.target.closest('[data-pk]'), x = e.target.closest('[data-px]');
+    if (x) { const o = pcTpl(); delete o[x.dataset.px]; ls.set('pcTpl', o); closeModal(); setTimeout(pcTemplate, 60); return; }
+    if (p) {
+      const k = p.dataset.pk; closeModal();
+      setTimeout(() => wsPickAudio(t('pc_' + k), false, async it => {
+        let res; try { res = await tlRunJob(t('tlAdding'), 'tlAdd', { src: it.src }); } catch (er) { toast(errText(er), 5000); return; }
+        const o = pcTpl(); o[k] = { path: res.path, ch: res.ch, dur: res.dur / 1000, name: it.title || '' }; ls.set('pcTpl', o);
+        setTimeout(pcTemplate, 60);
+      }), 60);
+      return;
+    }
+    if (e.target.closest('[data-x]')) closeModal();
+  };
+}
+/** intro at the start (the talk moves after it, the music fades under the first words), the jingle at every marker, the outro at the end */
+function pcApply() {
+  const tp = pcTpl(); if (!TL.p.clips.length || TL.busy) return;
+  tlStop();
+  const b0 = tlSnap();
+  TL.p.clips = TL.p.clips.filter(c => !c.pc);   // a template put in before is replaced
+  const old = TL.p.pcShift || 0, ov = s => Math.min(3, s.dur / 3);
+  const sh = tp.intro ? Math.max(0, tp.intro.dur - ov(tp.intro)) : 0, d = sh - old;
+  if (d) { for (const c of TL.p.clips) c.at = Math.max(0, c.at + d); for (const m of TL.p.markers || []) m.t = Math.max(0, m.t + d); }
+  TL.p.pcShift = sh;
+  let pref = TL.p.tracks.findIndex((x, i) => tlKind(i) === 'music' && TL.p.clips.some(c => c.tr === i)), full = false;
+  if (pref < 0 && TL.p.tracks.length < TL_MAX) pref = TL.p.tracks.length;
+  const add = (x, at, fi, fo) => {
+    const tr = tlFree(at, at + x.dur, null, pref < 0 ? null : pref); if (tr < 0) { full = true; return; }
+    tlEnsureTrack(tr); pref = tr;
+    TL.p.clips.push({ id: uid(), tr, path: x.path, ch: x.ch, dur: x.dur, in: 0, out: x.dur, at, gain: 0, fi, fo, name: x.name || t('pc_intro'), kind: 'music', pc: 1 });
+  };
+  if (tp.intro) add(tp.intro, 0, 0, ov(tp.intro));
+  if (tp.jingle) for (const m of TL.p.markers || []) if (m.t > tp.jingle.dur) add(tp.jingle, Math.max(0, m.t - tp.jingle.dur / 2), 0.2, 0.4);
+  if (tp.outro) { const end = TL.p.clips.filter(c => !c.pc).reduce((m, c) => Math.max(m, c.at + tlLen(c)), 0); add(tp.outro, Math.max(0, end - ov(tp.outro)), ov(tp.outro), 0.5); }
+  tlCommit(b0);
+  toast(t(full ? 'pcFull' : 'pcApplied'), 4500);
+}
+/** 5.19: "Prepare the episode": the chosen steps in a row; each is its own step in the history, so each can be undone */
+const PC_STEPS = ['studio', 'fwords', 'pauses', 'tpl', 'level', 'duck', 'loud'];
+function pcPrepare() {
+  if (!TL.p.clips.length || TL.busy) return;
+  const tp = PC_SLOTS.some(k => pcTpl()[k]), mus = () => TL.p.clips.some(c => tlKind(c.tr) === 'music');
+  const can = { studio: true, fwords: CAPS.asr, pauses: true, tpl: tp, level: true, duck: true, loud: true };
+  const on = Object.assign({ studio: true, fwords: !!CAPS.asr, pauses: true, tpl: tp, level: true, duck: true, loud: true }, ls.get('pcSteps', {}));
+  const card = openModal(`<h3>${esc(t('pcPrep'))}</h3><p class="mtext">${esc(t('pcPrepD2'))}</p><div class="modal-body">
+      ${PC_STEPS.filter(k => can[k]).map((k, i) => `<label class="chk"><input type="checkbox" data-st="${k}"${on[k] ? ' checked' : ''}><span><b>${i + 1}. ${esc(t('pcs_' + k))}</b><small class="hint"> ${esc(t('pcsd_' + k))}</small></span></label>`).join('')}</div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('pcGo'))}</button></div>`);
+  card.querySelector('[data-x]').onclick = closeModal;
+  card.querySelector('[data-ok]').onclick = async () => {
+    const want = {}; card.querySelectorAll('[data-st]').forEach(b => { want[b.dataset.st] = b.checked; });
+    ls.set('pcSteps', want); closeModal();
+    const list = PC_STEPS.filter(k => can[k] && want[k]); let i = 0;
+    for (const k of list) {
+      i++; await waitIdle(); toast(t('pcStep', { i, n: list.length, s: t('pcs_' + k) }), 3000);
+      if (k === 'studio') for (const id of pcTalkIds()) { const c = tlById(id); if (c) { await tlEffect(c, 'studio', Object.assign({ strength: +ls.get('studioStr', 1) }, CAPS.sep ? { amb: +ls.get('studioAmb', 5) } : {})); await waitIdle(); } }
+      else if (k === 'fwords') for (const id of pcTalkIds()) { if (!tlById(id)) continue; TL.sel = id; renderTlBar(); await tlFwords(); await waitIdle(); }
+      else if (k === 'pauses') for (const id of pcTalkIds()) { const c = tlById(id); if (c) { await tlAiPauses(c); await waitIdle(); } }
+      else if (k === 'tpl') pcApply();
+      else if (k === 'level') await tlLevelAll();
+      else if (k === 'duck') { if (mus() && !TL.p.aiDuck) await tlAiDuck(); }
+      else if (k === 'loud') { const b0 = tlSnap(); TL.p.loud = 'podcast'; tlCommit(b0); }
+    }
+    await waitIdle(); TL.sel = null; renderTlBar(); drawTl();
+    toast(t('pcDone'), 6000);
+  };
+}
+/** 5.20: chapters from the markers: names given here go into the MP3 and the episode notes */
+function pcChapters() {
+  const ms = (TL.p.markers || []).slice().sort((a, b) => a.t - b.t), out = [];
+  if (!ms.length) return out;
+  if (ms[0].t > 1) out.push([0, TL.p.pcShift ? t('pc_intro') : t('pcStart')]);
+  ms.forEach((m, i) => out.push([Math.round(m.t * 1000) / 1000, m.label || t('chapterN', { n: i + 1 })]));
+  return out;
+}
+function pcNotes() {
+  if (!TL.p.clips.length) return;
+  const ms = (TL.p.markers || []).slice().sort((a, b) => a.t - b.t);
+  const voices = TL.p.tracks.map((x, i) => i).filter(i => tlKind(i) !== 'music' && TL.p.clips.some(c => c.tr === i)).map(tlTrackName);
+  const text = () => {
+    const L = [TL.p.name || t('tlProject'), t('pcLen', { d: fmtLong(tlEnd()) }), ''];
+    const ch = pcChapters();
+    if (ch.length) { L.push(t('pcChapters')); for (const [a, l] of ch) L.push(`${fmtHMS(a).replace(/^00:/, '')} ${l}`); L.push(''); }
+    if (voices.length > 1) { L.push(t('pcVoices') + ' ' + voices.join(', ')); L.push(''); }
+    return L.join('\n').trim();
+  };
+  const b0 = tlSnap();
+  const card = openModal(`<h3>${esc(t('pcNotes'))}</h3><p class="mtext">${esc(ms.length ? t('pcNotesH') : t('pcNoMarks'))}</p><div class="modal-body">
+      ${ms.map((m, i) => `<div class="pc-ch"><span class="tc">${fmt(m.t)}</span><input class="sel-full" type="text" maxlength="60" data-mi="${esc(m.id)}" value="${esc(m.label || '')}" placeholder="${esc(t('chapterN', { n: i + 1 }))}"></div>`).join('')}
+      <textarea class="sel-full pc-notes" id="pcTxt" rows="9" readonly></textarea></div>
+    <div class="modal-actions"><button class="btn" type="button" data-pc="copy">${ic('copy')}${esc(t('textCopy'))}</button><button class="btn" type="button" data-pc="share">${ic('share')}${esc(t('share'))}</button><span class="spacer"></span><button class="btn primary" type="button" data-pc="ok">${esc(t('ok'))}</button></div>`);
+  const ta = card.querySelector('#pcTxt'); ta.value = text();
+  card.oninput = e => { const m = (TL.p.markers || []).find(x => x.id === e.target.dataset.mi); if (m) { m.label = e.target.value.trim(); ta.value = text(); } };
+  card.onclick = e => {
+    const b = e.target.closest('[data-pc]'); if (!b) return;
+    const k = b.dataset.pc;
+    if (k === 'copy') { try { AND.copyText(ta.value); toast(t('textCopied')); } catch (x) {} return; }
+    if (k === 'share') { try { AND.shareText(safeName(TL.p.name || t('pcNotes')) + '.txt', ta.value, 'text/plain'); } catch (x) {} return; }
+    closeModal(); if (b0 !== tlSnap()) tlCommit(b0);
+  };
+}
+/** 5.21: a piece of the project as its own clip list (for a short promo video): [a, b] seconds of the project */
+function tlRange(a, b) {
+  const out = [];
+  for (const m of tlMix()) {
+    if (m.master) { out.push(m); continue; }
+    const s = m.at, e = m.at + m.len; if (e <= a || s >= b) continue;
+    const cut = Math.max(0, a - s), len = Math.min(e, b) - Math.max(s, a);
+    out.push(Object.assign({}, m, { at: Math.max(0, s - a), in: m.in + cut, len, fi: cut ? 0.3 : m.fi, fo: e > b ? 0.5 : m.fo, xi: cut ? 0 : m.xi, xo: e > b ? 0 : m.xo,
+      env: m.env ? m.env.map(([x, d]) => [Math.round((x - cut) * 1000) / 1000, d]) : null, talk: null }));
+  }
+  return out;
+}
+/** 5.21: two people recorded the same talk on their own phones: the selected clip moves so it lines up with the other one */
+async function tlAlign() {
+  const c = tlSel();
+  if (!c) { toast(t('alPick'), 4500); return; }
+  if (TL.busy) return;
+  const others = TL.p.clips.filter(d => d.id !== c.id && d.tr !== c.tr && !d.pc);
+  if (!others.length) { toast(t('alNone'), 5000); return; }
+  const ref = others.reduce((m, d) => (tlLen(d) > tlLen(m) ? d : m), others[0]);
+  if (!(await confirmBox({ title: t('sh_align'), text: t('alQ', { a: c.name || tlTrackName(c.tr), b: ref.name || tlTrackName(ref.tr) }), ok: t('alGo') }))) return;
+  tlStop();
+  let res;
+  try { res = await tlRunJob(t('sh_align'), 'tlAlign', { a: { path: ref.path, in: ref.in, len: tlLen(ref) }, b: { path: c.path, in: c.in, len: tlLen(c) }, max: 120 }); } catch (e) { toast(errText(e), 5000); return; }
+  const at = ref.at + res.lag;
+  if (res.conf < 8 && !(await confirmBox({ title: t('sh_align'), text: t('alWeak'), ok: t('alAnyway') }))) return;
+  const b0 = tlSnap();
+  if (at < 0) { const cut = Math.min(-at, tlLen(c) - 0.1); c.in += cut; c.at = 0; } else c.at = Math.round(at * 1000) / 1000;
+  tlCommit(b0);
+  toast(t('alDone', { s: nf2.format(res.lag) }), 4500);
 }
 async function tlVideo() {
   if (!TL.p.clips.length || TL.busy) return;
@@ -6917,7 +7097,7 @@ function showIntro(again) {
   });
   document.body.appendChild(d); draw();
 }
-const NEWS = ['n518search', 'n518filter', 'n518spk', 'n518backup'];   // 5.18: renew with every minor version
+const NEWS = ['n519pod', 'n519prep', 'n520chap', 'n521promo', 'n518search', 'n518filter', 'n518spk', 'n518backup'];   // 5.21: renew with every minor version
 function showNews() {
   const card = openModal(`<h3>${esc(t('newsT', { v: VERSION.split('.').slice(0, 2).join('.') }))}</h3><ul class="news">${NEWS.map(k => `<li>${esc(t('news_' + k))}</li>`).join('')}</ul>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('newsOk'))}</button></div>`, () => setTimeout(coachMaybe, 300));
@@ -7134,7 +7314,7 @@ function renderTlBar() {
     const n = TL.p.tracks.length;
     bar.innerHTML = `<div class="tc-head"><div class="tc-t"><b>${esc(TL.p.name || t('tlProject'))}</b><small>${esc(TL.p.clips.length ? t('tcProj', { n, d: fmt(tlEnd()) }) : t('tlEmptyD'))}</small></div></div>
       <div class="tc-grid">${tile('rec', 'mic', t('sh_rec'), 'rec') + tile('add', 'import', t('sh_add')) + tile('sfx', 'bell', t('sh_sfx')) + tile('tts', 'speak', t('sh_tts')) +
-        (TL.p.clips.length ? tile('insSil', 'sil', t('sh_sil')) + tile('marker', 'flag', t('sh_marker')) + tile('metro', 'beat', t('sh_metro')) + tile('video', 'film', t('sh_video')) + (CAPS.asr ? tile('capvid', 'textic', t('sh_capvid')) : '') : '') +
+        (TL.p.clips.length ? tile('podcast', 'mic', t('sh_podcast')) + tile('insSil', 'sil', t('sh_sil')) + tile('marker', 'flag', t('sh_marker')) + tile('metro', 'beat', t('sh_metro')) + tile('video', 'film', t('sh_video')) + (CAPS.asr ? tile('capvid', 'textic', t('sh_capvid')) : '') : '') +
         (tlClip() ? tile('paste', 'paste', t('sh_paste')) : '') + tile('all', 'grid', t('sh_all'))}</div>`;
     return;
   }
@@ -7259,7 +7439,7 @@ async function tlSmartFix() {
 function tlGroups(c) {
   if (!c) return [
     ['grp_add', 'speech', [['rec', 'mic', 'sh_rec'], ['add', 'import', 'sh_add'], ['sfx', 'bell', 'sh_sfx'], ['tts', 'speak', 'sh_tts'], ['insSil', 'sil', 'sh_sil'], tlClip() ? ['paste', 'paste', 'sh_paste'] : null]],
-    ['grp_arrange', 'other', [['marker', 'flag', tlMarkerAt() ? 'sh_markerDel' : 'sh_marker'], (TL.p.markers || []).length > 1 ? ['markersX', 'trash', 'sh_markersX'] : null, ['metro', 'beat', 'sh_metro'], ['fit', 'wave', 'tlFit'], ['aiduck', 'note', 'op_aiduck'], ['levelall', 'gauge', 'sh_levelall'], ['master', 'spark', 'sh_master'], ['video', 'film', 'sh_video'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
+    ['grp_arrange', 'other', [['podcast', 'mic', 'sh_podcast'], ['pcnotes', 'textic', 'pcNotes'], ['marker', 'flag', tlMarkerAt() ? 'sh_markerDel' : 'sh_marker'], (TL.p.markers || []).length > 1 ? ['markersX', 'trash', 'sh_markersX'] : null, ['metro', 'beat', 'sh_metro'], ['fit', 'wave', 'tlFit'], ['aiduck', 'note', 'op_aiduck'], ['levelall', 'gauge', 'sh_levelall'], ['master', 'spark', 'sh_master'], ['video', 'film', 'sh_video'], CAPS.asr ? ['capvid', 'textic', 'sh_capvid'] : null]],
     ['grp_proj', 'fx', [['recset', 'gear', 'tlRecSet'], ['snap', 'magnet', TL.snap ? 'snapOn' : 'snapOff'], ['meter', 'spec', 'tlMeter'], ['new', 'trash', 'tlNewP']]]];
   const op = (x, i) => ['op:' + x, i, 'op_' + x];
   return [
@@ -7267,7 +7447,7 @@ function tlGroups(c) {
     ['grp_clean', 'speech', [op('denoise', 'wave'), CAPS.sep ? ['op:sepdenoise', 'note', 'op_sepdenoise', 1] : null, op('gate', 'sil'), op('dereverb', 'ear'), op('hum', 'wave')]],
     ['grp_fix', 'fx', [op('mouth', 'mouth'), op('clicks', 'wave'), op('plosive', 'mouth'), op('deess', 'speak'), op('declip', 'wave'), op('breaths', 'speak'), op('channels', 'mixer'), c.ch < 2 ? op('stereo', 'mixer') : null, ['spec', 'spec', 'tlSpec']]],
     ['grp_vt', 'music', [['gain', 'vol', 'tlVol'], ['pan', 'panI', 'tlPan'], ['fade', 'fade', 'tlFade'], ['env', 'envl', 'tlEnv'], op('level', 'gauge'), op('comp', 'gauge'), op('loud', 'vol'), ['eq5', 'mixer', 'tlEq'], ['bass', 'bassI', 'tlBass'], ['treble', 'trebI', 'tlTreble'], op('eq', 'mixer')]],
-    ['grp_edit', 'other', [op('trim', 'trimI'), op('pauses', 'gapI'), op('fillers', 'speak'), op('silence', 'sil'), ['speed', 'gauge', 'tlSpeed'], ['merge', 'mergeI', 'tlMerge'], ['dup', 'dupI', 'tlDup'], ['punch', 'mic', 'tlPunch'], ['beats', 'beat', 'tlBeats']]],
+    ['grp_edit', 'other', [['align', 'magnet', 'sh_align'], op('trim', 'trimI'), op('pauses', 'gapI'), op('fillers', 'speak'), op('silence', 'sil'), ['speed', 'gauge', 'tlSpeed'], ['merge', 'mergeI', 'tlMerge'], ['dup', 'dupI', 'tlDup'], ['punch', 'mic', 'tlPunch'], ['beats', 'beat', 'tlBeats']]],
     ['grp_fx', 'fx', [['rack', 'mixer', 'sh_rack'], op('voicefx', 'spark'), ['vchg', 'speak', 'vcT'], op('autotune', 'note'), ['chain', 'spark', 'sh_chain'], ['harmony', 'people', 'sh_harmony'], op('reverb', 'ear'), op('delay', 'wave'), op('eightd', 'orbit'), op('widen', 'widenI'), op('double', 'dblI'), op('lofi', 'lofiI'), op('reverse', 'revI')]]];
 }
 function tlAll() {

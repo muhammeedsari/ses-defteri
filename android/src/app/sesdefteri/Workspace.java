@@ -1897,7 +1897,7 @@ final class Workspace {
         long h = Mp3.init(inf.rate, inf.ch, kbps);
         if (h == 0) throw new IllegalStateException("mp3");
         java.io.OutputStream os = new java.io.BufferedOutputStream(new java.io.FileOutputStream(out), 1 << 16);
-        if (meta != null) os.write(id3(meta.optString("title", ""), meta.optString("artist", ""), meta.optString("cover", "")));
+        if (meta != null) os.write(id3(meta.optString("title", ""), meta.optString("artist", ""), meta.optString("cover", ""), meta.optJSONArray("chapters"), Math.round(inf.frames * 1000.0 / inf.rate)));
         RandomAccessFile r = new RandomAccessFile(in, "r");
         try {
             r.seek(44);
@@ -1925,8 +1925,28 @@ final class Workspace {
     }
 
     /** ID3v2.3 tag: title, artist and a JPEG cover (UTF-16 text so Turkish letters survive) */
-    static byte[] id3(String title, String artist, String coverB64) throws Exception {
+    static byte[] id3(String title, String artist, String coverB64) throws Exception { return id3(title, artist, coverB64, null, 0); }
+
+    /** 5.20: chapters ([[start s, title]…]) as ID3 CHAP frames with a CTOC table: podcast apps show them as chapters */
+    static byte[] id3(String title, String artist, String coverB64, org.json.JSONArray chapters, long durMs) throws Exception {
         java.io.ByteArrayOutputStream f = new java.io.ByteArrayOutputStream();
+        if (chapters != null && chapters.length() > 0 && durMs > 0) {
+            int n = chapters.length();
+            java.io.ByteArrayOutputStream toc = new java.io.ByteArrayOutputStream();
+            toc.write("toc".getBytes("ISO-8859-1")); toc.write(0); toc.write(3); toc.write(n);
+            for (int i = 0; i < n; i++) { toc.write(("ch" + i).getBytes("ISO-8859-1")); toc.write(0); }
+            frame(f, "CTOC", toc.toByteArray());
+            for (int i = 0; i < n; i++) {
+                org.json.JSONArray c = chapters.getJSONArray(i);
+                long st = Math.max(0, Math.min(durMs, Math.round(c.getDouble(0) * 1000)));
+                long en = i + 1 < n ? Math.max(st, Math.min(durMs, Math.round(chapters.getJSONArray(i + 1).getDouble(0) * 1000))) : durMs;
+                java.io.ByteArrayOutputStream ch = new java.io.ByteArrayOutputStream();
+                ch.write(("ch" + i).getBytes("ISO-8859-1")); ch.write(0);
+                for (long v : new long[] { st, en, 0xFFFFFFFFL, 0xFFFFFFFFL }) { ch.write((int) (v >> 24) & 0xff); ch.write((int) (v >> 16) & 0xff); ch.write((int) (v >> 8) & 0xff); ch.write((int) v & 0xff); }
+                text(ch, "TIT2", c.optString(1, "" + (i + 1)));
+                frame(f, "CHAP", ch.toByteArray());
+            }
+        }
         text(f, "TIT2", title);
         text(f, "TPE1", artist);
         if (coverB64 != null && !coverB64.isEmpty()) {

@@ -621,3 +621,6 @@ html:not(.tech) .pu-card small{display:none}
 .segs li.seg-spk{display:block;padding:8px 4px 0}
 .spk-lab{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--c);padding:3px 10px 3px 8px;border-radius:999px;background:color-mix(in srgb,var(--c) 12%,transparent)}
 .spk-lab .ic{width:15px;height:15px}
+/* 5.20: chapter names, episode notes */
+.pc-ch{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;margin-bottom:6px}
+.pc-notes{font-family:inherit;font-size:13.5px;line-height:1.45;resize:vertical;min-height:120px;margin-top:8px}

@@ -1321,6 +1321,8 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Speakers.run(MainActivity.this, a, p, cancel);
                         } else if ("recSpk".equals(kind)) {
                             res = Speakers.rec(MainActivity.this, a, p, cancel);
+                        } else if ("tlAlign".equals(kind)) {
+                            res = Align.run(a, p, cancel);
                         } else if ("backup".equals(kind)) {
                             res = Archive.backup(MainActivity.this, a, p, cancel);
                         } else if ("restore".equals(kind)) {

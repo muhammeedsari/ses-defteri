@@ -70,7 +70,8 @@ final class Speakers {
             r.close();
         }
         p.on(0.05);
-        return diarize(c, java.util.Arrays.copyOf(x, len[0]), from / (double) inf.rate, a.optInt("n", 0), p, cancel);
+        // 5.21: the few unfilled samples at the end are silence: no second copy of a long recording in memory
+        return diarize(c, len[0] >= x.length - 256 ? x : java.util.Arrays.copyOf(x, len[0]), from / (double) inf.rate, a.optInt("n", 0), p, cancel);
     }
 
     /** 5.18: who speaks when in a recording of the library (any format). a: {src, n}; same result as run, in seconds of the recording */
@@ -79,7 +80,8 @@ final class Speakers {
         JSONObject src = a.getJSONObject("src");
         Studio.Fmt f = Studio.probe(c, src);
         final int cap = MAX_SEC * RATE;
-        final float[][] x = { new float[RATE * 60] };
+        // sized from the recording's length when the page knows it, so the sound is held once, not grown and copied
+        final float[][] x = { new float[(int) Math.min(cap, a.optDouble("dur", 0) > 1 ? a.getDouble("dur") * RATE + RATE : RATE * 60)] };
         final int[] len = { 0 };
         final float[][] m = new float[1][4096];
         Resampler rs = new Resampler(1, (double) f.rate, (double) RATE);
@@ -103,7 +105,8 @@ final class Speakers {
         });
         if (len[0] < RATE) throw new IllegalStateException("dia-short");
         final AudioTools.Progress pp = p;
-        return diarize(c, java.util.Arrays.copyOf(x[0], len[0]), 0, a.optInt("n", 0), new AudioTools.Progress() {
+        float[] mono = len[0] >= x[0].length - RATE * 2 ? x[0] : java.util.Arrays.copyOf(x[0], len[0]);
+        return diarize(c, mono, 0, a.optInt("n", 0), new AudioTools.Progress() {
             @Override public void on(double v) { pp.on(0.3 + 0.7 * v); }
         }, cancel);
     }

@@ -113,6 +113,7 @@ Sonradan değişen ya da kaldırılan özellikler yanında **(şimdi: …)** not
 | 5.14.1 | Mastering'de (Doğal, Sıcak) ani yüksek seslerde çatırtı giderildi; ton değiştirme iptal edilince bellek boşaltılıyor. |
 | 5.15–5.17 | Not alma (fotoğraf, hızlı işaretler), canlı yazı (seda / Whisper), seda ile hızlı Türkçe yazıya dökme. |
 | 5.18 | **Arama ve arşiv:** arama sonucuna dokununca o andan çalar; **Süz** (tarih, süre, işaret türü, konuşmacı, metni olanlar); kayıt metninde **konuşmacılar** ve ad verme (adlar telefonda, sonraki kayıtlarda önerilir); **bulutsuz yedek** (Ayarlar › Depolama: tek .zip, geri yükleme; aynı dosya varsa notları tamamlanır). |
+| 5.19–5.21 | **Podcast stüdyosu:** podcast şablonu (giriş, ara jingle, kapanış; projeye tek dokunuş), **Bölümü hazırla** (Stüdyo sesi → dolgu kelimeleri → sessizlikler → şablon → seviye → müzik kısma → yayın seviyesi -16 LUFS; her adım ayrı geri alınır), **Bölümler ve notlar** (işaret adları MP3'e ID3 CHAP/CTOC bölümü olarak yazılır, bölüm notu kopyala/paylaş), dışa aktarmada yayın seviyesi anahtarı, altyazılı videoda 30/45/60 sn tanıtım parçası, **Çift kaydı hizala** (iki telefonun kaydı, `Align.java`, 1 ms). Masaüstü testi: `tests/desktop/feature-sweep.js` (5.15–5.21, 51 senaryo). |
 
 ## Bilinen sınırlar (5.14.1)
 

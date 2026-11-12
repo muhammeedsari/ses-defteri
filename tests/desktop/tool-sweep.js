@@ -27,9 +27,9 @@ const LANG = process.argv[2] || 'tr', FULL = process.argv[3] !== 'quick';
       plQueue: (items, idx, ms, auto) => { const it = JSON.parse(items)[idx]; st = Object.assign({}, st, { id: it.id, dur: it.dur, pos: ms, playing: !!auto, count: 1, index: idx }); },
       plPlay: () => { st.playing = true; }, plPause: () => { st.playing = false; }, tlPlay: () => '', tlPlayFrom: () => '' };
     window.SesDefteriAndroid = new Proxy({}, { get: (_, k) => fixed[k] || ((...a) => { window.__calls.push(String(k)); return ''; }) });
-    localStorage.setItem('sd:lang', JSON.stringify(lang)); localStorage.setItem('sd:langChosen', 'true'); localStorage.setItem('sd:introDone', 'true'); localStorage.setItem('sd:coachOff', 'true'); localStorage.setItem('sd:lastVer', JSON.stringify('5.14')); localStorage.setItem('sd:news4101', 'true');
+    localStorage.setItem('sd:lang', JSON.stringify(lang)); localStorage.setItem('sd:langChosen', 'true'); localStorage.setItem('sd:introDone', 'true'); localStorage.setItem('sd:coachOff', 'true'); localStorage.setItem('sd:lastVer', JSON.stringify('5.21')); localStorage.setItem('sd:news4101', 'true');
   }, LANG);
-  await pg.goto('file://' + path.join(__dirname, 'index.html')); await pg.waitForTimeout(900);
+  await pg.goto('file://' + (process.env.SD_PAGE || path.join(__dirname, 'index.html'))); await pg.waitForTimeout(900);
   const ev = s => pg.evaluate(c => window.__ev(c), s);
   const cdp = await ctx.newCDPSession(pg);
   const tp = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
