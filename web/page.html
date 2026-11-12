@@ -1195,6 +1195,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n60.js"></script>
 <script src="i18n61.js"></script>
 <script src="i18n62.js"></script>
+<script src="i18n63.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -1206,7 +1207,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.14.2';
+const VERSION = '5.14.3';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   // 5.14.2: a project that cannot be stored (storage full) says so once instead of silently losing edits
@@ -1538,6 +1539,7 @@ class NativeAudio extends EventTarget {
     if (on && !wasOn) this.emit('play'); else if (!on && wasOn) this.emit('pause');
     if (kind === 'ended') this.emit('ended');
     if (kind === 'error') this.emit('error');
+    if (kind === 'busy') toast(t('plBusy'), 4000);
     if (on) this.startPoll();
   }
   refresh(kind) { try { this.apply(JSON.parse(AND.plState()), kind || 'poll'); } catch (e) {} }
@@ -3380,6 +3382,7 @@ async function studioJob(kind, it, args) {
 function errText(e) {
   const m = String((e && e.message) || '');
   if (m.includes('cancel')) return t('saveCancelled');
+  if (m.includes('learn-silent')) return t('lnSilent');
   if (m.includes('asr-missing')) return t('asrNeed');
   if (m.includes('asr-unavailable')) return t('textNoAsr');
   if (m.includes('memory')) return t('textMem');
@@ -3735,8 +3738,11 @@ const TL_MAX = 4, TL_RULER = 26, TL_ADD = 58; let TL_ROW = 58;   // 4.3: one tra
 const TL = { p: null, sel: null, pos: 0, pps: 40, play: false, busy: null, undo: [], redo: [], raf: 0, cleanT: 0, rec: null, snap: ls.get('tlSnap', true), guide: null, env: false, meter: ls.get('tlMeter', false), mv: null };
 const tlNew = () => ({ tracks: [{ vol: 0, mute: false }], clips: [] });
 function tlLoad() {
-  const p = ls.get('proj', null);
-  TL.p = p && Array.isArray(p.tracks) && Array.isArray(p.clips) ? p : tlNew();
+  const p = ls.get('proj', null), ok = p && Array.isArray(p.tracks) && Array.isArray(p.clips);
+  // 5.14.3: a project that cannot be read is kept aside and its clip files are not cleaned away this session
+  if (!ok && !TL.broken) { let raw = null; try { raw = localStorage.getItem('sd:proj'); } catch (e) {}
+    if (raw) { TL.broken = true; try { localStorage.setItem('sd:projBad', raw); } catch (e) {} setTimeout(() => toast(t('tlBroken'), 8000), 500); } }
+  TL.p = ok ? p : tlNew();
   if (!TL.p.tracks.length) TL.p.tracks.push({ vol: 0, mute: false });
   if (TL.p.clips.length) for (let i = TL.p.tracks.length - 1; i >= 0 && TL.p.tracks.length > 1; i--)   // 4.4.1: empty tracks close up
     if (!TL.p.clips.some(c => c.tr === i)) { TL.p.tracks.splice(i, 1); for (const c of TL.p.clips) if (c.tr > i) c.tr--; }
@@ -3793,6 +3799,7 @@ function tlUndo(redo) {
   tlChanged();
 }
 function tlClean() {
+  if (TL.broken) return;
   const keep = new Set(), cb = tlClip(), add = c => { keep.add(c.path); if (c.prev) keep.add(c.prev); if (c.src) keep.add(c.src); for (const h of c.hc || []) keep.add(h.path); for (const f of c.fx || []) if (f.b) { keep.add(f.b.path); if (f.b.src) keep.add(f.b.src); for (const h of f.b.hc || []) keep.add(h.path); } };
   TL.p.clips.forEach(add);
   if (cb) add(cb);
@@ -4304,8 +4311,8 @@ async function tlExport() {
     const fa = { format: f }; if (EXQ[f]) fa.kbps = EXQ[f][q];
     if (S.chans === 'mono' || S.chans === 'stereo') fa.chans = S.chans;
     let clips = tlMix();
-    if (solo) clips = clips.filter(m => m.id === sel.id).map(m => Object.assign(m, { at: 0, xi: 0, xo: 0, duck: 0 }));
-    if (!clips.length) { toast(t('exMuted'), 3500); return; }
+    if (solo) clips = clips.filter(m => m.master || m.id === sel.id).map(m => m.master ? m : Object.assign(m, { at: 0, xi: 0, xo: 0, duck: 0 }));   // 5.14.3: mastering stays on
+    if (!clips.some(m => !m.master)) { toast(t('exMuted'), 3500); return; }
     tlMissing();
     try {
       const mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips });
@@ -5811,7 +5818,7 @@ async function tlCapVideo() {
     }
     const color = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#6A45B0';
     const res = await tlRunJob(t('sh_capvid'), 'audiogram', { path: mix.path, segs, w, h, title: TL.p.name || '', color: /^#[0-9a-f]{6}$/i.test(color) ? color : '#6A45B0', name: fileName(TL.p.name || t('tabEdit'), 'edit') });
-    if (await confirmBox({ title: t('vidDone'), text: t(res.gallery ? 'vidDoneD' : 'vidDoneOld'), ok: t('share'), cancel: t('ok') })) AND.share(JSON.stringify(res.src), res.name, 'video/mp4');
+    if (await confirmBox({ title: t('vidDone'), text: t(res.gallery ? 'vidDoneD' : 'vidDoneOld') + (res.cut ? ' ' + t('vidCut', { d: fmt(res.cut) }) : ''), ok: t('share'), cancel: t('ok') })) AND.share(JSON.stringify(res.src), res.name, 'video/mp4');
   } catch (e) { toast(errText(e), 5000); }
 }
 async function tlVideo() {
@@ -6355,6 +6362,17 @@ function stopRec(cancel) {
   if (R.native) { finishNative(); return; }
   try { if (R.mr && R.mr.state !== 'inactive') R.mr.stop(); else finishRec(); } catch (e) { finishRec(); }
 }
+/** 5.14.3: a recording a crash left half written comes back from the phone at start-up */
+window.__sdRecovered = async o => {
+  try {
+    const it = fromNative(o, null);
+    if (!S.items.has(it.id)) {
+      Object.assign(it, { userTitle: false, created: it.date || Date.now(), categoryId: defaultCat(), notes: '', bookmarks: [], source: 'mic', mode: 'voice', fav: false, kind: 'rec' });
+      S.items.set(it.id, it); await saveRec(it); render();
+    }
+    toast(t('recRecovered'), 6000);
+  } catch (e) {}
+};
 async function finishNative() {
   cancelAnimationFrame(R.raf);
   if (R.cancel) { try { AND.recCancel(); } catch (e) {} R.state = 'idle'; R.native = false; closeOverlay('rec'); updateRecUI(); return; }
@@ -7880,17 +7898,19 @@ function needLang() {
   return true;
 }
 function showLangPick() {
+  // 5.14.3: the phone's own language is preselected; the bilingual text stays until the user taps one
+  const ph = String(navigator.language || '').slice(0, 2).toLowerCase(), pre = LANGS.some(([c]) => c === ph) ? ph : 'en';
   const d = document.createElement('div');
   d.className = 'lang-first';
   d.innerHTML = `<div class="lang-card"><h2>Ses Defteri</h2><p>Choose your language · Dilini seç</p>
-    <div class="langs" role="radiogroup">${LANGS.map(([c, n]) => `<button type="button" role="radio" data-lang="${c}" aria-checked="${c === 'en'}" lang="${c}">${esc(n)}</button>`).join('')}</div>
+    <div class="langs" role="radiogroup">${LANGS.map(([c, n]) => `<button type="button" role="radio" data-lang="${c}" aria-checked="${c === pre}" lang="${c}">${esc(n)}</button>`).join('')}</div>
     <button class="btn primary" type="button" id="langGo">Continue · Devam</button></div>`;
   document.body.appendChild(d);
-  let pick = 'en';
+  let pick = pre;
   const say = () => { const L = (window.SD_I18N || {})[pick] || {}, E = (window.SD_I18N || {}).en || {};
     d.querySelector('p').textContent = L.langChoose || E.langChoose || 'Choose your language'; d.querySelector('#langGo').textContent = L.langGo || E.langGo || 'Continue';
     d.dir = pick === 'ar' ? 'rtl' : 'ltr'; };
-  say();
+  if (pre !== 'en') say();
   d.addEventListener('click', e => {
     const b = e.target.closest('[data-lang]');
     if (b) { pick = b.dataset.lang; d.querySelectorAll('[data-lang]').forEach(x => x.setAttribute('aria-checked', x === b)); say(); return; }
