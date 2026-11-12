@@ -62,6 +62,8 @@ public class MainActivity extends Activity implements Player.Listener {
     private static final int REQ_NOTIF = 16;
     private static final int REQ_VIDEO = 16;
     private static final int REQ_VIDEO_TL = 17;
+    private static final int REQ_PHOTO = 18;
+    private static String photoPending;   // 5.15: the photo the camera is taking during a recording (id)
     private volatile String videoBusy;
 
     private WebView web;
@@ -262,6 +264,16 @@ public class MainActivity extends Activity implements Player.Listener {
                 return notFound();
             }
         }
+        if (path.startsWith("/__photo/")) {   // 5.15: photos taken while recording
+            String n = path.substring("/__photo/".length());
+            if (!n.matches("[A-Za-z0-9_-]{1,64}\\.jpg")) return notFound();
+            try {
+                headers.put("Cache-Control", "max-age=86400");
+                return new WebResourceResponse("image/jpeg", null, 200, "OK", headers, new java.io.FileInputStream(new File(photoDir(this), n)));
+            } catch (Exception e) {
+                return notFound();
+            }
+        }
         headers.put("Cache-Control", "no-cache");
         if (path.contains("..")) return notFound();
         try {
@@ -334,6 +346,53 @@ public class MainActivity extends Activity implements Player.Listener {
         }
     }
 
+    /* ---------- 5.15: photos while recording ---------- */
+
+    static File photoDir(android.content.Context c) {
+        File d = new File(c.getFilesDir(), "photos");
+        d.mkdirs();
+        return d;
+    }
+
+    /** the camera's full-size picture becomes an upright JPEG of at most 1600 px: a few hundred KB, light to show */
+    static boolean shrinkPhoto(File f) {
+        try {
+            android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeFile(f.getPath(), o);
+            if (o.outWidth <= 0 || o.outHeight <= 0) { f.delete(); return false; }
+            int big = Math.max(o.outWidth, o.outHeight), ss = 1;
+            while (big / (ss * 2) >= 1600) ss *= 2;
+            int rot = 0;
+            try {
+                int or = new android.media.ExifInterface(f.getPath()).getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1);
+                rot = or == 6 ? 90 : or == 3 ? 180 : or == 8 ? 270 : 0;
+            } catch (Exception ignored) { }
+            if (ss == 1 && big <= 1600 && rot == 0) return true;
+            o = new android.graphics.BitmapFactory.Options();
+            o.inSampleSize = ss;
+            android.graphics.Bitmap b = android.graphics.BitmapFactory.decodeFile(f.getPath(), o);
+            if (b == null) return true;   // keep the camera's own file
+            float k = Math.min(1f, 1600f / Math.max(b.getWidth(), b.getHeight()));
+            if (k < 1f || rot != 0) {
+                android.graphics.Matrix m = new android.graphics.Matrix();
+                m.postScale(k, k);
+                m.postRotate(rot);
+                android.graphics.Bitmap r = android.graphics.Bitmap.createBitmap(b, 0, 0, b.getWidth(), b.getHeight(), m, true);
+                if (r != b) b.recycle();
+                b = r;
+            }
+            File tmp = new File(f.getPath() + ".tmp");
+            java.io.FileOutputStream out = new java.io.FileOutputStream(tmp);
+            try { b.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out); } finally { out.close(); b.recycle(); }
+            if (tmp.length() > 0 && tmp.renameTo(f)) return true;
+            tmp.delete();
+            return true;
+        } catch (Throwable e) {   // out of memory on a huge picture: the original stays
+            return f.length() > 0;
+        }
+    }
+
     /* ---------- activity results ---------- */
 
     @Override
@@ -342,6 +401,22 @@ public class MainActivity extends Activity implements Player.Listener {
         if (code == REQ_FILE && fileCallback != null) {
             fileCallback.onReceiveValue(result == RESULT_OK ? urisFrom(data) : null);
             fileCallback = null;
+        } else if (code == REQ_PHOTO) {
+            final String id = photoPending;
+            photoPending = null;
+            if (id == null) return;
+            final File f = new File(photoDir(this), id + ".jpg");
+            if (result != RESULT_OK || f.length() == 0) {
+                f.delete();
+                js("window.__sdPhoto && window.__sdPhoto(" + q(id) + ",false)");
+                return;
+            }
+            bgPool.execute(new Runnable() {
+                @Override public void run() {
+                    boolean ok = shrinkPhoto(f);
+                    js("window.__sdPhoto && window.__sdPhoto(" + q(id) + "," + ok + ")");
+                }
+            });
         } else if (code == REQ_VIDEO) {
             Uri[] uris = result == RESULT_OK ? urisFrom(data) : null;
             if (uris != null && uris.length > 0) importVideos(uris);
@@ -806,6 +881,43 @@ public class MainActivity extends Activity implements Player.Listener {
             ui(new Runnable() {
                 @Override public void run() {
                     try { startActivity(new Intent(android.provider.Settings.ACTION_SOUND_SETTINGS)); } catch (Exception ignored) { }
+                }
+            });
+        }
+
+        /** 5.15: the phone's camera app takes a picture into files/photos/<id>.jpg; the recording goes on meanwhile */
+        @JavascriptInterface public boolean takePhoto(final String id) {
+            if (id == null || !id.matches("[A-Za-z0-9_-]{1,60}")) return false;
+            Uri u = new Uri.Builder().scheme("content").authority(ShareProvider.AUTHORITY).appendPath("ph").appendPath(id + ".jpg").build();
+            Intent i = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+            i.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, u);
+            i.setClipData(android.content.ClipData.newRawUri("", u));
+            i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            final Intent ci = i;
+            ui(new Runnable() {
+                @Override public void run() {
+                    photoPending = id;
+                    try { startActivityForResult(ci, REQ_PHOTO); } catch (Exception e) {
+                        photoPending = null;
+                        js("window.__sdPhoto && window.__sdPhoto(" + q(id) + ",false,true)");
+                    }
+                }
+            });
+            return true;
+        }
+
+        /** photos no recording points to; ones from the last hour stay (a camera may still be busy) */
+        @JavascriptInterface public void photoClean(final String keepJson) {
+            bgPool.execute(new Runnable() {
+                @Override public void run() {
+                    try {
+                        java.util.HashSet<String> keep = new java.util.HashSet<>();
+                        org.json.JSONArray a = new org.json.JSONArray(keepJson);
+                        for (int i = 0; i < a.length(); i++) keep.add(a.getString(i));
+                        File[] fs = photoDir(MainActivity.this).listFiles();
+                        long lim = System.currentTimeMillis() - 3600000L;
+                        if (fs != null) for (File f : fs) if (!keep.contains(f.getName()) && f.lastModified() < lim) f.delete();
+                    } catch (Exception ignored) { }
                 }
             });
         }

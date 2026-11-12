@@ -102,6 +102,7 @@
       <button class="rec-main" id="recMain" type="button"><span class="dot"></span></button>
       <button class="ctl-s" id="recDone" type="button" disabled style="justify-self:start"><span class="rnd" id="recDoneIc"></span><span data-t="done"></span></button>
     </div>
+    <div class="rec-quick" id="recQuick" hidden><button class="qk t-imp" type="button" data-q="imp" data-t="tag_imp"></button><button class="qk t-q" type="button" data-q="q" data-t="tag_q"></button><button class="qk t-todo" type="button" data-q="todo" data-t="tag_todo"></button><button class="qk" type="button" data-q="note" data-t="recNoteL"></button><button class="qk" type="button" data-q="photo" data-t="photoL" id="recPhotoB"></button></div>
     <p class="rec-foot" id="recFoot"></p>
   </div>
 </section>
@@ -252,6 +253,7 @@
 <script src="i18n61.js"></script>
 <script src="i18n62.js"></script>
 <script src="i18n63.js"></script>
+<script src="i18n64.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -263,7 +265,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.14.3';
+const VERSION = '5.15';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   // 5.14.2: a project that cannot be stored (storage full) says so once instead of silently losing edits
@@ -1053,7 +1055,7 @@ function openSettings() {
   };
   recSettingsBind(card); bind('#setMic', 'micSrc'); bind('#setCall', 'callPause'); bind('#setAuto', 'autoClean'); bind('#setFmt', 'fmt'); bind('#setRecFmt', 'recFmt');
   const st = card.querySelector('#setStr'); if (st) st.onchange = () => { CL.strength = +st.value; ls.set('clStrength', CL.strength); };
-  const tr = card.querySelector('#setTrash'); if (tr) tr.onchange = () => { S.trashDays = +tr.value; ls.set('trashDays', S.trashDays); purgeTrash().then(() => render(), () => {}); };
+  const tr = card.querySelector('#setTrash'); if (tr) tr.onchange = () => { S.trashDays = +tr.value; ls.set('trashDays', S.trashDays); purgeTrash().then(() => { render(); photoSweep(); }, () => {}); };
   const ot = card.querySelector('#openTrash'); if (ot) ot.onclick = openTrash;
   const tpl = card.querySelector('#setTpl'), tc = card.querySelector('#setTplC'), tex = card.querySelector('#setTplEx');
   const showTpl = () => { if (tex) tex.textContent = t('tplEx', { x: fileName(t('tplSample'), 'clean') }); };
@@ -1074,7 +1076,7 @@ $('#setBtn').addEventListener('click', openSettings);
 /* ---------- recordings list ---------- */
 function matchRec(r, q) {
   if (norm(r.title).includes(q)) return { kind: 'title' };
-  for (const b of r.bookmarks || []) if (norm(b.label).includes(q) || norm(b.note).includes(q)) return { kind: 'bm', b };
+  for (const b of r.bookmarks || []) if (norm(b.label).includes(q) || norm(b.note).includes(q) || (b.tag && norm(t('tag_' + b.tag)).includes(q))) return { kind: 'bm', b };
   if (norm(r.notes).includes(q)) return { kind: 'note' };
   if ((r.tags || []).some(x => norm(x).includes(q))) return { kind: 'tag' };
   if (norm(r.ttext).includes(q)) return { kind: 'text' };
@@ -1747,7 +1749,7 @@ function renderBookmarks() {
   $('#bmEmpty').hidden = !!bms.length; $('#bmList').hidden = !bms.length;
   $('#bmList').innerHTML = bms.map((b, i) => `<li class="bm" data-i="${i}">
     <button class="bm-time tc" type="button" data-seek="${b.t}" aria-label="${esc(t('goTo', { t: fmt(b.t) }))}">${fmt(b.t)}</button>
-    <button class="bm-body" type="button" data-edit="${b.id}"><span class="bm-label">${esc(b.label)}</span>${b.note ? `<span class="bm-note">${esc(b.note)}</span>` : ''}</button></li>`).join('');
+    <button class="bm-body" type="button" data-edit="${b.id}"><span class="bm-label">${tagChip(b.tag)}${esc(b.label)}</span>${b.note ? `<span class="bm-note">${esc(b.note)}</span>` : ''}</button>${phThumb(b)}</li>`).join('');
   nowIdx = -2; updateNowBm();
 }
 function updateNowBm() {
@@ -2278,6 +2280,7 @@ function openRingtone(r) {
 }
 
 document.addEventListener('click', e => {
+  const ph = e.target.closest('[data-photo]'); if (ph) { showPhoto(ph.dataset.photo); return; }
   const s = e.target.closest('[data-seek]'); if (s && (s.closest('#player'))) { seek(parseFloat(s.dataset.seek)); return; }
   const ed = e.target.closest('[data-edit]'); if (ed && ed.closest('#player')) editBookmark(ed.dataset.edit);
 });
@@ -2513,7 +2516,11 @@ function renderText(r) {
     h = `<p class="st-desc"><b>${esc(busyLabel(bz))}</b></p><div class="prog"><i style="width:${Math.round(bz.p * 100)}%"></i></div>`;
   } else if (tx && tx.segments && tx.segments.length) {
     if (r.tags && r.tags.length) h += `<div class="tags">${r.tags.map(x => `<button class="tag" type="button" data-tag="${esc(x)}">#${esc(x)}</button>`).join('')}</div>`;
-    h += `<ol class="segs" id="segList">${tx.segments.map((s, i) => `<li data-i="${i}"><button class="bm-time tc" type="button" data-seek="${s[0]}">${fmt(s[0])}</button><span>${esc(s[2])}</span></li>`).join('')}</ol>
+    // 5.15: marks, notes and photos sit in the text at their moment
+    const bms = (r.bookmarks || []).filter(b => !b.chapter && !b.topic); let k = 0;
+    const mk = b => `<li class="seg-mk"><button class="bm-time tc" type="button" data-seek="${b.t}">${fmt(b.t)}</button><span>${tagChip(b.tag)}<b>${esc(b.label)}</b>${b.note ? ` ${esc(b.note)}` : ''}${phThumb(b)}</span></li>`;
+    const before = tm => { let o = ''; while (k < bms.length && bms[k].t < tm) o += mk(bms[k++]); return o; };
+    h += `<ol class="segs" id="segList">${tx.segments.map((s, i) => `${before(s[0])}<li data-i="${i}"><button class="bm-time tc" type="button" data-seek="${s[0]}">${fmt(s[0])}</button><span>${esc(s[2])}</span></li>`).join('')}${before(Infinity)}</ol>
       <div class="st-acts"><button class="btn sm" type="button" data-tx="srt">${ic('share')}${esc(t('textSrt'))}</button>
       <button class="btn sm" type="button" data-tx="copy">${ic('copy')}${esc(t('textCopy'))}</button>
       <button class="btn sm" type="button" data-tx="redo" ${bz ? 'disabled' : ''}>${esc(t('textRedo'))}</button></div>
@@ -2533,7 +2540,7 @@ function updateNowSeg() {
   const ct = audio.currentTime; let idx = -1;
   for (let i = 0; i < tx.segments.length; i++) { if (tx.segments[i][0] <= ct + 0.05) idx = i; else break; }
   if (idx === segNow) return; segNow = idx;
-  document.querySelectorAll('#segList li').forEach((li, i) => li.classList.toggle('now', i === idx));
+  document.querySelectorAll('#segList li[data-i]').forEach((li, i) => li.classList.toggle('now', i === idx));
 }
 
 $('#textBlock').addEventListener('click', e => {
@@ -5423,7 +5430,9 @@ window.__sdRecovered = async o => {
   try {
     const it = fromNative(o, null);
     if (!S.items.has(it.id)) {
-      Object.assign(it, { userTitle: false, created: it.date || Date.now(), categoryId: defaultCat(), notes: '', bookmarks: [], source: 'mic', mode: 'voice', fav: false, kind: 'rec' });
+      let km = null; try { km = JSON.parse(localStorage.getItem('sd:recMarks') || 'null'); } catch (e) {}
+      Object.assign(it, { userTitle: false, created: it.date || Date.now(), categoryId: defaultCat(), notes: '', bookmarks: km && km.marks || [], source: 'mic', mode: km && km.mode || 'voice', fav: false, kind: 'rec' });
+      dropRecMarks();
       S.items.set(it.id, it); await saveRec(it); render();
     }
     toast(t('recRecovered'), 6000);
@@ -5431,6 +5440,7 @@ window.__sdRecovered = async o => {
 };
 async function finishNative() {
   cancelAnimationFrame(R.raf);
+  dropRecMarks();
   if (R.cancel) { try { AND.recCancel(); } catch (e) {} R.state = 'idle'; R.native = false; closeOverlay('rec'); updateRecUI(); return; }
   let res = {};
   try { res = JSON.parse(AND.recStop()); } catch (e) { res = { ok: false }; }
@@ -5493,14 +5503,68 @@ function saveDraft() {
   return db.put('kv', { k: 'draft', id: R.draftId, mime: R.mime, started: R.started, mode: R.mode, dur: elapsed(),
     marks: R.marks, levels: downsample(R.levels, 240), cat: defaultCat() }).catch(() => {});
 }
-function addRecMark() {
+function addRecMark(x, at) {
   if (R.state !== 'rec' && R.state !== 'paused') return;
-  const tm = elapsed();
-  R.marks.push({ id: uid(), t: tm, label: t('markN', { n: R.marks.length + 1 }), note: '' });
-  if (!R.native) saveDraft();
+  const tm = at != null ? at : elapsed();
+  const m = Object.assign({ id: uid(), t: tm, label: t('markN', { n: R.marks.length + 1 }), note: '' }, x || {});
+  if (x && x.tag && !x.label) m.label = t('tag_' + x.tag);
+  R.marks.push(m); R.marks.sort((a, c) => a.t - c.t);
+  keepRecMarks();
   updateRecUI(); drawLive();
-  toast(`${t('markN', { n: R.marks.length })} · ${fmt(tm)}`, 1400);
+  toast(`${m.label} · ${fmt(tm)}`, 1400);
   if (navigator.vibrate) try { navigator.vibrate(18); } catch (e) {}
+}
+/* ---------- 5.15: notes while recording (tags, written note, photo) ---------- */
+// native recordings keep their marks here, so a recording the crash recovery brings back keeps them too
+function keepRecMarks() {
+  if (!R.native) { saveDraft(); return; }
+  try { localStorage.setItem('sd:recMarks', JSON.stringify({ started: R.started, mode: R.mode, marks: R.marks })); } catch (e) {}
+}
+const dropRecMarks = () => { try { localStorage.removeItem('sd:recMarks'); } catch (e) {} };
+const TAGS = ['imp', 'q', 'todo'];
+const tagChip = g => g ? `<span class="mtag t-${g}">${esc(t('tag_' + g))}</span>` : '';
+function recNote() {
+  if (R.state !== 'rec' && R.state !== 'paused') return;
+  const at = elapsed(); let tag = '';
+  const card = openModal(`<h3>${esc(t('recNoteT'))} · <span class="tc">${fmt(at)}</span></h3>
+    <div class="modal-body"><div class="chips">${TAGS.map(g => `<button class="chip" type="button" aria-pressed="false" data-g="${g}">${esc(t('tag_' + g))}</button>`).join('')}</div>
+      <label class="field"><span>${esc(t('markNote'))}</span><textarea id="rnText" rows="3" maxlength="2000" placeholder="${esc(t('markNotePh'))}"></textarea></label></div>
+    <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('save'))}</button></div>`);
+  card.querySelectorAll('[data-g]').forEach(b => { b.onclick = () => { tag = tag === b.dataset.g ? '' : b.dataset.g; card.querySelectorAll('[data-g]').forEach(c => c.setAttribute('aria-pressed', c.dataset.g === tag)); }; });
+  card.querySelector('[data-x]').onclick = closeModal;
+  card.querySelector('[data-ok]').onclick = () => {
+    const note = card.querySelector('#rnText').value.trim();
+    closeModal();
+    if (note || tag) addRecMark({ tag: tag || undefined, label: tag ? t('tag_' + tag) : t('recNoteL'), note }, at);
+  };
+  setTimeout(() => card.querySelector('#rnText').focus(), 60);
+}
+const photoWait = new Map();
+function recPhoto() {
+  if (!NATIVE || (R.state !== 'rec' && R.state !== 'paused')) return;
+  const id = uid(); photoWait.set(id, elapsed());
+  let ok = false; try { ok = AND.takePhoto(id); } catch (e) {}
+  if (!ok) { photoWait.delete(id); toast(t('photoNoCam'), 3000); }
+}
+window.__sdPhoto = (id, ok, nocam) => {
+  const at = photoWait.get(id); photoWait.delete(id);
+  if (nocam) toast(t('photoNoCam'), 3000);
+  if (!ok || at == null) return;
+  if (R.state === 'rec' || R.state === 'paused') addRecMark({ id, label: t('photoL'), photo: id + '.jpg' }, at);
+};
+const photoUrl = f => '/__photo/' + encodeURIComponent(f);
+const phThumb = b => b.photo && NATIVE ? `<button class="bm-ph" type="button" data-photo="${esc(b.photo)}" aria-label="${esc(t('photoL'))}"><img loading="lazy" src="${photoUrl(b.photo)}" alt=""></button>` : '';
+function showPhoto(f) {
+  const card = openModal(`<img class="ph-big" src="${photoUrl(f)}" alt=""><div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('close'))}</button></div>`);
+  card.querySelector('[data-x]').onclick = closeModal;
+}
+// photos no recording points to any more go, but not ones taken in the last hour (a camera may still be open)
+function photoSweep() {
+  if (!NATIVE) return;
+  const keep = [];
+  for (const m of [S.items.values(), metaById.values()]) for (const r of m) for (const b of r.bookmarks || []) if (b.photo) keep.push(b.photo);
+  if (!keep.length) return;   // nothing loaded (or no photos left): never empty the folder on a guess
+  try { AND.photoClean(JSON.stringify(keep)); } catch (e) {}
 }
 function showRecTime(s) {
   const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = Math.floor(s % 60), d = Math.floor((s % 1) * 10);
@@ -5738,7 +5802,7 @@ function updateRecUI() {
   if (R.state === 'rec') { main.innerHTML = ic('pause'); main.setAttribute('aria-label', t('pause')); }
   else { main.innerHTML = '<span class="dot"></span>'; main.setAttribute('aria-label', t(R.state === 'paused' ? 'recResume' : 'recStart')); }
   main.disabled = R.state === 'starting' || R.state === 'stopping';
-  $('#recMark').disabled = !active; $('#recDone').disabled = !active;
+  $('#recMark').disabled = !active; $('#recDone').disabled = !active; $('#recQuick').hidden = !active; $('#recPhotoB').hidden = !R.native;
   $('#modeSeg').querySelectorAll('button').forEach(b => { b.disabled = R.state !== 'idle'; });
   $('#roomBox').hidden = R.state !== 'idle' || !NATIVE; renderPurpose();
   if (R.state === 'idle' || R.state === 'stopping') showRecWarn(null);
@@ -5750,7 +5814,12 @@ $('#recMain').addEventListener('click', () => {
   else if (R.state === 'rec') pauseRec();
   else if (R.state === 'paused') resumeRec();
 });
-$('#recMark').addEventListener('click', addRecMark);
+$('#recMark').addEventListener('click', () => addRecMark());
+$('#recQuick').addEventListener('click', e => {
+  const b = e.target.closest('[data-q]'); if (!b) return;
+  const k = b.dataset.q;
+  if (k === 'note') recNote(); else if (k === 'photo') recPhoto(); else addRecMark({ tag: k });
+});
 $('#recDone').addEventListener('click', () => stopRec(false));
 $('#recClose').addEventListener('click', () => { if (R.state === 'idle') closeOverlay('rec'); else if (R.state === 'rec' || R.state === 'paused') askCancelRec(); });
 async function askCancelRec() {
@@ -6550,7 +6619,7 @@ function showIntro(again) {
   });
   document.body.appendChild(d); draw();
 }
-const NEWS = ['n5rack', 'n5master', 'n5practice', 'n5chords', 'n5hq', 'n5pitch', 'n5fix'];   // 5.14: renew with every minor version
+const NEWS = ['n515tags', 'n515note', 'n515photo', 'n515text'];   // 5.15: renew with every minor version
 function showNews() {
   const card = openModal(`<h3>${esc(t('newsT', { v: VERSION.split('.').slice(0, 2).join('.') }))}</h3><ul class="news">${NEWS.map(k => `<li>${esc(t('news_' + k))}</li>`).join('')}</ul>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('newsOk'))}</button></div>`, () => setTimeout(coachMaybe, 300));
@@ -7032,7 +7101,7 @@ async function boot() {
     audio.refresh();
     if (audio.src && S.items.has(audio.src)) { S.cur = audio.src; S.miniOn = true; updateMini(); }
     scheduleBackground(3000);
-    purgeTrash().then(() => render(), () => {});
+    purgeTrash().then(() => { render(); photoSweep(); }, () => {});
     // 3.4.3: the app closed unexpectedly last time: offer to send the note (it never leaves the phone otherwise)
     applyLite();
     setTimeout(async () => {

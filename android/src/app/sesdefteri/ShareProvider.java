@@ -24,6 +24,12 @@ public class ShareProvider extends ContentProvider {
     private File fileFor(Uri uri) throws FileNotFoundException {
         String name = uri.getLastPathSegment();
         if (name == null) throw new FileNotFoundException();
+        java.util.List<String> seg = uri.getPathSegments();
+        // 5.15: "ph/<id>.jpg" is where the camera app writes a photo taken during a recording
+        if (seg.size() == 2 && "ph".equals(seg.get(0))) {
+            if (!name.matches("[A-Za-z0-9_-]{1,64}\\.jpg")) throw new FileNotFoundException();
+            return new File(MainActivity.photoDir(getContext()), name);
+        }
         File dir = new File(getContext().getCacheDir(), "share");
         File f = new File(dir, name);
         try {
@@ -37,7 +43,16 @@ public class ShareProvider extends ContentProvider {
 
     @Override
     public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
-        return ParcelFileDescriptor.open(fileFor(uri), ParcelFileDescriptor.MODE_READ_ONLY);
+        File f = fileFor(uri);
+        if (isPhoto(uri) && mode != null && mode.contains("w"))
+            return ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_WRITE_ONLY | ParcelFileDescriptor.MODE_CREATE | ParcelFileDescriptor.MODE_TRUNCATE);
+        if (!f.exists()) throw new FileNotFoundException();
+        return ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY);
+    }
+
+    private static boolean isPhoto(Uri uri) {
+        java.util.List<String> seg = uri.getPathSegments();
+        return seg.size() == 2 && "ph".equals(seg.get(0));
     }
 
     @Override
@@ -68,6 +83,7 @@ public class ShareProvider extends ContentProvider {
         if (n.endsWith(".wav")) return "audio/wav";
         if (n.endsWith(".aac")) return "audio/aac";
         if (n.endsWith(".flac")) return "audio/flac";
+        if (n.endsWith(".jpg")) return "image/jpeg";
         return "application/octet-stream";
     }
 
