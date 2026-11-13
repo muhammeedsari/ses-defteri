@@ -1,14 +1,14 @@
-# Ses Defteri — sürüm sürüm tüm özellikler (1.3 → 5.14.1)
+# Ses Defteri — sürüm sürüm tüm özellikler (1.3 → 5.21)
 
-Bu dosya uygulamanın her sürümde kazandığı özellikleri tek yerde toplar. Teknik ayrıntılar için: `DURUM.md` (1.3–4.0), `DEVIR-4.3-4.12.md`, `DEVIR-4.12-5.14.md`, kod haritası `MIMARI.md`.
+Bu dosya uygulamanın her sürümde kazandığı özellikleri tek yerde toplar. Son sürüm **5.21** (versionCode 95, 13 Kasım 2026). Teknik ayrıntılar için: `DURUM.md` (1.3–4.0), `DEVIR-4.3-4.12.md`, `DEVIR-4.12-5.14.md`, yol haritası `YOL-HARITASI-5.15-6.x.md`, kod haritası `MIMARI.md`.
 Sonradan değişen ya da kaldırılan özellikler yanında **(şimdi: …)** notuyla belirtildi.
 
 ## Uygulamanın bugünkü hâli (özet)
 
-- **Kayıtlar:** kayıt (amaç, kalite, canlı gürültü bastırma, düşük gecikme, kendini duyma), liste, kategoriler, arama, sıralama, çöp kutusu, menü ve çoklu seçim.
+- **Kayıtlar:** kayıt (amaç, kalite, canlı gürültü bastırma, düşük gecikme, kendini duyma), kayıtta not/fotoğraf/hızlı işaret, **canlı yazı**, liste, kategoriler, aramadan o ana atlama, Süz, konuşmacı adları, sıralama, çöp kutusu, menü ve çoklu seçim, **bulutsuz yedek**.
 - **Müzik çalar:** çalma listeleri, sıra, EQ, eşit ses yüksekliği, sessizliği atla, A-B döngüsü, uyku zamanlayıcı, akorlar ve bölümler, sözler, Pratik, akort aleti.
-- **Düzenle (stüdyo):** en çok 4 katmanlı zaman çizelgesi, 6 araç grubu (YZ, Temizle, Onar, Ses-Ton, Kırp, Efekt), canlı efekt listesi, mastering, düzenleme geçmişi, dışa aktarma (MP3, M4A, WAV, FLAC, OGG/Opus, zil sesi, videoya koy, altyazılı video).
-- **Yapay zekâ (internetsiz):** yazıya dökme, metinden düzenleme, ses ayırma (2 ve 4 parça, kaliteli 2 parça), YZ gürültü temizliği, konuşmacı ayırma, HD ses, akıllı temizlik araçları, öksürük/gülme bulma.
+- **Düzenle (stüdyo):** en çok 4 katmanlı zaman çizelgesi, 6 araç grubu (YZ, Temizle, Onar, Ses-Ton, Kırp, Efekt), canlı efekt listesi, mastering, düzenleme geçmişi, **podcast stüdyosu** (şablon, Bölümü hazırla, MP3 bölümleri, tanıtım klibi, iki kaydı hizala), dışa aktarma (MP3, M4A, WAV, FLAC, OGG/Opus, zil sesi, videoya koy, altyazılı video).
+- **Yapay zekâ (internetsiz):** yazıya dökme (Türkçe için hızlı ve daha doğru seda modeli, diğer dillerde Whisper), canlı yazı, metinden düzenleme, ses ayırma (2 ve 4 parça, kaliteli 2 parça), YZ gürültü temizliği, konuşmacı ayırma, HD ses, akıllı temizlik araçları, öksürük/gülme bulma.
 - **9 dil:** Türkçe, İngilizce, Almanca, Fransızca, İspanyolca, Portekizce, Rusça, Arapça, Çince.
 
 ---
@@ -111,13 +111,25 @@ Sonradan değişen ya da kaldırılan özellikler yanında **(şimdi: …)** not
 | 5.11–5.13 | Lisans temizliği: doğal okuma sesleri kaldırıldı, metinden ses yalnız telefonun sesiyle; YZ kütüphanesi GPL parça olmadan yeniden derlendi, APK ~2 MB küçüldü. |
 | 5.14 | İnceleme düzeltmeleri (Pratik'te "Akorları gizle" ikinci açılışta çalışıyor, Yapıştır yalnız kopya varken). Klip kartında Geçiş yerine **Çoğalt**; **işaret kaldırma** (İşareti kaldır, bayrağa iki dokunuş, Tüm işaretleri sil). |
 | 5.14.1 | Mastering'de (Doğal, Sıcak) ani yüksek seslerde çatırtı giderildi; ton değiştirme iptal edilince bellek boşaltılıyor. |
-| 5.15–5.17 | Not alma (fotoğraf, hızlı işaretler), canlı yazı (seda / Whisper), seda ile hızlı Türkçe yazıya dökme. |
+| 5.14.2 | Kod incelemesi düzeltmeleri: hata ile kesilen kayıt yazılanı korur, WAV başlığı 5 sn'de bir yenilenir; projede eksik klip uyarısı, depolama doldu uyarısı; kopyala/yapıştır efekt listesini ve pan'ı korur; başarısız dışa aktarma bozuk dosya bırakmaz; indirmelerde bozuk arşiv kontrolü; çalarda açılamayan dosya atlanır. |
+| 5.14.3 | M4A kayıtlar çökmeye dayanıklı, okunamayan proje silinmez, model sağlama toplamı kontrolü, çalar ve dışa aktarma düzeltmeleri. |
+| 5.15 | **Kayıtta not alma:** tek dokunuşla Önemli / Soru / Yapılacak işaretleri, o ana yazılı not ve fotoğraf; hepsi yazıya dökülen metinde kendi anında görünür. |
+| — | **Türkçe doğruluk ölçümü** (kelime hata oranı): seda-v0.2 %10,9, Whisper small %17,8, seda-v0.2-tiny %19,2, seda-v0.1 %21,9, Whisper base %40,8. seda ~16 kat hızlı → Türkçe için seda seçildi. |
+| 5.16 | **Canlı yazı:** kayıt sürerken Türkçe yazı ekrana akar (seda; v0.1 Apache 2.0 ya da v0.2 CC BY-SA, kullanıcı seçer; modeller GitHub "seda-models" ön sürümünden isteğe bağlı indirilir). |
+| 5.17 | Türkçe kayıtlar seda ile **çok daha hızlı yazıya dökülür** (%11,6 hata); diğer dillerde canlı yazı Whisper ile; işaretler canlı yazıda; Whisper'ın uydurduğu "(müzik)" gibi etiketler temizlenir. |
 | 5.18 | **Arama ve arşiv:** arama sonucuna dokununca o andan çalar; **Süz** (tarih, süre, işaret türü, konuşmacı, metni olanlar); kayıt metninde **konuşmacılar** ve ad verme (adlar telefonda, sonraki kayıtlarda önerilir); **bulutsuz yedek** (Ayarlar › Depolama: tek .zip, geri yükleme; aynı dosya varsa notları tamamlanır). |
 | 5.19–5.21 | **Podcast stüdyosu:** podcast şablonu (giriş, ara jingle, kapanış; projeye tek dokunuş), **Bölümü hazırla** (Stüdyo sesi → dolgu kelimeleri → sessizlikler → şablon → seviye → müzik kısma → yayın seviyesi -16 LUFS; her adım ayrı geri alınır), **Bölümler ve notlar** (işaret adları MP3'e ID3 CHAP/CTOC bölümü olarak yazılır, bölüm notu kopyala/paylaş), dışa aktarmada yayın seviyesi anahtarı, altyazılı videoda 30/45/60 sn tanıtım parçası, **Çift kaydı hizala** (iki telefonun kaydı, `Align.java`, 1 ms). Masaüstü testi: `tests/desktop/feature-sweep.js` (5.15–5.21, 51 senaryo). |
 
-## Bilinen sınırlar (5.14.1)
+## Bilinen sınırlar (5.21)
 
 - 32 bit telefonlarda MP3 dışa aktarma ve yeni perde motoru yok (eski motor kullanılır; M4A ile dışa aktarılabilir).
 - Akorlar yalnız majör/minör.
 - Kaliteli 2 parça ayırma çok bellek ister.
 - Başka uygulamadan paylaşınca kopya kayıt ve dalga titremesi sorunları telefonda henüz doğrulanmadı.
+- 5.15–5.21 özellikleri masaüstünde test edildi (3 dilde düğme taraması + 51 senaryo); telefonda henüz denenmedi: canlı yazı, yedeği başka telefona geri yükleme, iki telefonla kayıt + hizalama, MP3 bölümlerinin podcast uygulamalarında görünmesi.
+
+## Sırada
+
+- **5.22 Play hazırlığı:** AAB paketi, model lisans tablosu, gizlilik / veri güvenliği / izin açıklamaları, ilk açılışta amaç kartları, zayıf telefonda hafif mod önerisi.
+- **6.x:** kalite ve hız.
+- **En son:** özet / dil modeli.
