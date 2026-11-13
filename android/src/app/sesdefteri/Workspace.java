@@ -1371,7 +1371,8 @@ final class Workspace {
         double gap = sc.speech - sc.noise;
         if (gap < 6 || sc.noise < -80) { rep.put("none", true); return same(null, rep); }
         final double thrDb = sc.noise + Math.max(4, Math.min(12, gap * 0.3));
-        final double range = Math.min(gap - 2, 8 + 10 * str);
+        // 5.21.1: in noisy rooms the speech-safe ceiling (gap - 2) used to swallow every level: Light / Balanced / Strong now share it out
+        final double range = Math.min((gap - 2) * Math.min(1, 0.5 + 0.36 * str), 8 + 10 * str);
         rep.put("range", Math.round(range));
         final int ch = inf.ch, fs = inf.rate, LA = Math.round(fs * 0.005f), HOLD = Math.round(fs * 0.12f);
         final float closed = (float) Math.pow(10, -range / 20), thr = (float) Math.pow(10, thrDb / 10);

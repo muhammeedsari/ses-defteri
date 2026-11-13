@@ -28,12 +28,15 @@ public final class Stretch extends Node {
     final int ch, S;
     final double speed;
     long h, fed, made, total;
+    final float g;
     float[][] pre;
     int preN;
     float[][] out = new float[0][];
 
     Stretch(int ch, int fs, double speed, double semis, boolean formant) {
         this.ch = ch; this.speed = speed;
+        // 5.21.1: kept formants lose about 0.5 dB per semitone upwards in Signalsmith: given back (a limiter follows in every use)
+        g = formant && semis > 0 ? (float) Math.pow(10, Math.min(12, 0.5 * semis) / 20) : 1f;
         h = create(ch, fs, (float) semis, formant);
         S = seekLength(h, (float) speed);
         pre = new float[ch][S];
@@ -47,6 +50,7 @@ public final class Stretch extends Node {
         process(h, b, n, out, m);
         long keep = Math.min(m, Math.round(total / speed) - made);
         made = want;
+        if (keep > 0 && g != 1f) for (int c = 0; c < ch; c++) for (int i = 0; i < keep; i++) out[c][i] *= g;
         if (keep > 0 && next != null) next.push(out, (int) keep);
     }
 

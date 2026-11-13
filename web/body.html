@@ -260,6 +260,7 @@
 <script src="i18n66.js"></script>
 <script src="i18n67.js"></script>
 <script src="i18n68.js"></script>
+<script src="i18n69.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -271,7 +272,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.21';
+const VERSION = '5.21.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   // 5.14.2: a project that cannot be stored (storage full) says so once instead of silently losing edits
@@ -967,7 +968,7 @@ function openSettings() {
     <div class="set-sec"><h4>${esc(t('setExport'))}</h4>
       <div class="set-sub"><span>${esc(t('setFmt'))}</span><select id="setFmt" class="sel-full">${FMTS().filter(f => !f.startsWith('mp3') || CAPS.mp3).map(f => `<option value="${f}"${S.fmt === f ? ' selected' : ''}>${esc(fmtLabel(f))}</option>`).join('')}</select></div>
       <div class="set-sub"><span>${esc(t('setChans'))}</span><select id="setChans" class="sel-full">${['auto', 'mono', 'stereo'].map(v => `<option value="${v}"${S.chans === v ? ' selected' : ''}>${esc(t('ch_' + v))}</option>`).join('')}</select></div>
-      <div class="set-sub"><span>${esc(t('setName'))}</span><select id="setTpl" class="sel-full">${NAME_TPLS.map(v => `<option value="${esc(v)}"${S.nameTpl === v ? ' selected' : ''}>${esc(t('tplEx', { x: ((S.nameTpl = v), fileName(t('tplSample'), 'clean')) }))}</option>`).join('')}<option value="custom"${NAME_TPLS.includes(ls.get('nameTpl', '{name}')) ? '' : ' selected'}>${esc(t('tplCustom'))}</option></select>
+      <div class="set-sub"><span>${esc(t('setName'))}</span><select id="setTpl" class="sel-full">${NAME_TPLS.map(v => `<option value="${esc(v)}"${ls.get('nameTpl', '{name}') === v ? ' selected' : ''}>${esc(t('tplEx', { x: ((S.nameTpl = v), fileName(t('tplSample'), 'clean')) }))}</option>`).join('')}<option value="custom"${NAME_TPLS.includes(ls.get('nameTpl', '{name}')) ? '' : ' selected'}>${esc(t('tplCustom'))}</option></select>
         <input id="setTplC" class="sel-full" type="text" value="${esc(ls.get('nameTpl', '{name}'))}"${NAME_TPLS.includes(ls.get('nameTpl', '{name}')) ? ' hidden' : ''} placeholder="{name}_{date}"><small class="hint" id="setTplEx"></small></div></div>
     <div class="set-sec"><h4>${esc(t('setPlayer'))}</h4>
       <div class="set-sub"><span>${esc(t('setMinSong'))}</span><select id="setMinSong" class="sel-full">${[0, 30, 60].map(v => `<option value="${v}"${S.minSong === v ? ' selected' : ''}>${esc(v ? t('minSongN', { n: v }) : t('off'))}</option>`).join('')}</select><small class="hint">${esc(t('setMinSongD'))}</small></div>
@@ -3361,7 +3362,10 @@ async function tlFxRun(c, op) {
     return tlEffect(c, 'denoise', { learn: [t0, Math.min(c.in + tlLen(c), t0 + o.len)], red: o.red, sens: o.sens });
   }
   if (op === 'aidenoise' || op === 'gate') {
-    const v = await chooseBox(t('op_' + op), t('fxd_' + op), [[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([x, k]) => ({ value: String(x), label: t(k), desc: op === 'aidenoise' ? t('dnStr_' + x) : '' })));
+    // 5.21.1: the speech model takes music for noise: on a song the gentle music tool comes first, with a warning
+    const mus = op === 'aidenoise' && tlIsMusic(c), lv = [[0.6, 'clLight'], [1, 'clBalanced'], [1.4, 'clStrong']].map(([x, k]) => ({ value: String(x), label: t(k), desc: op === 'aidenoise' ? t('dnStr_' + x) : '' }));
+    const v = await chooseBox(t('op_' + op), mus ? t('aiMusicWarn') : t('fxd_' + op), mus ? [{ value: 'music', label: t('op_musicdenoise'), desc: t('fxd_musicdenoise') }].concat(lv) : lv);
+    if (v === 'music') return tlEffect(c, 'musicdenoise', {});
     if (v) tlEffect(c, op, { strength: +v });
     return;
   }
