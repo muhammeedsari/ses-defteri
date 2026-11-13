@@ -3,6 +3,7 @@ import java.util.*;
 public class JSONArray {
   final ArrayList<Object> l = new ArrayList<>();
   public JSONArray() {}
+  public JSONArray(Collection<?> c) { if (c != null) l.addAll(c); }
   public JSONArray(String s) { l.addAll(((JSONArray) new JSONObject.P(s).val()).l); }
   public JSONArray put(Object v) { l.add(v); return this; }
   public JSONArray put(double v) { l.add(v); return this; }
