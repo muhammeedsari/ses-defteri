@@ -157,7 +157,41 @@ final class AsrModels {
             con.disconnect();
         }
         if (part.length() != size) throw new IllegalStateException("download-short");
+        String want = SHA.get(url);
+        if (want != null && !want.equals(sha256(part))) { part.delete(); throw new IllegalStateException("download-bad"); }
         if (!part.renameTo(f)) throw new IllegalStateException("download-rename");
+    }
+
+    /** 5.14.3: SHA-256 of every model with a fixed address (GitHub releases); Hugging Face files are checked by size only */
+    static final java.util.Map<String, String> SHA = new java.util.HashMap<>();
+    static {
+        SHA.put("https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2",
+                "911b2083efd7c0dca2ac3b358b75222660dc09fb716d64fbfc417ba6c99ff3de");
+        SHA.put("https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.tar.bz2",
+                "486a46afbb7ba798507190ffe02fea2dd726049af212e774537efac6afb210a6");
+        SHA.put("https://github.com/Topping1/LavaSR-ONNX/releases/download/Alpha-v0.1/enhancer_backbone.onnx",
+                "841e96d261dffdf1dc974f3d29e2cfcf1b16fd0b358749c1ace0bbfa1d4c8ddd");
+        SHA.put("https://github.com/Topping1/LavaSR-ONNX/releases/download/Alpha-v0.1/enhancer_backbone.onnx.data",
+                "a125a4ede7cfdd1073d906a3cadf2171a30be6a40f296ad28772e0ba258de8c5");
+        SHA.put("https://github.com/Topping1/LavaSR-ONNX/releases/download/Alpha-v0.1/enhancer_spec_head.onnx",
+                "f66fd164c55fd1b07e5cea5e687c71522b192f452691128fd7ae4e6b26dbc683");
+        SHA.put("https://github.com/Topping1/LavaSR-ONNX/releases/download/Alpha-v0.1/enhancer_spec_head.onnx.data",
+                "b855e309b027af9aa75285b97b345571b6bd695a30fde434d06c979d83885fd6");
+        SHA.put("https://github.com/k2-fsa/sherpa-onnx/releases/download/audio-tagging-models/sherpa-onnx-ced-tiny-audio-tagging-2024-04-19.tar.bz2",
+                "84baf315b57d61aa69480c4fee878dab54cbc7be3e877db334e65d8b087e23c3");
+        SHA.put("https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
+                "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2");
+        SHA.put("https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/UVR-MDX-NET-Inst_HQ_5.onnx",
+                "487e35ae87ed9af9914c85c357e60800c07b8196949e274fe884c18a0c620dbb");
+    }
+
+    static String sha256(File f) throws Exception {
+        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+        InputStream in = new java.io.FileInputStream(f);
+        try { byte[] b = new byte[1 << 16]; int n; while ((n = in.read(b)) > 0) md.update(b, 0, n); } finally { in.close(); }
+        StringBuilder sb = new StringBuilder();
+        for (byte x : md.digest()) sb.append(String.format(java.util.Locale.ROOT, "%02x", x));
+        return sb.toString();
     }
 
     /** file size: HEAD, or when that is refused (signed download links only allow GET) the first byte with GET */

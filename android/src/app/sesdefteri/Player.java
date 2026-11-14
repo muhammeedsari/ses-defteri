@@ -237,7 +237,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
                     synchronized (Player.this) {
                         if (x == preparing) preparing = null;
                         if (x == nmp) { nmp = null; npos = -1; try { if (mp != null) mp.setNextMediaPlayer(null); } catch (Exception ignored) { } }
-                        if (x != mp) { try { x.release(); } catch (Exception ignored) { } return true; }
+                        if (x != mp) { detachFx(x); try { x.release(); } catch (Exception ignored) { } return true; }   // 5.14.3: its EQ is released too
                     }
                     return Player.this.onError(x, what, extra);
                 }
@@ -568,6 +568,11 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
      */
     private void fallback(final JSONObject it, final long at) {
         releasePlayer();
+        // 5.14.3: the WAV made for an earlier track is gone (only one is kept): convert the original again
+        if (it != null && it.optBoolean("pcm") && it.optJSONObject("src0") != null) {
+            File w = MediaLib.srcFile(it.optJSONObject("src"));
+            if (w == null || !w.isFile()) try { it.put("src", it.getJSONObject("src0")); it.remove("pcm"); } catch (Exception ignored) { }
+        }
         if (it == null || it.optBoolean("pcm") || app == null) {
             error = "play"; playing = false; wantPlay = false;
             PlayerService.update(app, false); emit("error");
@@ -590,6 +595,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
                             if (!done) { error = "play"; playing = false; wantPlay = false; PlayerService.update(app, false); emit("error"); return; }
                             try {
                                 JSONObject s2 = new JSONObject(); s2.put("path", f.getAbsolutePath());
+                                if (!it.has("src0") && src != null) it.put("src0", src);
                                 it.put("src", s2); it.put("pcm", true);
                             } catch (Exception ignored) { }
                             stalls = 0; noFx = false;
@@ -640,7 +646,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
             return;
         }
         if (!prepared) { wantPlay = true; return; }
-        if (!requestFocus()) return;
+        if (!requestFocus()) { wantPlay = false; error = "focus"; emit("error"); return; }   // 5.14.3: e.g. during a call: say so
         startInternal();
     }
 
@@ -954,6 +960,14 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
                 am.requestAudioFocus(tlReq);
             } else am.requestAudioFocus(tlFocus, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
         } catch (Exception ignored) { }
+    }
+
+    /** 5.14.3: the editor's preview stopped: other apps may play again */
+    void timelineFocusDone() {
+        if (app == null || tlReq == null && Build.VERSION.SDK_INT >= 26) return;
+        AudioManager am = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
+        if (am == null) return;
+        try { if (Build.VERSION.SDK_INT >= 26) am.abandonAudioFocusRequest(tlReq); else am.abandonAudioFocus(tlFocus); } catch (Exception ignored) { }
     }
 
     private void abandonFocus() {

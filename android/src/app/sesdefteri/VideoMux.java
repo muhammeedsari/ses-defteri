@@ -120,7 +120,9 @@ final class VideoMux {
             mux.stop();
             mux.release();
             mux = null;
-            return publish(c, mp4, a.optString("name", "Video") + ".mp4");
+            JSONObject res = publish(c, mp4, a.optString("name", "Video") + ".mp4");
+            if (inf.frames - frames > inf.rate / 2) res.put("cut", Math.round((inf.frames - frames) / (double) inf.rate));   // 5.14.3: the sound was longer than the video
+            return res;
         } finally {
             vx.release();
             if (ax != null) ax.release();

@@ -15,7 +15,7 @@ final class Tuner {
     private static Thread th;
 
     static synchronized boolean start(final MainActivity a) {
-        if (on) return true;
+        if (on && th != null) return true;
         if (!"idle".equals(Recorder.stateName())) return false;
         final int fs = 48000, min = AudioRecord.getMinBufferSize(fs, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         final AudioRecord r;
@@ -29,13 +29,14 @@ final class Tuner {
         on = true;
         th = new Thread(new Runnable() {
             @Override public void run() {
+                final Thread me = Thread.currentThread();
                 final int N = 4096, H = 2048, D = 2;
                 short[] in = new short[H];
                 float[] x = new float[N];
                 float[] d = new float[N / D];
                 double[] df = new double[400];
                 try {
-                    while (on) {
+                    while (on && th == me) {   // 5.14.3: a quick close-and-open never leaves two readers
                         int got = r.read(in, 0, H);
                         if (got <= 0) continue;
                         System.arraycopy(x, got, x, 0, N - got);
@@ -57,7 +58,12 @@ final class Tuner {
         return true;
     }
 
-    static synchronized void stop() { on = false; th = null; }
+    static synchronized void stop() {
+        on = false;
+        Thread t = th;
+        th = null;
+        if (t != null) try { t.join(300); } catch (InterruptedException ignored) { }
+    }
 
     /** YIN (cumulative mean normalised difference), threshold 0.12, parabolic refinement; 0 = no clear pitch */
     static double yin(float[] d, double fd, double[] df) {

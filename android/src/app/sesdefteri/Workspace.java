@@ -224,6 +224,7 @@ final class Workspace {
                         wav(in, inf, null, new double[] { 0, 1 }, cancel).run(kk);
                         double[] pr = ln.profile();
                         if (pr == null) throw new IllegalArgumentException("short");
+                        if (ln.rmsDb() < -80) throw new IllegalArgumentException("dn-silent");   // 5.14.3: digital silence holds no noise to learn
                         double red = Math.max(3, Math.min(40, a.optDouble("red", 12))), sens = Math.max(0, Math.min(24, a.optDouble("sens", 6)));
                         app.sesdefteri.dsp.NoiseGate ng = new app.sesdefteri.dsp.NoiseGate(ch, fs, pr, red, sens);
                         Analyzer after = new Analyzer(ch, fs);
@@ -244,6 +245,8 @@ final class Workspace {
                     JSONArray lr = a.optJSONArray("learn");   // [from, to] seconds of noise only, picked by the user
                     if (lr != null && lr.length() == 2) {
                         double[] lp = learnNoise(in, inf, lr.getDouble(0), lr.getDouble(1), cancel);
+                        double lsum = 0; if (lp != null) for (double v : lp) lsum += v;
+                        if (lp != null && lsum <= 1e-10) throw new IllegalArgumentException("dn-silent");
                         if (lp != null && lp.length == an.noisePower.length) { prof = lp; rep.put("learned", true); nr = Math.min(30, nr + 4); }
                     }
                     Spectral s = new Spectral(ch, fs).noise(prof, nr, 1.0);

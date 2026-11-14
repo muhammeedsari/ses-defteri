@@ -12,18 +12,21 @@ import java.util.List;
  * Passes the audio on unchanged.
  */
 public final class SongMap extends Node {
-    static final int N = 8192, HOP = 2048, BANDS = 6;
+    static final int BANDS = 6;
+    final int N, HOP;   // 5.14.3: ~170 ms frames at every sample rate (a fixed 8192 was 1 s at 8 kHz and too coarse at 96 kHz)
     static final String[] NAMES = { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
-    final Fft fft = new Fft(N);
-    final double[] win = Fft.hann(N, false), re = new double[N], im = new double[N];
+    final Fft fft;
+    final double[] win, re, im;
     final int[] pc, bpc, band;
-    final float[] buf = new float[N];
+    final float[] buf;
     final double fs;
     int fill;
     final List<double[]> frames = new ArrayList<>();   // 12 chroma, 12 bass, 6 bands, 1 level
 
     public SongMap(double fs) {
         this.fs = fs;
+        N = Fft.nextPow2((int) Math.round(fs * 0.17)); HOP = N / 4;
+        fft = new Fft(N); win = Fft.hann(N, false); re = new double[N]; im = new double[N]; buf = new float[N];
         pc = new int[N / 2]; bpc = new int[N / 2]; band = new int[N / 2];
         double[] edges = { 60, 250, 500, 1000, 2000, 4000, 12000 };
         for (int k = 0; k < N / 2; k++) {

@@ -112,10 +112,13 @@ final class MediaLib {
                     boolean own = pkg.equals(owner) || (rel != null && rel.contains(FOLDER));
                     boolean isRecFlag = Build.VERSION.SDK_INT >= 31 && cur.getInt(cur.getColumnIndexOrThrow(MediaStore.Audio.Media.IS_RECORDING)) != 0;
                     boolean isMusic = cur.getInt(cur.getColumnIndexOrThrow(MediaStore.Audio.Media.IS_MUSIC)) != 0;
-                    String hay = ((rel == null ? "" : rel) + " " + (name == null ? "" : name)).toLowerCase(Locale.ROOT);
+                    // 5.14.3: the words are looked for in the folder; in the file name only as a recorder's prefix
+                    // ("Call Me Maybe.mp3" or "The Voice.mp3" are songs, "Call_2024….m4a" or "Voice 012.m4a" are recordings)
+                    String dirL = (rel == null ? "" : rel).toLowerCase(Locale.ROOT), nm = (name == null ? "" : name).toLowerCase(Locale.ROOT);
                     boolean rec = own || isRecFlag || !isMusic
-                        || hay.contains("record") || hay.contains("voice") || hay.contains("kayıt") || hay.contains("kayit")
-                        || hay.contains("sound_recorder") || hay.contains("call") || hay.contains("ptt-") || hay.contains("aud-");
+                        || dirL.contains("record") || dirL.contains("voice") || dirL.contains("kayıt") || dirL.contains("kayit")
+                        || dirL.contains("sound_recorder") || dirL.contains("call")
+                        || nm.matches("^(call|voice|record|rec|kay[ıi]t|ptt|aud)[ _-]?\\d.*") || nm.startsWith("ptt-") || nm.startsWith("aud-");
                     JSONObject o = new JSONObject();
                     o.put("id", "m:" + id);
                     o.put("mediaId", id);

@@ -1058,7 +1058,7 @@ public class MainActivity extends Activity implements Player.Listener {
         /** 2.9: from may be negative (count-in), and play at least until minSec even without clips (metronome) */
         @JavascriptInterface public String tlPlayFrom(String json, double sec, double minSec) { try { Player.I.timelineFocus(); Timeline.fixedClicks = null; Timeline.play(json, sec, Math.round(minSec * Timeline.RATE)); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
         @JavascriptInterface public void tlUpdate(String json) { try { Timeline.update(json); } catch (Exception ignored) { } }
-        @JavascriptInterface public void tlStop() { Timeline.stop(); }
+        @JavascriptInterface public void tlStop() { Timeline.stop(); Player.I.timelineFocusDone(); }
         @JavascriptInterface public double tlPos() { return Timeline.pos(); }
         @JavascriptInterface public String tlMeter() { return Timeline.meter(); }
         @JavascriptInterface public void tlClick(String json) { Timeline.click(json); }
