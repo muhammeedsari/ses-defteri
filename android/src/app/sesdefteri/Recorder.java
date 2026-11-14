@@ -561,7 +561,8 @@ final class Recorder {
 
     /** {"state": rec|paused|idle, "call": paused because of a call} */
     static synchronized String info() {
-        return "{\"state\":\"" + state + "\",\"call\":" + auto + ",\"fail\":" + (fail != null) + "}";
+        Sink k = sink;   // 5.15: how much is recorded, so a page that was reloaded mid-recording can carry on
+        return "{\"state\":\"" + state + "\",\"call\":" + auto + ",\"fail\":" + (fail != null) + ",\"sec\":" + (k != null && rate > 0 ? k.frames() / (double) rate : 0) + "}";
     }
 
     static synchronized boolean resumeManual() { auto = false; return resume(); }

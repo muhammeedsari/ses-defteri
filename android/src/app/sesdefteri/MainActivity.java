@@ -62,6 +62,8 @@ public class MainActivity extends Activity implements Player.Listener {
     private static final int REQ_NOTIF = 16;
     private static final int REQ_VIDEO = 16;
     private static final int REQ_VIDEO_TL = 17;
+    private static final int REQ_CAM = 18;
+    private static volatile String camName;   // 5.15: the note photo the camera is taking (survives the activity being recreated)
     private volatile String videoBusy;
 
     private WebView web;
@@ -252,6 +254,15 @@ public class MainActivity extends Activity implements Player.Listener {
                 return notFound();
             }
         }
+        if (path.startsWith("/__np/")) {   // 5.15: a photo taken during a recording (notes)
+            String n = path.substring("/__np/".length());
+            File f = new File(new File(getFilesDir(), "np"), n);
+            if (!npName(n) || !f.isFile()) return notFound();
+            try {
+                headers.put("Cache-Control", "max-age=86400");
+                return new WebResourceResponse("image/jpeg", null, 200, "OK", headers, new java.io.FileInputStream(f));
+            } catch (IOException e) { return notFound(); }
+        }
         headers.put("Cache-Control", "no-cache");
         if (path.contains("..")) return notFound();
         try {
@@ -332,6 +343,22 @@ public class MainActivity extends Activity implements Player.Listener {
         if (code == REQ_FILE && fileCallback != null) {
             fileCallback.onReceiveValue(result == RESULT_OK ? urisFrom(data) : null);
             fileCallback = null;
+        } else if (code == REQ_CAM) {
+            final String name = camName;
+            camName = null;
+            if (name == null) return;
+            final boolean ok = result == RESULT_OK;
+            final android.graphics.Bitmap thumb = ok && data != null && data.getExtras() != null && data.getExtras().get("data") instanceof android.graphics.Bitmap
+                ? (android.graphics.Bitmap) data.getExtras().get("data") : null;
+            new Thread(new Runnable() {
+                @Override public void run() {
+                    File dir = new File(getFilesDir(), "np");
+                    File tmp = new File(dir, name + ".tmp"), out = new File(dir, name);
+                    boolean done = ok && shrinkPhoto(tmp, thumb, out);
+                    tmp.delete();
+                    js("window.__sdPhoto && window.__sdPhoto(" + q(name) + "," + done + ")");
+                }
+            }).start();
         } else if (code == REQ_VIDEO) {
             Uri[] uris = result == RESULT_OK ? urisFrom(data) : null;
             if (uris != null && uris.length > 0) importVideos(uris);
@@ -350,6 +377,54 @@ public class MainActivity extends Activity implements Player.Listener {
                 if (result == RESULT_OK && k != null) for (int i = 0; i < k.length(); i++) d.put(k.opt(i));
                 jobDone(id, d.length() > 0, "{\"deleted\":" + (result == RESULT_OK) + ",\"done\":" + d + "}");
             } else jobDone(id, result == RESULT_OK, result == RESULT_OK ? "{\"deleted\":true}" : "{\"deleted\":false}");
+        }
+    }
+
+    /* ---------- 5.15: note photos (files/np): the camera app writes the full picture, it is kept at most 1600 px ---------- */
+
+    static boolean npName(String n) {
+        return n != null && n.matches("[A-Za-z0-9_-]{1,64}\\.jpg");
+    }
+
+    private static boolean shrinkPhoto(File in, android.graphics.Bitmap thumb, File out) {
+        android.graphics.Bitmap b = null;
+        int rot = 0;
+        try {
+            if (in.length() > 0) {
+                android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+                o.inJustDecodeBounds = true;
+                android.graphics.BitmapFactory.decodeFile(in.getPath(), o);
+                int s = 1;
+                while (Math.max(o.outWidth, o.outHeight) / (s * 2) >= 1600) s *= 2;
+                o = new android.graphics.BitmapFactory.Options();
+                o.inSampleSize = s;
+                b = android.graphics.BitmapFactory.decodeFile(in.getPath(), o);
+                try {
+                    int or = new android.media.ExifInterface(in.getPath()).getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1);
+                    rot = or == 6 ? 90 : or == 3 ? 180 : or == 8 ? 270 : 0;
+                } catch (Exception ignored) { }
+            }
+            if (b == null) b = thumb;   // a camera app that ignored the output file and gave back only a small picture
+            if (b == null) return false;
+            float k = 1600f / Math.max(b.getWidth(), b.getHeight());
+            android.graphics.Matrix m = new android.graphics.Matrix();
+            if (k < 1) m.postScale(k, k);
+            if (rot != 0) m.postRotate(rot);
+            if (!m.isIdentity()) {
+                android.graphics.Bitmap r = android.graphics.Bitmap.createBitmap(b, 0, 0, b.getWidth(), b.getHeight(), m, true);
+                if (r != b && b != thumb) b.recycle();
+                b = r;
+            }
+            FileOutputStream f = new FileOutputStream(out);
+            boolean ok = b.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, f);
+            f.close();
+            if (!ok) out.delete();
+            return ok;
+        } catch (Throwable e) {   // OutOfMemoryError too: the recording must not suffer for a photo
+            out.delete();
+            return false;
+        } finally {
+            if (b != null && b != thumb) b.recycle();
         }
     }
 
@@ -994,6 +1069,41 @@ public class MainActivity extends Activity implements Player.Listener {
                     catch (Exception e) { try { startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))); } catch (Exception ignored) { } }
                 }
             });
+        }
+
+        /* -- 5.15: note photos -- */
+        @JavascriptInterface public boolean takePhoto(final String name) {
+            if (!npName(name)) return false;
+            ui(new Runnable() {
+                @Override public void run() {
+                    try {
+                        File dir = new File(getFilesDir(), "np");
+                        dir.mkdirs();
+                        new File(dir, name + ".tmp").delete();
+                        Uri out = new Uri.Builder().scheme("content").authority(ShareProvider.AUTHORITY).appendPath("cam").appendPath(name + ".tmp").build();
+                        Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                        i.putExtra(MediaStore.EXTRA_OUTPUT, out);
+                        i.setClipData(ClipData.newRawUri("", out));
+                        i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        camName = name;
+                        startActivityForResult(i, REQ_CAM);
+                    } catch (Exception e) {
+                        camName = null;
+                        js("window.__sdPhoto && window.__sdPhoto(" + q(name) + ",false)");
+                    }
+                }
+            });
+            return true;
+        }
+        @JavascriptInterface public boolean npHas(String name) {
+            return npName(name) && new File(new File(getFilesDir(), "np"), name).length() > 0;
+        }
+        @JavascriptInterface public void npDel(String name) {
+            if (npName(name)) new File(new File(getFilesDir(), "np"), name).delete();
+        }
+        @JavascriptInterface public void npShare(String name, String title) {
+            if (!npName(name)) return;
+            try { share(new JSONObject().put("path", new File(new File(getFilesDir(), "np"), name).getPath()).toString(), title, "image/jpeg"); } catch (Exception ignored) { }
         }
 
         /* -- recorder -- */

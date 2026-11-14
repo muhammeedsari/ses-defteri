@@ -939,6 +939,38 @@ html:not(.tech) .pu-card small{display:none}
 .chd b{font-size:26px;font-weight:700;color:var(--accent)}
 .chd span{font-size:15px;color:var(--muted)}
 .chd small{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+/* 5.15: notes while recording, note page */
+.tdot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);margin-right:6px;vertical-align:middle;flex:none}
+.bm-label .ic{width:14px;height:14px;margin-left:6px;vertical-align:-2px;color:var(--muted)}
+.rec-notes{display:grid;gap:8px;padding-top:6px}
+.rn-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.rn-row .chip{background:var(--stage-2);border-color:var(--stage-line);color:var(--stage-ink)}
+.rn-row .chip:active{transform:scale(.96)}
+.rn-list{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.rn-list button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:5px 6px;border-radius:8px;font-size:13px;color:var(--stage-muted)}
+.rn-list .tc{color:var(--stage-mark);flex:none}
+.rn-list .ic{width:14px;height:14px;flex:none}
+.rn-t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.np-filter{display:flex;gap:8px;overflow-x:auto;padding:4px 0 10px;scrollbar-width:none}
+.np-meta{color:var(--muted);font-size:13.5px;margin:2px 0 10px}
+.np-now{color:var(--muted);font-size:13px}
+.np-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.tag.auto{color:var(--muted)}
+.tag.add{border-style:dashed;color:var(--muted)}
+.np-list{list-style:none;margin:0 0 12px;padding:0;display:grid;gap:4px}
+.np-list .hint{padding:12px 0}
+.np-mk{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:8px 6px;border-radius:12px;background:var(--surface);border:1px solid var(--line)}
+.np-mk.t-imp{border-left:3px solid #E5484D}.np-mk.t-q{border-left:3px solid #3E8EF7}.np-mk.t-todo{border-left:3px solid #2FA36B}
+.np-body{display:grid;gap:6px;min-width:0}
+.np-lab{display:grid;gap:2px;text-align:left;font-size:15px}
+.np-lab b{display:inline;font-weight:600}
+.np-seg{display:grid;grid-template-columns:auto 1fr;gap:10px;padding:5px 6px;font-size:14.5px;line-height:1.45;cursor:pointer;border-radius:10px}
+.np-seg .tc{font-size:12px;color:var(--muted);padding-top:2px}
+.np-ph{max-width:100%;max-height:220px;border-radius:10px;object-fit:cover;display:block;cursor:zoom-in}
+.np-big{width:100%;max-height:70vh;object-fit:contain;border-radius:12px;display:block}
+.segs li.seg-mk{background:var(--accent-soft);font-size:13.5px}
+.segs li.seg-mk .ic{width:14px;height:14px;margin-left:6px;vertical-align:-2px}
+#noteSheet{z-index:26}
 </style>
 
 <div class="seltop" id="selTop" hidden></div>
@@ -1045,6 +1077,7 @@ html:not(.tech) .pu-card small{display:none}
       <button class="rec-main" id="recMain" type="button"><span class="dot"></span></button>
       <button class="ctl-s" id="recDone" type="button" disabled style="justify-self:start"><span class="rnd" id="recDoneIc"></span><span data-t="done"></span></button>
     </div>
+    <div class="rec-notes" id="recNotes" hidden><div class="rn-row" id="rnRow"></div><ol class="rn-list" id="rnList"></ol></div>
     <p class="rec-foot" id="recFoot"></p>
   </div>
 </section>
@@ -1105,6 +1138,7 @@ html:not(.tech) .pu-card small{display:none}
       <h2><span data-t="bookmarks"></span> <span class="n" id="bmCount"></span></h2>
       <ol class="bms" id="bmList"></ol>
       <p class="hint" id="bmEmpty" data-t="bmEmpty"></p>
+      <div class="st-acts"><button class="btn sm primary" type="button" id="plNotePage" data-t="npOpen"></button></div>
     </section>
     <section class="block">
       <h2 data-t="notes"></h2>
@@ -1122,6 +1156,21 @@ html:not(.tech) .pu-card small{display:none}
       <button class="btn danger" id="plDelete" type="button"></button>
     </div>
     <p class="where" id="plWhere"></p>
+  </div>
+</section>
+
+<!-- 5.15: one page per recording: title, tags, marks, notes, photos and the text, in time order -->
+<section class="sheet" id="noteSheet" hidden>
+  <div class="sheet-inner">
+    <div class="sheet-head"><button class="icon-btn" id="npBack" type="button" data-ta="back"></button><h2 id="npHead"></h2><span class="spacer"></span>
+      <span class="tc np-now" id="npNow"></span><button class="icon-btn" id="npPlay" type="button" data-ta="play"></button></div>
+    <input class="pl-title np-title" id="npTitle" maxlength="120" enterkeyhint="done">
+    <p class="np-meta" id="npMeta"></p>
+    <div class="tags np-tags" id="npTags"></div>
+    <div class="np-filter" id="npFilter"></div>
+    <ol class="np-list" id="npList"></ol>
+    <div class="st-acts" id="npActs"></div>
+    <section class="block"><h2 data-t="notes"></h2><textarea id="npNotes" rows="4" data-tp="notesPh"></textarea></section>
   </div>
 </section>
 
@@ -1195,6 +1244,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n61.js"></script>
 <script src="i18n62.js"></script>
 <script src="i18n63.js"></script>
+<script src="i18n64.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -1206,7 +1256,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.14.3';
+const VERSION = '5.15';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) {
@@ -1314,6 +1364,11 @@ const P = {
 };
 const ic = (n, sw) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="${sw || 1.8}" stroke-linecap="round" stroke-linejoin="round">${P[n]}</svg>`;
 
+/* 5.15: note tags (marks while recording) */
+P.cam = '<path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.3L9.3 5h5.4l1.5 2h2.3A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="12.8" r="3.3"/>';
+const TAGS = ['imp', 'q', 'todo'], TAGC = { imp: '#E5484D', q: '#3E8EF7', todo: '#2FA36B' };
+const tagDot = b => b && TAGC[b.tag] ? `<i class="tdot" style="--c:${TAGC[b.tag]}" title="${esc(t('tag_' + b.tag))}"></i>` : '';
+const tagChips = sel => TAGS.map(k => `<button class="chip" type="button" data-tg="${k}" aria-pressed="${sel === k}"><i style="--c:${TAGC[k]}"></i>${esc(t('tag_' + k))}</button>`).join('');
 /* ---------- formatting ---------- */
 const p2 = n => String(n).padStart(2, '0');
 function fmt(s) {
@@ -1431,7 +1486,7 @@ const recItems = () => visibleItems().filter(it => kindOf(it) === 'rec');
 const musicItems = () => visibleItems().filter(it => kindOf(it) === 'music' && !(S.minSong && it.duration > 0 && it.duration < S.minSong));
 const META_KEYS = ['id', 'title', 'userTitle', 'created', 'duration', 'mime', 'size', 'categoryId', 'notes', 'bookmarks', 'fav', 'peaks',
   'source', 'mode', 'sample', 'fileName', 'kind', 'pos', 'src',
-  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose', 'trashed', 'lufs', 'cats', 'cover', 'uArtist', 'mkey', 'lyrics', 'smap'];
+  'enh', 'origId', 'origSrc', 'origMoved', 'trimShift', 'tags', 'ttext', 'autoTitle', 'bpm', 'cleaned', 'cleanOf', 'purpose', 'trashed', 'lufs', 'cats', 'cover', 'uArtist', 'mkey', 'lyrics', 'smap', 'utags'];
 function metaOf(it) { const o = {}; for (const k of META_KEYS) if (it[k] !== undefined) o[k] = it[k]; return o; }
 const saveRec = r => db.put('recordings', metaOf(r)).catch(() => toast(t('saveFail')));
 function fromNative(n, meta) {
@@ -1781,7 +1836,7 @@ addEventListener('popstate', () => {
   if (top) closeOverlay(top, true); else if (SEL) selEnd(true);
   if (stack.length || SEL) arm();
 });
-const elOf = n => ({ rec: $('#recSheet'), player: $('#player'), modal: $('#modal'), coll: $('#coll') })[n];
+const elOf = n => ({ rec: $('#recSheet'), player: $('#player'), modal: $('#modal'), coll: $('#coll'), notes: $('#noteSheet') })[n];
 function openOverlay(n) {
   const el = elOf(n);
   if (!stack.includes(n)) stack.push(n);
@@ -1804,7 +1859,7 @@ function closeOverlay(n, fromPop) {
   hideEl(elOf(n));
   if (n === 'rec') bars('page');
   if (n === 'modal') { const f = modalOnClose; modalOnClose = null; if (f) f(); }
-  if (n === 'player') onPlayerClosed();
+  if (n === 'player') { onPlayerClosed(); if (stack.includes('notes')) closeOverlay('notes', true); }
   if (!stack.length) document.body.classList.remove('locked');
   if (!fromPop && !stack.length && !SEL) disarm();
   updateMini();
@@ -2020,7 +2075,7 @@ function matchRec(r, q) {
   if (norm(r.title).includes(q)) return { kind: 'title' };
   for (const b of r.bookmarks || []) if (norm(b.label).includes(q) || norm(b.note).includes(q)) return { kind: 'bm', b };
   if (norm(r.notes).includes(q)) return { kind: 'note' };
-  if ((r.tags || []).some(x => norm(x).includes(q))) return { kind: 'tag' };
+  if ((r.tags || []).concat(r.utags || []).some(x => norm(x).includes(q))) return { kind: 'tag' };
   if (norm(r.ttext).includes(q)) return { kind: 'text' };
   const c = catById(r.categoryId); if (c && norm(c.name).includes(q)) return { kind: 'cat' };
   if (norm(r.folder).includes(q)) return { kind: 'folder' };
@@ -2535,12 +2590,13 @@ function seek(v) { const d = curDur(); audio.currentTime = Math.max(0, Math.min(
 function setPlayIcons() {
   const p = !audio.paused;
   $('#plPlay').innerHTML = ic(p ? 'pause' : 'play'); $('#plPlay').setAttribute('aria-label', t(p ? 'pause' : 'play'));
+  $('#npPlay').innerHTML = ic(p ? 'pause' : 'play'); $('#npPlay').setAttribute('aria-label', t(p ? 'pause' : 'play'));
   $('#miniPlay').innerHTML = ic(p ? 'pause' : 'play'); $('#miniPlay').setAttribute('aria-label', t(p ? 'pause' : 'play'));
 }
 function loopPlayer() {
   cancelAnimationFrame(plRaf);
   const tick = () => {
-    if (!fixing) { updateTimes(); if (!scrub) drawPlayer(); updateNowBm(); updateNowSeg(); updateMini(); drawWs(); }
+    if (!fixing) { updateTimes(); if (!scrub) drawPlayer(); updateNowBm(); updateNowSeg(); npTick(); updateMini(); drawWs(); }
     if (!audio.paused) plRaf = requestAnimationFrame(tick);
   };
   tick();
@@ -2604,7 +2660,7 @@ function drawScroll(tOverride) {
   }
   for (const b of r.bookmarks || []) {
     const x = cx + (b.t - tt) * pps; if (x < -12 || x > w + 12) continue;
-    ctx.fillStyle = COL.mark; ctx.fillRect(x - 0.75, 6, 1.5, waveH - 6);
+    ctx.fillStyle = TAGC[b.tag] || COL.mark; ctx.fillRect(x - 0.75, 6, 1.5, waveH - 6);
     ctx.beginPath(); ctx.moveTo(x, 4); ctx.lineTo(x + 11, 8.5); ctx.lineTo(x, 13); ctx.closePath(); ctx.fill();
   }
   ctx.fillStyle = COL.ink; ctx.fillRect(cx - 1, 6, 2, waveH - 12);
@@ -2634,7 +2690,7 @@ function drawOverview() {
     ctx.fillStyle = (i + 0.5) / n <= prog ? COL.accent : COL.wave;
     ctx.fillRect(i * 3, (h - bh) / 2, 2, bh);
   }
-  if (d) { ctx.fillStyle = COL.mark; for (const b of r.bookmarks || []) ctx.fillRect(clamp(b.t / d * w, 0, w - 2), 0, 2, h); }
+  if (d) for (const b of r.bookmarks || []) { ctx.fillStyle = TAGC[b.tag] || COL.mark; ctx.fillRect(clamp(b.t / d * w, 0, w - 2), 0, 2, h); }
   ctx.fillStyle = COL.ink; ctx.fillRect(clamp(prog * w, 1, w - 1) - 1, 0, 2, h);
 }
 (() => {
@@ -2690,7 +2746,7 @@ function renderBookmarks() {
   $('#bmEmpty').hidden = !!bms.length; $('#bmList').hidden = !bms.length;
   $('#bmList').innerHTML = bms.map((b, i) => `<li class="bm" data-i="${i}">
     <button class="bm-time tc" type="button" data-seek="${b.t}" aria-label="${esc(t('goTo', { t: fmt(b.t) }))}">${fmt(b.t)}</button>
-    <button class="bm-body" type="button" data-edit="${b.id}"><span class="bm-label">${esc(b.label)}</span>${b.note ? `<span class="bm-note">${esc(b.note)}</span>` : ''}</button></li>`).join('');
+    <button class="bm-body" type="button" data-edit="${b.id}"><span class="bm-label">${tagDot(b)}${esc(b.label)}${b.ph ? ic('cam') : ''}</span>${b.note ? `<span class="bm-note">${esc(b.note)}</span>` : ''}</button></li>`).join('');
   nowIdx = -2; updateNowBm();
 }
 function updateNowBm() {
@@ -3260,7 +3316,7 @@ function addBookmarkNow() {
   const bms = r.bookmarks || [];
   const b = { id: uid(), t: Math.max(0, audio.currentTime || 0), label: t('markN', { n: bms.length + 1 }), note: '' };
   r.bookmarks = bms.concat(b).sort((a, c) => a.t - c.t);
-  saveRec(r); renderBookmarks(); drawPlayer(); if (S.tab !== 'music') renderList();
+  bmChanged(r);
   editBookmark(b.id, true);
 }
 function editBookmark(id, isNew) {
@@ -3271,6 +3327,8 @@ function editBookmark(id, isNew) {
     <div class="modal-body">
       <div class="tadj"><button class="btn" type="button" data-dt="-1">−1 ${esc(t('secShort'))}</button><span class="tc" id="bmT">${fmtT(tm)}</span><button class="btn" type="button" data-dt="1">+1 ${esc(t('secShort'))}</button></div>
       <button class="linkbtn" type="button" id="bmNow">${esc(t('moveHere'))}</button>
+      <div class="np-filter" id="bmTags">${tagChips(b.tag)}</div>
+      ${b.ph ? `<img class="np-ph" src="/__np/${esc(b.ph)}" alt="" data-ph="${esc(b.ph)}">` : ''}
       <label class="field"><span>${esc(t('markTitle'))}</span><input id="bmLabel" maxlength="80" value="${esc(b.label)}" enterkeyhint="next"></label>
       <label class="field"><span>${esc(t('markNote'))}</span><textarea id="bmNote" rows="4" placeholder="${esc(t('markNotePh'))}">${esc(b.note)}</textarea></label>
     </div>
@@ -3280,16 +3338,20 @@ function editBookmark(id, isNew) {
   card.querySelectorAll('[data-dt]').forEach(x => { x.onclick = () => { tm = Math.max(0, Math.min(curDur() || tm + 1, tm + parseFloat(x.dataset.dt))); showT(); }; });
   card.querySelector('#bmNow').onclick = () => { tm = audio.currentTime || 0; showT(); };
   card.querySelector('#bmCancel').onclick = closeModal;
+  let tag = b.tag || '';
+  card.querySelector('#bmTags').onclick = e => { const x = e.target.closest('[data-tg]'); if (!x) return; tag = tag === x.dataset.tg ? '' : x.dataset.tg; card.querySelector('#bmTags').innerHTML = tagChips(tag); };
+  const im = card.querySelector('[data-ph]'); if (im) im.onclick = () => photoView(r, b);
   card.querySelector('#bmLabel').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); card.querySelector('#bmNote').focus(); } };
   card.querySelector('#bmSave').onclick = () => {
     b.label = card.querySelector('#bmLabel').value.trim() || t('mark');
     b.note = card.querySelector('#bmNote').value.trim();
+    if (tag) b.tag = tag; else delete b.tag;
     b.t = tm; r.bookmarks.sort((a, c) => a.t - c.t);
-    saveRec(r); renderBookmarks(); drawPlayer(); if (S.tab !== 'music') renderList(); closeModal();
+    bmChanged(r); closeModal();
   };
   card.querySelector('#bmDel').onclick = () => {
-    r.bookmarks = r.bookmarks.filter(x => x.id !== b.id);
-    saveRec(r); renderBookmarks(); drawPlayer(); if (S.tab !== 'music') renderList(); closeModal(); toast(t('markDeleted'));
+    r.bookmarks = r.bookmarks.filter(x => x.id !== b.id); npDrop(b.ph, r);
+    bmChanged(r); closeModal(); toast(t('markDeleted'));
   };
   if (isNew) setTimeout(() => { const i = card.querySelector('#bmLabel'); i.focus(); i.select(); }, 60);
 }
@@ -3337,7 +3399,8 @@ $('#plShare').addEventListener('click', async () => {
 function notesText(r) {
   const c = catById(r.categoryId);
   let s = `${r.title}\n${dfDay.format(r.created)} ${dfTime.format(r.created)} · ${fmt(r.duration)}${c ? ' · ' + c.name : ''}\n`;
-  if ((r.bookmarks || []).length) { s += `\n${t('bookmarks')}\n`; for (const b of r.bookmarks) s += `${fmt(b.t)}  ${b.label}${b.note ? ' — ' + b.note.replace(/\n+/g, ' ') : ''}\n`; }
+  if ((r.utags || []).length) s += r.utags.map(x => '#' + x).join(' ') + '\n';
+  if ((r.bookmarks || []).length) { s += `\n${t('bookmarks')}\n`; for (const b of r.bookmarks) s += `${fmt(b.t)}  ${b.tag ? '[' + t('tag_' + b.tag) + '] ' : ''}${b.label}${b.note ? ' — ' + b.note.replace(/\n+/g, ' ') : ''}${b.ph ? ' (' + t('phL') + ')' : ''}\n`; }
   if ((r.notes || '').trim()) s += `\n${t('notes')}\n${r.notes.trim()}\n`;
   return s;
 }
@@ -3456,7 +3519,9 @@ function renderText(r) {
     h = `<p class="st-desc"><b>${esc(busyLabel(bz))}</b></p><div class="prog"><i style="width:${Math.round(bz.p * 100)}%"></i></div>`;
   } else if (tx && tx.segments && tx.segments.length) {
     if (r.tags && r.tags.length) h += `<div class="tags">${r.tags.map(x => `<button class="tag" type="button" data-tag="${esc(x)}">#${esc(x)}</button>`).join('')}</div>`;
-    h += `<ol class="segs" id="segList">${tx.segments.map((s, i) => `<li data-i="${i}"><button class="bm-time tc" type="button" data-seek="${s[0]}">${fmt(s[0])}</button><span>${esc(s[2])}</span></li>`).join('')}</ol>
+    const mk = (r.bookmarks || []).filter(b => b.note || b.tag || b.ph); let j = 0;
+    const mkLi = b => `<li class="seg-mk"><button class="bm-time tc" type="button" data-seek="${b.t}">${fmt(b.t)}</button><span>${tagDot(b)}<b>${esc(b.label)}</b>${b.note ? ' ' + esc(b.note) : ''}${b.ph ? ic('cam') : ''}</span></li>`;
+    h += `<ol class="segs" id="segList">${tx.segments.map((s, i) => { let m = ''; while (j < mk.length && mk[j].t <= s[0] + 0.05) m += mkLi(mk[j++]); return m + `<li data-i="${i}"><button class="bm-time tc" type="button" data-seek="${s[0]}">${fmt(s[0])}</button><span>${esc(s[2])}</span></li>`; }).join('')}${mk.slice(j).map(mkLi).join('')}</ol>
       <div class="st-acts"><button class="btn sm" type="button" data-tx="srt">${ic('share')}${esc(t('textSrt'))}</button>
       <button class="btn sm" type="button" data-tx="copy">${ic('copy')}${esc(t('textCopy'))}</button>
       <button class="btn sm" type="button" data-tx="redo" ${bz ? 'disabled' : ''}>${esc(t('textRedo'))}</button></div>
@@ -3476,7 +3541,7 @@ function updateNowSeg() {
   const ct = audio.currentTime; let idx = -1;
   for (let i = 0; i < tx.segments.length; i++) { if (tx.segments[i][0] <= ct + 0.05) idx = i; else break; }
   if (idx === segNow) return; segNow = idx;
-  document.querySelectorAll('#segList li').forEach((li, i) => li.classList.toggle('now', i === idx));
+  document.querySelectorAll('#segList li[data-i]').forEach((li, i) => li.classList.toggle('now', i === idx));
 }
 
 $('#textBlock').addEventListener('click', e => {
@@ -5987,6 +6052,7 @@ async function hardDeleteMany(list) {
     list = list.filter(r => !(NATIVE && r.src) || gone.has(r));
   }
   for (const r of list) await forgetItem(r.id);
+  for (const r of list) for (const b of r.bookmarks || []) npDrop(b.ph);
   return list.length;
 }
 const trashItems = () => [...S.items.values()].filter(it => it.trashed).sort((a, b) => b.trashed - a.trashed);
@@ -6305,7 +6371,7 @@ async function startRecNative() {
   }
   if (!res.ok) { R.state = 'idle'; updateRecUI(); toast(t('recFail'), 4200); return; }
   R.native = true; R.levels = []; R.marks = []; R.acc = 0; R.curMax = 0; R.cancel = false; R.mon = false; R.mv = null;
-  R.state = 'rec'; R.t0 = performance.now(); R.started = Date.now();
+  R.state = 'rec'; R.t0 = performance.now(); R.started = Date.now(); recLiveSave();
   loopRec(); updateRecUI();
 }
 async function startRec() {
@@ -6364,10 +6430,10 @@ function stopRec(cancel) {
 }
 async function finishNative() {
   cancelAnimationFrame(R.raf);
-  if (R.cancel) { try { AND.recCancel(); } catch (e) {} R.state = 'idle'; R.native = false; closeOverlay('rec'); updateRecUI(); return; }
+  if (R.cancel) { try { AND.recCancel(); } catch (e) {} for (const m of R.marks) npDrop(m.ph); ls.set('recLive', null); R.state = 'idle'; R.native = false; closeOverlay('rec'); updateRecUI(); return; }
   let res = {};
   try { res = JSON.parse(AND.recStop()); } catch (e) { res = { ok: false }; }
-  R.native = false;
+  R.native = false; ls.set('recLive', null);
   if (!res.ok || !res.item) { R.state = 'idle'; updateRecUI(); closeOverlay('rec'); toast(t(res.error === 'empty' ? 'recShort' : 'recSaveFail'), 4000); return; }
   if (res.cut) toast(t('recCut'), 6000);
   const it = fromNative(res.item, null);
@@ -6386,8 +6452,11 @@ async function finishNative() {
   let rit = it;
   if (S.silCut && R.mode !== 'music') rit = await silenceCut(it);
   if (S.autoClean) { openClean(rit, true); return; }
-  const v = await chooseBox(t('recSaved'), t('clAfterD', { d: fmt(it.duration || 0) }), [{ value: 'clean', label: t('clClean'), desc: t('clCleanD') }, { value: 'exit', label: t('clExit'), desc: t('clExitD') }]);
+  const nm = (rit.bookmarks || []).length;
+  const v = await chooseBox(t('recSaved'), t('clAfterD', { d: fmt(it.duration || 0) }), [{ value: 'clean', label: t('clClean'), desc: t('clCleanD') }]
+    .concat(nm ? [{ value: 'notes', label: t('npOpen'), desc: t('npOpenD', { n: nm }) }] : [], [{ value: 'exit', label: t('clExit'), desc: t('clExitD') }]));
   if (v === 'clean') openClean(rit);
+  else if (v === 'notes') { await openPlayer(rit.id); if (S.cur === rit.id) openNotePage(); }
 }
 function releaseMic() {
   cancelAnimationFrame(R.raf);
@@ -6426,13 +6495,13 @@ function saveDraft() {
   return db.put('kv', { k: 'draft', id: R.draftId, mime: R.mime, started: R.started, mode: R.mode, dur: elapsed(),
     marks: R.marks, levels: downsample(R.levels, 240), cat: defaultCat() }).catch(() => {});
 }
-function addRecMark() {
+function addRecMark(tag) {
   if (R.state !== 'rec' && R.state !== 'paused') return;
-  const tm = elapsed();
-  R.marks.push({ id: uid(), t: tm, label: t('markN', { n: R.marks.length + 1 }), note: '' });
-  if (!R.native) saveDraft();
-  updateRecUI(); drawLive();
-  toast(`${t('markN', { n: R.marks.length })} · ${fmt(tm)}`, 1400);
+  const tm = elapsed(), mk = { id: uid(), t: tm, label: typeof tag === 'string' ? t('tag_' + tag) : t('markN', { n: R.marks.length + 1 }), note: '' };
+  if (typeof tag === 'string') mk.tag = tag;
+  R.marks.push(mk); recMarksSaved();
+  drawLive();
+  toast(`${mk.label} · ${fmt(tm)}`, 1400);
   if (navigator.vibrate) try { navigator.vibrate(18); } catch (e) {}
 }
 function showRecTime(s) {
@@ -6619,8 +6688,7 @@ function drawLive() {
     const v = Math.min(1, Math.pow(v0, 0.6) * 1.1), bh = Math.max(2, v * (h - 12));
     rr(ctx, x, (h - bh) / 2, bw, bh, 1.5);
   }
-  ctx.fillStyle = COL.sMark;
-  for (const mk of R.marks) { const i = Math.floor(mk.t * LR / 2); if (i < start) continue; const x = right - (nb - i) * step; ctx.fillRect(x, 0, 2, h); }
+  for (const mk of R.marks) { const i = Math.floor(mk.t * LR / 2); if (i < start) continue; const x = right - (nb - i) * step; ctx.fillStyle = TAGC[mk.tag] || COL.sMark; ctx.fillRect(x, 0, 2, h); }
   if (R.state === 'rec' || R.state === 'paused') { ctx.fillStyle = R.state === 'rec' ? COL.sRec : COL.sMark; ctx.fillRect(right + 1, 6, 2, h - 12); }
 }
 /* 3.1: live spectrum and loudness of what the microphone hears */
@@ -6675,6 +6743,7 @@ function updateRecUI() {
   $('#modeSeg').querySelectorAll('button').forEach(b => { b.disabled = R.state !== 'idle'; });
   $('#roomBox').hidden = R.state !== 'idle' || !NATIVE; renderPurpose();
   if (R.state === 'idle' || R.state === 'stopping') showRecWarn(null);
+  renderRecNotes();
   const mc = $('#recMarkCount');
   mc.hidden = !R.marks.length; mc.innerHTML = R.marks.length ? `${ic('flag')}${esc(t('nMarks', { n: R.marks.length }))}` : '';
 }
@@ -6683,7 +6752,7 @@ $('#recMain').addEventListener('click', () => {
   else if (R.state === 'rec') pauseRec();
   else if (R.state === 'paused') resumeRec();
 });
-$('#recMark').addEventListener('click', addRecMark);
+$('#recMark').addEventListener('click', () => addRecMark());
 $('#recDone').addEventListener('click', () => stopRec(false));
 $('#recClose').addEventListener('click', () => { if (R.state === 'idle') closeOverlay('rec'); else if (R.state === 'rec' || R.state === 'paused') askCancelRec(); });
 async function askCancelRec() {
@@ -7483,7 +7552,7 @@ function showIntro(again) {
   });
   document.body.appendChild(d); draw();
 }
-const NEWS = ['n5rack', 'n5master', 'n5practice', 'n5chords', 'n5hq', 'n5pitch', 'n5fix'];   // 5.14: renew with every minor version
+const NEWS = ['n6marks', 'n6notes', 'n6photo', 'n6page'];   // 5.15: renew with every minor version
 function showNews() {
   const card = openModal(`<h3>${esc(t('newsT', { v: VERSION.split('.').slice(0, 2).join('.') }))}</h3><ul class="news">${NEWS.map(k => `<li>${esc(t('news_' + k))}</li>`).join('')}</ul>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('newsOk'))}</button></div>`, () => setTimeout(coachMaybe, 300));
@@ -7876,6 +7945,193 @@ async function tlMore() {
   }).observe(sh, { attributes: true, attributeFilter: ['data-state'] });
 })();
 
+/* ---------- 5.15: notes while recording (tagged marks, timed notes, photos) and one note page per recording ---------- */
+function bmChanged(r) { saveRec(r); renderBookmarks(); drawPlayer(); if (S.tab !== 'music') renderList(); if (stack.includes('notes')) renderNotePage(); }
+/* a photo file goes only when no recording still points at it (copies keep their marks) */
+function npDrop(ph, except) {
+  if (!ph || !NATIVE) return;
+  for (const it of S.items.values()) if (it !== except && (it.bookmarks || []).some(b => b.ph === ph)) return;
+  try { AND.npDel(ph); } catch (e) {}
+}
+/* a native recording keeps going in the background service: its marks are kept too, so a page that had to reload
+   (the camera app took the memory, for example) carries on with them */
+function recLiveSave() { if (R.native) ls.set('recLive', { started: R.started, mode: R.mode, purpose: R.purpose, marks: R.marks }); }
+function recMarksSaved() { R.marks.sort((a, b) => a.t - b.t); if (R.native) recLiveSave(); else saveDraft(); updateRecUI(); }
+function recReattach() {
+  if (!NATIVE || R.state !== 'idle') return;
+  let i = {}; try { i = JSON.parse(AND.recInfo()); } catch (e) { return; }
+  if (i.state !== 'rec' && i.state !== 'paused') return;
+  const L = ls.get('recLive', null) || {};
+  if (L.mode) ls.set('mode', L.mode);
+  if (L.mode) R.mode = L.mode;
+  if (L.purpose) R.purpose = L.purpose;
+  openRecorder();
+  R.native = true; R.started = L.started || Date.now(); R.marks = L.marks || []; R.acc = i.sec || 0;
+  R.levels = new Array(Math.floor(R.acc * LR)).fill(0); R.curMax = 0; R.cancel = false; R.mon = false; R.mv = null;
+  R.state = i.state; R.callPaused = !!i.call; R.t0 = performance.now();
+  loopRec(); updateRecUI();
+}
+function renderRecNotes() {
+  const box = $('#recNotes'), on = R.state === 'rec' || R.state === 'paused';
+  box.hidden = !on; if (!on) return;
+  if (!box.dataset.ok) {
+    box.dataset.ok = 1;
+    $('#rnRow').innerHTML = TAGS.map(k => `<button class="chip rn-c" type="button" data-rtag="${k}"><i style="--c:${TAGC[k]}"></i>${esc(t('tag_' + k))}</button>`).join('')
+      + `<button class="chip rn-c" type="button" data-rn="note">${ic('edit')}${esc(t('rnNote'))}</button>`
+      + (NATIVE ? `<button class="chip rn-c" type="button" data-rn="photo">${ic('cam')}${esc(t('rnPhoto'))}</button>` : '');
+  }
+  $('#rnList').innerHTML = R.marks.slice(-3).reverse().map(m => `<li><button type="button" data-rmk="${m.id}"><span class="tc">${fmt(m.t)}</span>${tagDot(m)}${m.ph ? ic('cam') : ''}<span class="rn-t">${esc(m.note || m.label)}</span></button></li>`).join('');
+}
+$('#recNotes').addEventListener('click', e => {
+  const tg = e.target.closest('[data-rtag]'), b = e.target.closest('[data-rn]'), m = e.target.closest('[data-rmk]');
+  if (tg) addRecMark(tg.dataset.rtag);
+  else if (b && b.dataset.rn === 'note') recNoteBox(null);
+  else if (b && b.dataset.rn === 'photo') takeNotePhoto({ rec: true, started: R.started, t: elapsed() });
+  else if (m) recNoteBox(R.marks.find(x => x.id === m.dataset.rmk));
+});
+/* a written note while recording: the moment is taken when the box opens, the recording never waits for it */
+function recNoteBox(m) {
+  if (R.state !== 'rec' && R.state !== 'paused') return;
+  const tm = m ? m.t : elapsed(); let tag = m ? m.tag || '' : '';
+  const card = openModal(`<h3>${esc(t('noteL'))} · ${fmt(tm)}</h3><div class="modal-body">
+      <div class="np-filter" id="rnTags">${tagChips(tag)}</div>
+      ${m && m.ph ? `<img class="np-ph" src="/__np/${esc(m.ph)}" alt="">` : ''}
+      <textarea id="rnText" rows="4" placeholder="${esc(t('rnNotePh'))}">${esc(m ? m.note : '')}</textarea></div>
+    <div class="modal-actions">${m ? `<button class="btn danger ghost" type="button" id="rnDel">${ic('trash')}${esc(t('delete'))}</button>` : ''}<span class="spacer"></span>
+      <button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" id="rnSave">${esc(t('save'))}</button></div>`);
+  card.querySelector('#rnTags').onclick = e => { const x = e.target.closest('[data-tg]'); if (!x) return; tag = tag === x.dataset.tg ? '' : x.dataset.tg; card.querySelector('#rnTags').innerHTML = tagChips(tag); };
+  card.querySelector('[data-x]').onclick = closeModal;
+  card.querySelector('#rnSave').onclick = () => {
+    const note = card.querySelector('#rnText').value.trim();
+    if (!m && !note && !tag) { closeModal(); return; }
+    const x = m || { id: uid(), t: tm, label: '', note: '' };
+    x.note = note; if (tag) x.tag = tag; else delete x.tag;
+    if (!m || x.label === t('noteL') || TAGS.some(k => x.label === t('tag_' + k))) x.label = x.ph ? t('phL') : note ? t('noteL') : t('tag_' + tag);
+    if (!m) R.marks.push(x);
+    recMarksSaved(); drawLive(); closeModal();
+  };
+  const d = card.querySelector('#rnDel');
+  if (d) d.onclick = () => { R.marks = R.marks.filter(x => x !== m); npDrop(m.ph); recMarksSaved(); drawLive(); closeModal(); };
+  setTimeout(() => card.querySelector('#rnText').focus(), 60);
+}
+/* photos: only when the person takes one; the camera app writes it, the phone keeps a 1600 px copy inside the app */
+function takeNotePhoto(p) {
+  if (!NATIVE) return;
+  p.name = uid().replace(/[^a-z0-9]/gi, '') + '.jpg';
+  ls.set('npPend', p);
+  let ok = false; try { ok = AND.takePhoto(p.name); } catch (e) {}
+  if (!ok) { ls.set('npPend', null); toast(t('phFail'), 3500); }
+}
+window.__sdPhoto = (name, ok) => {
+  const p = ls.get('npPend', null);
+  if (!p || p.name !== name) return;
+  ls.set('npPend', null);
+  if (!ok) { toast(t('phFail'), 3500); return; }
+  const mk = { id: uid(), t: p.t, label: t('phL'), note: '', ph: name };
+  if (p.rec && (R.state === 'rec' || R.state === 'paused') && R.started === p.started) { R.marks.push(mk); recMarksSaved(); drawLive(); toast(`${t('phL')} · ${fmt(p.t)}`, 1600); return; }
+  const it = p.rec ? [...S.items.values()].find(x => x.created === p.started && x.source === 'mic') : S.items.get(p.rid);
+  if (!it) { try { AND.npDel(name); } catch (e) {} return; }
+  it.bookmarks = (it.bookmarks || []).concat(mk).sort((a, b) => a.t - b.t);
+  if (it === curRec()) bmChanged(it); else saveRec(it);
+  toast(`${t('phL')} · ${fmt(p.t)}`, 1600);
+};
+/* the page was reloaded while the camera was open: a finished photo waits on disk */
+function npPendCheck() { const p = ls.get('npPend', null); let has = false; if (p) try { has = AND.npHas(p.name); } catch (e) {} if (has) window.__sdPhoto(p.name, true); }
+function photoView(r, b) {
+  const card = openModal(`<img class="np-big" src="/__np/${esc(b.ph)}" alt="">
+    <div class="modal-actions"><button class="btn danger ghost" type="button" data-pv="del">${ic('trash')}${esc(t('delete'))}</button><span class="spacer"></span>
+      <button class="btn" type="button" data-pv="share">${ic('share')}${esc(t('share'))}</button><button class="btn primary" type="button" data-pv="play">${ic('play')}${fmt(b.t)}</button></div>`);
+  card.onclick = async e => {
+    const x = e.target.closest('[data-pv]'); if (!x) return;
+    if (x.dataset.pv === 'share') { try { AND.npShare(b.ph, r.title); } catch (y) {} return; }
+    closeModal();
+    if (x.dataset.pv === 'play') { seek(b.t); if (audio.paused) togglePlay(); return; }
+    if (!(await confirmBox({ title: t('phDel'), text: t('phDelD'), ok: t('delete'), danger: true }))) return;
+    const ph = b.ph; delete b.ph;
+    if (!b.note && !b.tag && b.label === t('phL')) r.bookmarks = r.bookmarks.filter(y => y !== b);
+    npDrop(ph, r); bmChanged(r);
+  };
+}
+
+/* the note page: title, tags, marks / notes / photos and (when there is one) the text, in time order; a tap plays from there */
+const NP = { f: 'all', text: ls.get('npText', true) };
+function openNotePage() {
+  const r = curRec(); if (!r) return;
+  $('#npHead').textContent = t('npOpen');
+  openOverlay('notes'); renderNotePage();
+  loadExtras(r).then(() => { if (stack.includes('notes')) renderNotePage(); });
+}
+function renderNotePage() {
+  const r = curRec(); if (!r) { closeOverlay('notes'); return; }
+  if (document.activeElement !== $('#npTitle')) $('#npTitle').value = r.title;
+  if (document.activeElement !== $('#npNotes')) $('#npNotes').value = r.notes || '';
+  $('#npMeta').textContent = `${dfDay.format(r.created)}, ${dfTime.format(r.created)} · ${fmt(r.duration || 0)}`;
+  $('#npTags').innerHTML = (r.utags || []).map((x, i) => `<button class="tag" type="button" data-utag="${i}">#${esc(x)} ×</button>`).join('')
+    + (r.tags || []).map(x => `<span class="tag auto">#${esc(x)}</span>`).join('')
+    + `<button class="tag add" type="button" data-utag="add">+ ${esc(t('npAddTag'))}</button>`;
+  const bms = r.bookmarks || [], tx = S.texts.get(r.id), segs = tx && tx.segments && tx.segments.length ? tx.segments : null;
+  const cnt = k => k === 'all' ? bms.length : k === 'ph' ? bms.filter(b => b.ph).length : bms.filter(b => b.tag === k).length;
+  $('#npFilter').innerHTML = ['all'].concat(TAGS, NATIVE ? ['ph'] : []).map(k => `<button class="chip" type="button" data-nf="${k}" aria-pressed="${NP.f === k}">${TAGC[k] ? `<i style="--c:${TAGC[k]}"></i>` : k === 'ph' ? ic('cam') : ''}${esc(t(k === 'all' ? 'npAll' : k === 'ph' ? 'npPhotos' : 'tag_' + k))}<span class="n">${cnt(k)}</span></button>`).join('')
+    + (segs ? `<button class="chip" type="button" data-nf="text" aria-pressed="${!!NP.text}">${ic('textic')}${esc(t('npText'))}</button>` : '');
+  const pick = bms.filter(b => NP.f === 'all' || (NP.f === 'ph' ? b.ph : b.tag === NP.f));
+  const rows = pick.map(b => [b.t, 0, b]);
+  if (segs && NP.text && NP.f === 'all') for (const s of segs) rows.push([s[0], 1, s]);
+  rows.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  $('#npList').innerHTML = rows.length ? rows.map(([tm, k, x]) => k
+    ? `<li class="np-seg" data-seek="${tm}"><span class="tc">${fmt(tm)}</span><span>${esc(x[2])}</span></li>`
+    : `<li class="np-mk${x.tag ? ' t-' + x.tag : ''}"><button class="bm-time tc" type="button" data-seek="${tm}">${fmt(tm)}</button><div class="np-body"><button type="button" class="np-lab" data-edit="${x.id}">${tagDot(x)}<b>${esc(x.label)}</b>${x.note ? `<span class="bm-note">${esc(x.note)}</span>` : ''}</button>${x.ph ? `<img class="np-ph" loading="lazy" src="/__np/${esc(x.ph)}" alt="" data-ph="${x.id}">` : ''}</div></li>`).join('')
+    : `<li class="hint">${esc(t('npEmpty'))}</li>`;
+  $('#npActs').innerHTML = `<button class="btn sm primary" type="button" data-na="note">${ic('edit')}${esc(t('npAddNote'))}</button>`
+    + (NATIVE && r.src ? `<button class="btn sm" type="button" data-na="photo">${ic('cam')}${esc(t('rnPhoto'))}</button>` : '')
+    + `<button class="btn sm" type="button" data-na="copy">${ic('copy')}${esc(t('textCopy'))}</button>`
+    + (NATIVE ? `<button class="btn sm" type="button" data-na="share">${ic('share')}${esc(t('share'))}</button>` : '');
+  npTick(true);
+}
+let npLast = -1;
+function npTick(force) {
+  if (!stack.includes('notes')) return;
+  const ct = audio.currentTime || 0, s = Math.floor(ct);
+  if (s === npLast && !force) return; npLast = s;
+  $('#npNow').textContent = fmt(ct);
+}
+function npText(r) {
+  let s = notesText(r);
+  const tx = S.texts.get(r.id);
+  if (tx && tx.segments && tx.segments.length) s += `\n${t('textTitle')}\n` + tx.segments.map(x => `${fmt(x[0])}  ${x[2]}`).join('\n') + '\n';
+  return s;
+}
+$('#noteSheet').addEventListener('click', async e => {
+  const r = curRec(); if (!r) return;
+  const sk = e.target.closest('[data-seek]'), ed = e.target.closest('[data-edit]'), ph = e.target.closest('[data-ph]');
+  const nf = e.target.closest('[data-nf]'), na = e.target.closest('[data-na]'), ut = e.target.closest('[data-utag]');
+  if (ph) { const b = (r.bookmarks || []).find(x => x.id === ph.dataset.ph); if (b) photoView(r, b); return; }
+  if (ed) { editBookmark(ed.dataset.edit); return; }
+  if (sk) { seek(parseFloat(sk.dataset.seek)); if (audio.paused) togglePlay(); return; }
+  if (nf) { if (nf.dataset.nf === 'text') { NP.text = !NP.text; ls.set('npText', NP.text); } else NP.f = nf.dataset.nf; renderNotePage(); return; }
+  if (ut) {
+    if (ut.dataset.utag !== 'add') { r.utags.splice(+ut.dataset.utag, 1); saveRec(r); renderNotePage(); return; }
+    const card = openModal(`<h3>${esc(t('npAddTag'))}</h3><div class="modal-body"><input id="utIn" maxlength="30" enterkeyhint="done" placeholder="${esc(t('npTagPh'))}"></div>
+      <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('save'))}</button></div>`);
+    const go = () => { const v = card.querySelector('#utIn').value.replace(/^#+/, '').trim(); closeModal(); if (!v || (r.utags || []).includes(v)) return; r.utags = (r.utags || []).concat(v); saveRec(r); renderNotePage(); };
+    card.querySelector('[data-ok]').onclick = go; card.querySelector('[data-x]').onclick = closeModal;
+    card.querySelector('#utIn').onkeydown = x => { if (x.key === 'Enter') { x.preventDefault(); go(); } };
+    setTimeout(() => card.querySelector('#utIn').focus(), 60);
+    return;
+  }
+  if (!na) return;
+  const k = na.dataset.na;
+  if (k === 'note') addBookmarkNow();
+  else if (k === 'photo') takeNotePhoto({ rid: r.id, t: audio.currentTime || 0 });
+  else if (k === 'copy') { const s = npText(r); try { if (AND) AND.copyText(s); else await navigator.clipboard.writeText(s); toast(t('copied')); } catch (x) {} }
+  else if (k === 'share') { try { AND.shareText(safeName(r.title) + '.txt', npText(r), 'text/plain'); } catch (x) {} }
+});
+$('#npBack').addEventListener('click', () => closeOverlay('notes'));
+$('#npPlay').addEventListener('click', togglePlay);
+$('#npTitle').addEventListener('change', () => { $('#plTitle').value = $('#npTitle').value; commitTitle(); $('#npTitle').value = (curRec() || {}).title || ''; });
+$('#npTitle').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
+$('#npNotes').addEventListener('input', () => { $('#plNotes').value = $('#npNotes').value; $('#plNotes').dispatchEvent(new Event('input')); });
+$('#plNotePage').addEventListener('click', openNotePage);
+
 /* ---------- boot ---------- */
 let booted = false;
 /* first start: pick the app language (English preselected); speech-to-text uses the same language */
@@ -7982,6 +8238,7 @@ async function boot() {
     applyPlayerPrefs();
     if (CAPS.asr) asrRefresh();
     if (!S.media && !ls.get('askedMedia', false)) { ls.set('askedMedia', true); requestLibrary(); }
+    recReattach(); npPendCheck();
     window.__sdQuickRec();
     setTimeout(welcome, 700);
     bgPoll(true);

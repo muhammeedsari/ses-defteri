@@ -1,4 +1,4 @@
-# Ses Defteri — sürüm sürüm tüm özellikler (1.3 → 5.14.1)
+# Ses Defteri — sürüm sürüm tüm özellikler (1.3 → 5.15)
 
 Bu dosya uygulamanın her sürümde kazandığı özellikleri tek yerde toplar. Teknik ayrıntılar için: `DURUM.md` (1.3–4.0), `DEVIR-4.3-4.12.md`, `DEVIR-4.12-5.14.md`, kod haritası `MIMARI.md`.
 Sonradan değişen ya da kaldırılan özellikler yanında **(şimdi: …)** notuyla belirtildi.
@@ -111,6 +111,7 @@ Sonradan değişen ya da kaldırılan özellikler yanında **(şimdi: …)** not
 | 5.11–5.13 | Lisans temizliği: doğal okuma sesleri kaldırıldı, metinden ses yalnız telefonun sesiyle; YZ kütüphanesi GPL parça olmadan yeniden derlendi, APK ~2 MB küçüldü. |
 | 5.14 | İnceleme düzeltmeleri (Pratik'te "Akorları gizle" ikinci açılışta çalışıyor, Yapıştır yalnız kopya varken). Klip kartında Geçiş yerine **Çoğalt**; **işaret kaldırma** (İşareti kaldır, bayrağa iki dokunuş, Tüm işaretleri sil). |
 | 5.14.1 | Mastering'de (Doğal, Sıcak) ani yüksek seslerde çatırtı giderildi; ton değiştirme iptal edilince bellek boşaltılıyor. |
+| 5.15 | **Kayıt sırasında not alma:** tek dokunuşla etiketli işaret (Önemli, Soru, Yapılacak; dalga formunda renkli), zaman damgalı yazılı not (an, kutu açılınca alınır; kayıt beklemez), fotoğraf (telefonun kamera uygulaması çeker, uygulama içinde `files/np` altında en çok 1600 px JPEG saklanır, sayfaya `/__np/<ad>` ile gelir). Notlar metin dökümünde satır aralarında görünür. **Not sayfası** (oynatıcıda "Not sayfası"): başlık, kendi etiketlerin (`utags`), süzgeç (etiket/fotoğraf), işaret-not-fotoğraf ve metin zaman sırasıyla; dokununca o andan çalar; kopyala/paylaş. Sayfa kayıt sürerken yeniden yüklenirse (kamera belleği aldıysa) kayıt ekranı ve işaretler geri gelir (`recLive`, `Recorder.info().sec`). |
 
 ## Bilinen sınırlar (5.14.1)
 

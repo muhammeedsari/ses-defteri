@@ -591,3 +591,35 @@ html:not(.tech) .pu-card small{display:none}
 .chd b{font-size:26px;font-weight:700;color:var(--accent)}
 .chd span{font-size:15px;color:var(--muted)}
 .chd small{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+/* 5.15: notes while recording, note page */
+.tdot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);margin-right:6px;vertical-align:middle;flex:none}
+.bm-label .ic{width:14px;height:14px;margin-left:6px;vertical-align:-2px;color:var(--muted)}
+.rec-notes{display:grid;gap:8px;padding-top:6px}
+.rn-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.rn-row .chip{background:var(--stage-2);border-color:var(--stage-line);color:var(--stage-ink)}
+.rn-row .chip:active{transform:scale(.96)}
+.rn-list{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.rn-list button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:5px 6px;border-radius:8px;font-size:13px;color:var(--stage-muted)}
+.rn-list .tc{color:var(--stage-mark);flex:none}
+.rn-list .ic{width:14px;height:14px;flex:none}
+.rn-t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.np-filter{display:flex;gap:8px;overflow-x:auto;padding:4px 0 10px;scrollbar-width:none}
+.np-meta{color:var(--muted);font-size:13.5px;margin:2px 0 10px}
+.np-now{color:var(--muted);font-size:13px}
+.np-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.tag.auto{color:var(--muted)}
+.tag.add{border-style:dashed;color:var(--muted)}
+.np-list{list-style:none;margin:0 0 12px;padding:0;display:grid;gap:4px}
+.np-list .hint{padding:12px 0}
+.np-mk{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:8px 6px;border-radius:12px;background:var(--surface);border:1px solid var(--line)}
+.np-mk.t-imp{border-left:3px solid #E5484D}.np-mk.t-q{border-left:3px solid #3E8EF7}.np-mk.t-todo{border-left:3px solid #2FA36B}
+.np-body{display:grid;gap:6px;min-width:0}
+.np-lab{display:grid;gap:2px;text-align:left;font-size:15px}
+.np-lab b{display:inline;font-weight:600}
+.np-seg{display:grid;grid-template-columns:auto 1fr;gap:10px;padding:5px 6px;font-size:14.5px;line-height:1.45;cursor:pointer;border-radius:10px}
+.np-seg .tc{font-size:12px;color:var(--muted);padding-top:2px}
+.np-ph{max-width:100%;max-height:220px;border-radius:10px;object-fit:cover;display:block;cursor:zoom-in}
+.np-big{width:100%;max-height:70vh;object-fit:contain;border-radius:12px;display:block}
+.segs li.seg-mk{background:var(--accent-soft);font-size:13.5px}
+.segs li.seg-mk .ic{width:14px;height:14px;margin-left:6px;vertical-align:-2px}
+#noteSheet{z-index:26}
