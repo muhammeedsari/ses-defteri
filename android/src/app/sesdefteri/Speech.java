@@ -117,7 +117,10 @@ final class Speech {
      * Hesitation sounds ("ııı", "eee", "mmm"): a voiced sound held for ≥ 0.35 s with a steady pitch and level.
      * Ordinary syllables are much shorter and their pitch keeps moving. Works on 16 kHz mono.
      */
-    static ArrayList<double[]> fillers(float[] x, int rate) {
+    static ArrayList<double[]> fillers(float[] x, int rate) { return fillers(x, rate, 38, 0.035); }
+
+    /** minRun in 10 ms frames, cvMax = how still the pitch must sit; 4.7: looser values give candidates for the AI check */
+    static ArrayList<double[]> fillers(float[] x, int rate, int minRun, double cvMax) {
         final int win = rate * 3 / 100, hop = rate / 100, minLag = rate / 400, maxLag = rate / 75;
         int n = Math.max(0, (x.length - win) / hop);
         float[] f0 = new float[n], lv = new float[n];
@@ -142,7 +145,7 @@ final class Speech {
         Arrays.sort(sorted);
         double speech = n > 0 ? sorted[(int) (n * 0.95)] : -20;
         ArrayList<double[]> out = new ArrayList<>();
-        int k = 0, minRun = 38;
+        int k = 0;
         while (k < n) {
             if (!voiced[k] || lv[k] < speech - 30) { k++; continue; }
             int a = k;
@@ -161,7 +164,7 @@ final class Speech {
                 m /= Math.max(1, cnt);
                 for (int j = a; j <= e; j++) if (voiced[j]) v += (f0[j] - m) * (f0[j] - m);
                 double cv = Math.sqrt(v / Math.max(1, cnt)) / m;
-                if (cv < 0.035) out.add(new double[] { Math.max(0, a * hop / (double) rate - 0.04), Math.min(x.length / (double) rate, (e * hop + win) / (double) rate + 0.04) });
+                if (cv < cvMax) out.add(new double[] { Math.max(0, a * hop / (double) rate - 0.04), Math.min(x.length / (double) rate, (e * hop + win) / (double) rate + 0.04) });
             }
             k = e + 1;
         }

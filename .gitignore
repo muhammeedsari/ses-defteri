@@ -6,3 +6,6 @@ android/out/
 vendor/
 *.onnx
 *.wav
+android/*.idsig
+__pycache__/
+web/page_t.html

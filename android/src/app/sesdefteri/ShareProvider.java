@@ -21,23 +21,32 @@ public class ShareProvider extends ContentProvider {
         return true;
     }
 
+    /** 5.15: content://…/cam/<name>.tmp is where the camera app writes a note photo (files/np), the only writable path */
+    private static boolean cam(Uri uri) {
+        java.util.List<String> s = uri.getPathSegments();
+        return s.size() == 2 && "cam".equals(s.get(0)) && s.get(1).endsWith(".tmp") && MainActivity.npName(s.get(1).substring(0, s.get(1).length() - 4));
+    }
+
     private File fileFor(Uri uri) throws FileNotFoundException {
         String name = uri.getLastPathSegment();
         if (name == null) throw new FileNotFoundException();
-        File dir = new File(getContext().getCacheDir(), "share");
+        boolean cam = cam(uri);
+        File dir = cam ? new File(getContext().getFilesDir(), "np") : new File(getContext().getCacheDir(), "share");
         File f = new File(dir, name);
         try {
             if (!f.getCanonicalPath().startsWith(dir.getCanonicalPath() + File.separator)) throw new FileNotFoundException();
         } catch (IOException e) {
             throw new FileNotFoundException();
         }
-        if (!f.exists()) throw new FileNotFoundException();
+        if (!cam && !f.exists()) throw new FileNotFoundException();
         return f;
     }
 
     @Override
     public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
-        return ParcelFileDescriptor.open(fileFor(uri), ParcelFileDescriptor.MODE_READ_ONLY);
+        File f = fileFor(uri);
+        if (cam(uri) && mode != null && mode.contains("w")) return ParcelFileDescriptor.open(f, ParcelFileDescriptor.parseMode(mode) | ParcelFileDescriptor.MODE_CREATE);
+        return ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY);
     }
 
     @Override
@@ -68,6 +77,7 @@ public class ShareProvider extends ContentProvider {
         if (n.endsWith(".wav")) return "audio/wav";
         if (n.endsWith(".aac")) return "audio/aac";
         if (n.endsWith(".flac")) return "audio/flac";
+        if (n.endsWith(".jpg") || n.endsWith(".tmp")) return "image/jpeg";
         return "application/octet-stream";
     }
 

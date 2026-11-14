@@ -8,7 +8,9 @@ Build (zig as the cross compiler, no NDK needed), for each ABI:
       -Istub -I$JAVA_HOME/include -I$JAVA_HOME/include/linux -Wl,-soname,libsdsep.so \
       -o arm64-v8a/libsdsep.so sdsep.c arm64-v8a/libsherpa-onnx-c-api.so
 
-(`stub/stdio.h` is an empty file; `c-api.h` comes from sherpa-onnx v1.13.8; use `arm-linux-androideabi` for armeabi-v7a.)
+(`stub/stdio.h` is an empty file; `c-api.h` comes from sherpa-onnx v1.13.8; use `arm-linux-androideabi` (zig 0.13: `arm-linux-android`) for armeabi-v7a.)
+
+Since 4.12 libsdsep.so also calls ONNX Runtime's C API directly (HD voice, `app.sesdefteri.Hd`): add `-s`, `-I<ort-include>` and `<abi>/libonnxruntime.so` to the link. Headers: `onnxruntime_c_api.h`, `onnxruntime_ep_c_api.h`, `onnxruntime_error_code.h` from onnxruntime v1.28.2 `include/onnxruntime/core/session/`; with zig they need a stub `stdlib.h` containing `#include <stddef.h>` and an empty `string.h`.
 
 # libsdmp3.so (MP3 export, arm64-v8a only)
 
@@ -17,3 +19,17 @@ LAME's `libmp3lame/*.c` (configured with `--disable-frontend --disable-decoder`)
 `zig cc -target aarch64-linux-musl -O2 -fPIC` and linked as a shared library against stub `libc.so`/`libm.so`
 (empty functions with the same names) so that the real Android libc/libm are used at run time.
 As a separate shared library it can be replaced with any other build of LAME.
+
+# libsdtp.so (pitch change, arm64-v8a only, 5.10)
+
+`sdtp/sdtp.cpp` is a JNI bridge (`app.sesdefteri.dsp.Stretch`) to Signalsmith Stretch (MIT; `sdtp/signalsmith-stretch.h`
+from github.com/Signalsmith-Audio/signalsmith-stretch @88061fd, `sdtp/linear/{stft,fft}.h` from
+github.com/Signalsmith-Audio/linear @7bb1c8f). Built like libsdmp3.so:
+
+    zig c++ -target aarch64-linux-musl -O2 -fPIC -fno-exceptions -fno-rtti -fno-stack-protector -std=c++11 \
+      -Isdtp -I$JAVA_HOME/include -I$JAVA_HOME/include/linux -c sdtp/sdtp.cpp -o sdtp.o
+    zig c++ -target aarch64-linux-musl -shared -nostdlib -s -Wl,-soname,libsdtp.so -o arm64-v8a/libsdtp.so sdtp.o libc.so libm.so
+
+with stub `libc.so` (abort calloc free malloc memmove memset) and `libm.so` (cosf sinf exp exp2). The few C++ runtime
+pieces the header needs (operator new/delete, random_device, __libcpp_verbose_abort) are defined in sdtp.cpp.
+Without the library (32-bit phones) the Java phase vocoder (`dsp/TimePitch`) is used.

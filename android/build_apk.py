@@ -62,7 +62,7 @@ def web_page(local_fonts=True, keep_sw=True):
     if local_fonts:
         page = re.sub(r'<link rel="preconnect"[^>]*>\n', "", page)
         page = re.sub(r'<link rel="stylesheet" href="https://fonts.googleapis.com[^"]*">', '<link rel="stylesheet" href="fonts/fonts.css">', page)
-    for js in ["i18n.js", "i18n2.js", "i18n3.js", "i18n4.js", "i18n5.js", "i18n6.js", "i18n7.js", "i18n8.js", "i18n9.js", "i18n10.js", "i18n11.js", "i18n12.js", "i18n13.js", "i18n14.js", "i18n15.js"]:
+    for js in ["i18n.js", "i18n2.js", "i18n3.js", "i18n4.js", "i18n5.js", "i18n6.js", "i18n7.js", "i18n8.js", "i18n9.js", "i18n10.js", "i18n11.js", "i18n12.js", "i18n13.js", "i18n14.js", "i18n15.js", "i18n16.js", "i18n17.js", "i18n18.js", "i18n19.js", "i18n20.js", "i18n21.js", "i18n22.js", "i18n23.js", "i18n24.js", "i18n25.js", "i18n26.js", "i18n27.js", "i18n28.js", "i18n29.js", "i18n30.js", "i18n31.js", "i18n32.js", "i18n33.js", "i18n34.js", "i18n35.js", "i18n36.js", "i18n37.js", "i18n38.js", "i18n39.js", "i18n40.js", "i18n41.js", "i18n42.js", "i18n43.js", "i18n44.js", "i18n45.js", "i18n46.js", "i18n47.js", "i18n48.js", "i18n49.js", "i18n50.js", "i18n51.js", "i18n52.js", "i18n53.js", "i18n54.js", "i18n55.js", "i18n56.js", "i18n57.js", "i18n58.js", "i18n59.js", "i18n60.js", "i18n61.js", "i18n62.js", "i18n63.js", "i18n64.js", "fx-presets.js"]:
         page = page.replace(f"<script src=\"{js}\"></script>", "<script>\n" + (WEB / js).read_text(encoding="utf-8") + "\n</script>")
     head = f"""<!doctype html>
 <html lang="tr">
@@ -77,7 +77,7 @@ def web_page(local_fonts=True, keep_sw=True):
     return head + page + "\n</body>\n</html>\n"
 
 # ---------- icons ----------
-GREEN, WHITE, AMBER = (29, 110, 90), (255, 255, 255), (242, 184, 61)
+GREEN, WHITE, AMBER = (106, 69, 176), (255, 255, 255), (242, 184, 61)
 def draw_mark(d, off, k):
     for x, y, h in [(3.5, 10, 4), (7, 7, 10), (10.5, 4, 16), (14, 8.5, 7), (17.5, 10.5, 3)]:
         d.rounded_rectangle([off + x * k, off + y * k, off + (x + 2) * k, off + (y + h) * k], radius=k, fill=WHITE)
@@ -127,6 +127,10 @@ def main():
     for f in ([] if LITE else ["vocals.fp16.onnx", "accompaniment.fp16.onnx"]):
         if not (sep / f).exists() or (sep / f).stat().st_size != (VENDOR / "sepm" / f).stat().st_size:
             shutil.copy(VENDOR / "sepm" / f, sep / f)
+    # speaker segmentation for "who speaks when" (pyannote 3.0, int8; the voice-print model is downloaded in the app)
+    for f in ([] if LITE else ["pyannote.int8.onnx"]):
+        if not (sep / f).exists() or (sep / f).stat().st_size != (VENDOR / "dia" / f).stat().st_size:
+            shutil.copy(VENDOR / "dia" / f, sep / f)
     # speech denoiser (DPDFNet-2, 48 kHz, DeepFilterNet family)
     if not LITE and not (sep / "dpdfnet.onnx").exists():
         shutil.copy(VENDOR / "dn" / "dpdfnet2_48khz_hr.onnx", sep / "dpdfnet.onnx")
@@ -158,7 +162,7 @@ def main():
     names = []
     for abi in ([] if LITE else ["arm64-v8a", "armeabi-v7a"]):
         (libs / "lib" / abi).mkdir(parents=True, exist_ok=True)
-        for so in ["libsherpa-onnx-jni.so", "libonnxruntime.so", "libsherpa-onnx-c-api.so", "libsdsep.so", "libsdmp3.so"]:
+        for so in ["libsherpa-onnx-jni.so", "libonnxruntime.so", "libsherpa-onnx-c-api.so", "libsdsep.so", "libsdmp3.so", "libsdtp.so"]:
             if not (VENDOR / "jniLibs" / abi / so).exists(): continue   # the MP3 encoder is only built for 64-bit ARM
             shutil.copy(VENDOR / "jniLibs" / abi / so, libs / "lib" / abi / so)
             names.append(f"lib/{abi}/{so}")

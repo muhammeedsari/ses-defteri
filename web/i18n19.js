@@ -1,0 +1,42 @@
+/* Ses Defteri 2.9 — metronome, count-in, recording latency (merged into SD_I18N). */
+(function () {
+const A = {
+tr: { tlClick: "Metronom", clickOn: "Metronomu aç", clickBar: "Ölçü", clickCount: "Kayıttan önce bir ölçü say", clickCountD: "Kayda basınca metronom bir ölçü çalar, sonra kayıt başlar",
+  latTitle: "Kayıt gecikmesi", latNone: "ölçülmedi", latMs: "{ms} ms", latGo: "Ölç", latD: "Başka katmanları dinlerken yaptığın kayıtlar bu kadar kaydırılır, böylece tam zamanında oturur.",
+  latHow: "Kulaklığı çıkar, sesi orta seviyeye getir ve 5 saniye sessiz kal. Telefon birkaç tık sesi çalıp mikrofonla dinleyecek. Bluetooth kulaklıkla kayıt yapıyorsan sonuç farklı olur.",
+  latFail: "Tık sesleri duyulamadı. Kulaklığı çıkarıp sesi biraz açarak tekrar dene.", latDone: "Kayıt gecikmesi: {ms} ms. Üst üste kayıtlar artık buna göre yerleşecek." },
+en: { tlClick: "Metronome", clickOn: "Metronome on", clickBar: "Time signature", clickCount: "Count in one bar before recording", clickCountD: "When you press record, the metronome plays one bar, then recording starts",
+  latTitle: "Recording latency", latNone: "not measured", latMs: "{ms} ms", latGo: "Measure", latD: "Takes recorded while hearing other tracks are shifted by this much so they land exactly in time.",
+  latHow: "Unplug headphones, set the volume to medium and stay quiet for 5 seconds. The phone will play a few clicks and listen with the microphone. With Bluetooth headphones the result will differ.",
+  latFail: "The clicks couldn't be heard. Unplug headphones, turn the volume up a little and try again.", latDone: "Recording latency: {ms} ms. Overdubs will now line up with it." },
+de: { tlClick: "Metronom", clickOn: "Metronom an", clickBar: "Takt", clickCount: "Vor der Aufnahme einen Takt einzählen", clickCountD: "Nach dem Drücken auf Aufnahme spielt das Metronom einen Takt, dann startet die Aufnahme",
+  latTitle: "Aufnahmeverzögerung", latNone: "nicht gemessen", latMs: "{ms} ms", latGo: "Messen", latD: "Aufnahmen, die du beim Hören anderer Spuren machst, werden um diesen Wert verschoben, damit sie genau im Takt sitzen.",
+  latHow: "Kopfhörer abziehen, Lautstärke auf mittel stellen und 5 Sekunden still sein. Das Telefon spielt ein paar Klicks und hört mit dem Mikrofon zu. Mit Bluetooth-Kopfhörern ist das Ergebnis anders.",
+  latFail: "Die Klicks waren nicht zu hören. Kopfhörer abziehen, etwas lauter stellen und erneut versuchen.", latDone: "Aufnahmeverzögerung: {ms} ms. Overdubs werden jetzt danach ausgerichtet." },
+fr: { tlClick: "Métronome", clickOn: "Métronome activé", clickBar: "Mesure", clickCount: "Décompte d’une mesure avant l’enregistrement", clickCountD: "Quand tu appuies sur enregistrer, le métronome joue une mesure, puis l’enregistrement commence",
+  latTitle: "Latence d’enregistrement", latNone: "non mesurée", latMs: "{ms} ms", latGo: "Mesurer", latD: "Les prises enregistrées en écoutant d’autres pistes sont décalées d’autant pour tomber pile en rythme.",
+  latHow: "Débranche les écouteurs, mets le volume à moitié et reste silencieux 5 secondes. Le téléphone jouera quelques clics et écoutera avec le micro. Avec des écouteurs Bluetooth, le résultat sera différent.",
+  latFail: "Les clics n’ont pas été entendus. Débranche les écouteurs, monte un peu le volume et réessaie.", latDone: "Latence d’enregistrement : {ms} ms. Les superpositions seront désormais calées dessus." },
+es: { tlClick: "Metrónomo", clickOn: "Metrónomo activado", clickBar: "Compás", clickCount: "Contar un compás antes de grabar", clickCountD: "Al pulsar grabar, el metrónomo toca un compás y luego empieza la grabación",
+  latTitle: "Latencia de grabación", latNone: "sin medir", latMs: "{ms} ms", latGo: "Medir", latD: "Las tomas grabadas mientras escuchas otras pistas se desplazan esta cantidad para quedar exactamente a tiempo.",
+  latHow: "Desconecta los auriculares, pon el volumen a la mitad y quédate en silencio 5 segundos. El teléfono tocará unos clics y escuchará con el micrófono. Con auriculares Bluetooth el resultado será distinto.",
+  latFail: "No se oyeron los clics. Desconecta los auriculares, sube un poco el volumen y vuelve a intentarlo.", latDone: "Latencia de grabación: {ms} ms. Las sobregrabaciones ahora se alinearán con ella." },
+pt: { tlClick: "Metrônomo", clickOn: "Metrônomo ligado", clickBar: "Compasso", clickCount: "Contar um compasso antes de gravar", clickCountD: "Ao tocar em gravar, o metrônomo toca um compasso e então a gravação começa",
+  latTitle: "Latência da gravação", latNone: "não medida", latMs: "{ms} ms", latGo: "Medir", latD: "Gravações feitas ouvindo outras faixas são deslocadas por esse valor para ficarem exatamente no tempo.",
+  latHow: "Tire os fones, deixe o volume no meio e fique em silêncio por 5 segundos. O telefone vai tocar alguns cliques e ouvir com o microfone. Com fones Bluetooth o resultado será diferente.",
+  latFail: "Os cliques não foram ouvidos. Tire os fones, aumente um pouco o volume e tente de novo.", latDone: "Latência da gravação: {ms} ms. As sobreposições agora vão se alinhar a ela." },
+ru: { tlClick: "Метроном", clickOn: "Метроном включён", clickBar: "Размер", clickCount: "Отсчёт одного такта перед записью", clickCountD: "После нажатия на запись метроном играет один такт, затем начинается запись",
+  latTitle: "Задержка записи", latNone: "не измерена", latMs: "{ms} мс", latGo: "Измерить", latD: "Дубли, записанные под другие дорожки, сдвигаются на эту величину, чтобы попасть точно в ритм.",
+  latHow: "Отключи наушники, поставь среднюю громкость и помолчи 5 секунд. Телефон проиграет несколько щелчков и послушает микрофоном. С Bluetooth-наушниками результат будет другим.",
+  latFail: "Щелчки не услышаны. Отключи наушники, сделай чуть громче и попробуй снова.", latDone: "Задержка записи: {ms} мс. Наложения теперь будут выравниваться по ней." },
+ar: { tlClick: "المترونوم", clickOn: "تشغيل المترونوم", clickBar: "الميزان", clickCount: "عدّ مقياس واحد قبل التسجيل", clickCountD: "عند الضغط على التسجيل يعزف المترونوم مقياسًا واحدًا ثم يبدأ التسجيل",
+  latTitle: "تأخر التسجيل", latNone: "لم يُقَس", latMs: "{ms} مللي ث", latGo: "قياس", latD: "التسجيلات التي تتم أثناء الاستماع إلى مسارات أخرى تُزاح بهذا المقدار لتقع في وقتها تمامًا.",
+  latHow: "افصل السماعات، واضبط الصوت على مستوى متوسط، والتزم الهدوء 5 ثوانٍ. سيعزف الهاتف بضع نقرات ويستمع إليها بالميكروفون. مع سماعات Bluetooth ستختلف النتيجة.",
+  latFail: "لم تُسمع النقرات. افصل السماعات وارفع الصوت قليلًا ثم حاول مجددًا.", latDone: "تأخر التسجيل: {ms} مللي ث. ستُضبط التسجيلات المتراكبة عليه من الآن." },
+zh: { tlClick: "节拍器", clickOn: "开启节拍器", clickBar: "拍号", clickCount: "录音前预备一小节", clickCountD: "按下录音后，节拍器先响一小节，然后开始录音",
+  latTitle: "录音延迟", latNone: "未测量", latMs: "{ms} 毫秒", latGo: "测量", latD: "边听其他音轨边录的内容会按此值平移，从而准确对齐节拍。",
+  latHow: "拔下耳机，把音量调到中等，保持安静 5 秒。手机会播放几声咔嗒声并用麦克风收听。使用蓝牙耳机时结果会不同。",
+  latFail: "没有听到咔嗒声。请拔下耳机，把音量调大一点再试。", latDone: "录音延迟：{ms} 毫秒。叠加录音将按此对齐。" }
+};
+for (const l in A) window.SD_I18N[l] = Object.assign(window.SD_I18N[l] || {}, A[l]);
+})();

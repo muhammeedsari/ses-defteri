@@ -1,0 +1,38 @@
+# 5.13: sherpa-onnx v1.13.8 Android libraries without text to speech (so no GPL espeak-ng inside).
+# Runs when this file changes; the result is a pre-release "sherpa-onnx-v1.13.8-notts" with jniLibs.tar.bz2.
+name: sherpa-onnx without TTS
+on:
+  push:
+    paths: ['.github/workflows/sherpa-notts.yml']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get sherpa-onnx v1.13.8
+        run: git clone --depth 1 --branch v1.13.8 https://github.com/k2-fsa/sherpa-onnx.git sherpa
+      - name: Build arm64-v8a and armeabi-v7a
+        run: |
+          cd sherpa
+          export ANDROID_NDK=$ANDROID_NDK_LATEST_HOME
+          export SHERPA_ONNX_ENABLE_C_API=ON
+          export SHERPA_ONNX_ENABLE_TTS=OFF
+          mkdir -p ../jniLibs/arm64-v8a ../jniLibs/armeabi-v7a
+          ./build-android-arm64-v8a.sh
+          cp -v build-android-arm64-v8a/install/lib/*.so ../jniLibs/arm64-v8a/
+          rm -rf build-android-arm64-v8a
+          ./build-android-armv7-eabi.sh
+          cp -v build-android-armv7-eabi/install/lib/*.so ../jniLibs/armeabi-v7a/
+          rm -rf build-android-armv7-eabi
+          cd ..
+          for f in jniLibs/*/*.so; do echo "$f $(strings $f | grep -ci espeak)"; done
+          tar cjf jniLibs.tar.bz2 jniLibs
+      - name: Publish as a pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete sherpa-onnx-v1.13.8-notts --repo ${{ github.repository }} --yes --cleanup-tag || true
+          gh release create sherpa-onnx-v1.13.8-notts jniLibs.tar.bz2 --repo ${{ github.repository }} --target ${{ github.sha }} --prerelease \
+            --title "sherpa-onnx v1.13.8 without TTS (build tool, not an app release)" \
+            --notes "Android libraries of sherpa-onnx v1.13.8 built with SHERPA_ONNX_ENABLE_TTS=OFF, used by the app build."

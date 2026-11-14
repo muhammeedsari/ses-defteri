@@ -21,8 +21,13 @@ public class WorkService extends Service {
     private static boolean requested, fg;
     private static final android.os.Handler H = new android.os.Handler(android.os.Looper.getMainLooper());
 
-    static synchronized void begin(final Context c) {
+    static void begin(final Context c) { begin(c, false); }
+
+    /** now: long work (downloads, speech-to-text) asks for the service at once, while the app is surely on screen;
+     *  Android refuses to start it from the background, so waiting a second lost it when the app was left at once */
+    static synchronized void begin(final Context c, boolean now) {
         running++;
+        if (now && !requested) { start(c.getApplicationContext()); return; }
         if (running == 1 && !requested) {
             final Context app = c.getApplicationContext();
             H.postDelayed(new Runnable() { @Override public void run() { start(app); } }, 1000);
@@ -38,12 +43,57 @@ public class WorkService extends Service {
         } catch (Exception e) { requested = false; }
     }
 
+    private static long since, lastProg;
+    private static int lastPct = -1;
+    private static Notification.Builder nb;
+    private static volatile String label;
+
+    /** 4.1: what is running, as the notification's title (null = the general title) */
+    static void label(String s) { label = s == null || s.isEmpty() ? null : s; }
+
+    /** 4.0.1: the running work's percentage on the notification (at most twice a second) */
+    static void progress(Context c, double f) {
+        Notification.Builder b = nb;
+        if (!fg || b == null) return;
+        int pct = (int) Math.max(0, Math.min(100, Math.round(f * 100)));
+        long now = android.os.SystemClock.uptimeMillis();
+        if (pct == lastPct || now - lastProg < 500) return;
+        lastPct = pct; lastProg = now;
+        try {
+            b.setProgress(100, pct, false).setContentTitle(label != null ? label : Str.get(c, "workTitle")).setContentText(Str.get(c, "workText") + " · %" + pct);
+            NotificationManager nm = (NotificationManager) c.getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) nm.notify(ID, b.build());
+        } catch (Exception ignored) { }
+    }
+
     static synchronized void end(Context c) {
         running = Math.max(0, running - 1);
         if (running == 0 && fg) {
             fg = false;
             try { c.stopService(new Intent(c, WorkService.class)); } catch (Exception ignored) { }
+            // 3.4.6: long work finished while the app was out of sight (screen off): say so, also on the lock screen
+            if (!MainActivity.visible && System.currentTimeMillis() - since > 8000) done(c.getApplicationContext());
         }
+    }
+
+    private static void done(Context c) {
+        try {
+            NotificationManager nm = (NotificationManager) c.getSystemService(NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            Notification.Builder b;
+            if (Build.VERSION.SDK_INT >= 26) {
+                NotificationChannel ch = new NotificationChannel("done", Str.get(c, "chDone"), NotificationManager.IMPORTANCE_DEFAULT);
+                ch.setShowBadge(true);
+                nm.createNotificationChannel(ch);
+                b = new Notification.Builder(c, "done");
+            } else b = new Notification.Builder(c);
+            Intent open = new Intent(c, MainActivity.class);
+            open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            PendingIntent pi = PendingIntent.getActivity(c, 3, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            b.setSmallIcon(R.drawable.ic_stat_rec).setContentTitle(Str.get(c, "doneTitle")).setContentText(Str.get(c, "doneText"))
+                .setAutoCancel(true).setContentIntent(pi).setVisibility(Notification.VISIBILITY_PUBLIC);
+            nm.notify(10, b.build());
+        } catch (Exception ignored) { }
     }
 
     @Override
@@ -65,8 +115,11 @@ public class WorkService extends Service {
             .setContentTitle(Str.get(this, "workTitle"))
             .setContentText(Str.get(this, "workText"))
             .setOngoing(true)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setProgress(0, 0, true)
+            .setOnlyAlertOnce(true)
             .setContentIntent(pi);
+        nb = b; lastPct = -1;
         try {
             if (Build.VERSION.SDK_INT >= 29) startForeground(ID, b.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
             else startForeground(ID, b.build());
@@ -74,13 +127,18 @@ public class WorkService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
-        synchronized (WorkService.class) { fg = true; if (running == 0) { fg = false; stopSelf(); } }
+        synchronized (WorkService.class) { fg = true; since = System.currentTimeMillis(); if (running == 0) { fg = false; stopSelf(); } }
         return START_NOT_STICKY;
     }
 
+    /** Android 14/15 limit "data sync" services (6 h a day); stop quietly instead of being killed */
+    public void onTimeout(int startId) { stopSelf(); }
+
+    public void onTimeout(int startId, int type) { stopSelf(); }
+
     @Override
     public void onDestroy() {
-        synchronized (WorkService.class) { fg = false; requested = false; }
+        synchronized (WorkService.class) { fg = false; requested = false; nb = null; }
         try {
             if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE); else stopForeground(true);
         } catch (Exception ignored) { }

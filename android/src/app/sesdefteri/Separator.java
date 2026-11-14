@@ -22,6 +22,49 @@ final class Separator {
 
     static native long create(String vocals, String accompaniment, int threads);
     static native void destroy(long h);
+    static native void accel(boolean on);
+
+    /** 5.9: the AI accelerator for separation, the AI denoiser and HD voice (set from the settings) */
+    static void setAccel(boolean on) { if (available()) accel(on); }
+
+    /** 5.9: the same 8 s of sound separated on the processor and on the accelerator: times (ms) and how far the results differ */
+    static JSONObject accelTest(Context c, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        if (!available()) throw new IllegalStateException("sep-unavailable");
+        final int R = 44100, n = 8 * R;
+        float[][] x = new float[2][n];
+        java.util.Random rnd = new java.util.Random(7);
+        for (int i = 0; i < n; i++) {
+            double t = (double) i / R, v = 0.2 * Math.sin(2 * Math.PI * 220 * t) * (0.6 + 0.4 * Math.sin(2 * Math.PI * 3 * t)) + 0.1 * Math.sin(2 * Math.PI * 330 * t) + 0.03 * rnd.nextGaussian();
+            x[0][i] = (float) v; x[1][i] = (float) (v * 0.9);
+        }
+        String vm = model(c, "vocals.fp16.onnx").getAbsolutePath(), am = model(c, "accompaniment.fp16.onnx").getAbsolutePath();
+        JSONObject o = new JSONObject();
+        float[][][] out = new float[2][][];
+        boolean was = Device.accel;
+        try {
+            for (int k = 0; k < 2; k++) {
+                if (cancel.get()) throw new InterruptedException("cancel");
+                accel(k == 1);
+                long t0 = System.nanoTime();
+                long h = create(vm, am, Device.threads(4));
+                long t1 = System.nanoTime();
+                if (h == 0) { o.put(k == 0 ? "cpu" : "nn", -1); continue; }
+                try { out[k] = process(h, x, R, new int[1]); } finally { destroy(h); }
+                long t2 = System.nanoTime();
+                o.put(k == 0 ? "cpu" : "nn", out[k] == null ? -1 : (t2 - t1) / 1000000);
+                o.put(k == 0 ? "cpuLoad" : "nnLoad", (t1 - t0) / 1000000);
+                p.on(0.5 * (k + 1));
+            }
+        } finally {
+            accel(was);
+        }
+        if (out[0] != null && out[1] != null) {
+            double e = 0, d = 0;
+            for (int i = 0; i < out[0][0].length && i < out[1][0].length; i++) { double a = out[0][0][i], b = out[1][0][i]; e += a * a; d += (a - b) * (a - b); }
+            o.put("diffDb", Math.round(10 * Math.log10((d + 1e-12) / (e + 1e-12))));
+        }
+        return o;
+    }
     static native float[][] process(long h, float[][] chans, int rate, int[] outRate);
 
     private static Boolean ok;
@@ -50,30 +93,68 @@ final class Separator {
         return f;
     }
 
+    static final String UVR_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/UVR-MDX-NET-Inst_HQ_5.onnx";
+    static File uvrFile(Context c) { return c != null ? new File(new File(c.getFilesDir(), "uvr"), "UVR-MDX-NET-Inst_HQ_5.onnx") : new File(System.getProperty("sd.uvr", "")); }
+    static boolean uvrReady(Context c) { return uvrFile(c).isFile(); }
+    /** about 2 GB of memory in use while it works: offered on phones with 6 GB or more only */
+    static boolean uvrFits(Context c) {
+        android.app.ActivityManager am = (android.app.ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
+        android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+        am.getMemoryInfo(mi);
+        return mi.totalMem >= (6L << 30) - (512L << 20) && !Device.lite;
+    }
+    static JSONObject uvrDownload(Context c, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        File f = uvrFile(c);
+        f.getParentFile().mkdirs();
+        long n = AsrModels.size(UVR_URL);
+        if (!f.isFile() || f.length() != n) AsrModels.fetch(UVR_URL, f, n, 0, n, p, cancel);
+        return new JSONObject().put("ready", true);
+    }
+
     static JSONObject split(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
         if (!available()) throw new IllegalStateException("sep-unavailable");
         File in = new File(a.getString("path"));
         Workspace.Info inf = Workspace.info(in);
         p.on(0.01);
-        File vm = model(c, "vocals.fp16.onnx"), am = model(c, "accompaniment.fp16.onnx");
-        File[] out = run(in, inf, vm, am, p, cancel);
+        boolean four = a.optBoolean("four", false), hq = a.optBoolean("hq", false) && uvrReady(c);
+        // 5.6 "high quality": UVR MDX-Net (vocals / instrumental), downloaded once; otherwise the built-in Spleeter
+        File vm = hq ? uvrFile(c) : model(c, "vocals.fp16.onnx"), am = hq ? null : model(c, "accompaniment.fp16.onnx");
+        File[] out = run(in, inf, vm, am, four ? Workspace.part(p, 0, 0.75) : p, cancel);
         JSONObject res = new JSONObject();
         res.put("voc", clip(out[0]));
-        res.put("acc", clip(out[1]));
+        if (!four) { res.put("acc", clip(out[1])); return res; }
+        // 3.8: four parts: the music is split further into drums, bass and the rest (dsp/Stems)
+        File dir = in.getParentFile();
+        File[] f = { new File(dir, "d" + System.nanoTime() + ".wav"), new File(dir, "b" + System.nanoTime() + ".wav"), new File(dir, "o" + System.nanoTime() + ".wav") };
+        try {
+            Workspace.Info ai = Workspace.info(out[1]);
+            app.sesdefteri.dsp.Stems st = new app.sesdefteri.dsp.Stems(ai.ch, ai.rate, new Studio.WavNode(f[0], ai.rate), new Studio.WavNode(f[1], ai.rate), new Studio.WavNode(f[2], ai.rate));
+            Workspace.wav(out[1], ai, Workspace.part(p, 0.75, 1), new double[] { 0, 1 }, cancel).run(st);
+        } catch (Exception x) {
+            for (File g : f) g.delete();
+            throw x;
+        } finally {
+            out[1].delete();
+        }
+        res.put("drums", clip(f[0]));
+        res.put("bass", clip(f[1]));
+        res.put("other", clip(f[2]));
         return res;
     }
 
     /** writes vocals and accompaniment next to the input; returns both files */
     static File[] run(File in, Workspace.Info inf, File vm, File am, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
-        int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
-        long h = create(vm.getAbsolutePath(), am.getAbsolutePath(), threads);
+        int threads = Device.threads(4);
+        final boolean uvr = am == null;
+        long h = create(vm.getAbsolutePath(), uvr ? "" : am.getAbsolutePath(), threads);
         if (h == 0) throw new IllegalStateException("sep-model");
         File dir = in.getParentFile();
         File vo = new File(dir, "v" + System.nanoTime() + ".wav"), ao = new File(dir, "a" + System.nanoTime() + ".wav");
         RandomAccessFile r = new RandomAccessFile(in, "r");
         try {
             final int rate = inf.rate, ch = inf.ch;
-            final long N = inf.frames, CH = 30L * rate, CTX = rate;   // 30 s pieces
+            final long N = inf.frames, CH = (uvr ? 10L : 30L) * rate, CTX = rate;   // 30 s pieces (UVR: 10 s, it needs far more memory)
+            final int[] order = uvr ? new int[] { 1, 0 } : new int[] { 0, 1 };   // UVR gives the instrumental first
             Node[] sink = new Node[2];
             Studio.WavNode[] wn = { new Studio.WavNode(vo, rate), new Studio.WavNode(ao, rate) };
             Resampler[] rs = new Resampler[2];
@@ -112,9 +193,9 @@ final class Separator {
                     for (int i = 0; i < have; i++) {
                         if (ch == 1) {
                             float v = 0;
-                            for (int k = 0; k < sc; k++) v += y[t * sc + k][from + i];
+                            for (int k = 0; k < sc; k++) v += y[order[t] * sc + k][from + i];
                             o[0][i] = v / sc;
-                        } else for (int k = 0; k < 2; k++) o[k][i] = y[t * sc + Math.min(k, sc - 1)][from + i];
+                        } else for (int k = 0; k < 2; k++) o[k][i] = y[order[t] * sc + Math.min(k, sc - 1)][from + i];
                     }
                     for (int k = 0; k < ch; k++) for (int i = 0; i < m; i++) { float v = o[k][i]; o[k][i] = v > 1 ? 1 : v < -1 ? -1 : v; }
                     sink[t].push(o, m);

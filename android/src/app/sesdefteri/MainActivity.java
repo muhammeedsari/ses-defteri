@@ -59,7 +59,11 @@ public class MainActivity extends Activity implements Player.Listener {
     private static final int REQ_MEDIA = 13;
     private static final int REQ_PICK = 14;
     private static final int REQ_DELETE = 15;
+    private static final int REQ_NOTIF = 16;
     private static final int REQ_VIDEO = 16;
+    private static final int REQ_VIDEO_TL = 17;
+    private static final int REQ_CAM = 18;
+    private static volatile String camName;   // 5.15: the note photo the camera is taking (survives the activity being recreated)
     private volatile String videoBusy;
 
     private WebView web;
@@ -68,6 +72,7 @@ public class MainActivity extends Activity implements Player.Listener {
     private boolean pageReady = false;
     private String barMode = "page";
     private String pendingDeleteJob;
+    private org.json.JSONArray pendingDeleteDone, pendingDeleteAsk;
 
     private final ExecutorService pool = Executors.newSingleThreadExecutor();
     /* enhancement, speech-to-text, mixing: one at a time, apart from waveform work */
@@ -85,11 +90,30 @@ public class MainActivity extends Activity implements Player.Listener {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        Bg.init(this);   // 4.1: downloads / speech-to-text left running (or stopped by the system) go on
+        Tts.cleanup(this);   // 5.12: AI voices removed
+        hookCrashes(getApplicationContext());
         Player.I.init(this, this);
         web = new WebView(this);
         web.setBackgroundColor(isDark() ? 0xFF0F1412 : 0xFFEDF1EE);
-        setContentView(web);
+        // 3.6 (target API 36): Android 15+ always draws edge to edge, so the page sits inside the system bars and the keyboard
+        root = new android.widget.FrameLayout(this);
+        root.addView(web, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        setContentView(root);
+        if (Build.VERSION.SDK_INT >= 30) root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override
+            public android.view.WindowInsets onApplyWindowInsets(View v, android.view.WindowInsets in) {
+                if (Build.VERSION.SDK_INT < 35) return v.onApplyWindowInsets(in);
+                android.graphics.Insets i = in.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout() | android.view.WindowInsets.Type.ime());
+                v.setPadding(i.left, i.top, i.right, i.bottom);
+                return android.view.WindowInsets.CONSUMED;
+            }
+        });
         applyBars("page");
+        if (Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0, new android.window.OnBackInvokedCallback() {
+            @Override
+            public void onBackInvoked() { goBack(); }
+        });
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -115,6 +139,23 @@ public class MainActivity extends Activity implements Player.Listener {
                 return true;
             }
 
+            /** the page's process died (crash, or the system needed memory): start over instead of letting Android close the app */
+            @Override
+            public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail d) {
+                // the system ends the page's process to free memory while the app is in the background: that is no crash, so no note
+                // (3.4.5 showed "closed unexpectedly" after the sleep timer stopped the music)
+                boolean crashed = Build.VERSION.SDK_INT >= 26 && d.didCrash();
+                if (crashed) saveCrash(MainActivity.this, "web view crashed");
+                if (view != web) return true;
+                // a dead web view must not be used again
+                pageReady = false;
+                try { ((android.view.ViewGroup) web.getParent()).removeView(web); } catch (Exception ignored) { }
+                try { web.destroy(); } catch (Exception ignored) { }
+                web = null;
+                if (resumed) recreate(); else needRecreate = true;
+                return true;
+            }
+
             @Override
             public void onPageFinished(WebView view, String url) {
                 pageReady = true;
@@ -137,7 +178,8 @@ public class MainActivity extends Activity implements Player.Listener {
                 fileCallback = callback;
                 Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
                 pick.addCategory(Intent.CATEGORY_OPENABLE);
-                pick.setType("audio/*");
+                String[] acc = params != null ? params.getAcceptTypes() : null;
+                pick.setType(acc != null && acc.length > 0 && acc[0].startsWith("image") ? "image/*" : "audio/*");
                 if (params != null && params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) pick.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                 try {
                     startActivityForResult(Intent.createChooser(pick, Str.get(MainActivity.this, "pick")), REQ_FILE);
@@ -150,7 +192,9 @@ public class MainActivity extends Activity implements Player.Listener {
         });
 
         web.addJavascriptInterface(new Bridge(), "SesDefteriAndroid");
-        handleIntent(getIntent());
+        // only a fresh start handles the intent: after recreate() or a restart from recents the same "share"/"open with"
+        // intent comes back and imported the file again (copies of a recording)
+        if (state == null && (getIntent().getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0) handleIntent(getIntent());
         web.loadUrl(START);
     }
 
@@ -162,6 +206,9 @@ public class MainActivity extends Activity implements Player.Listener {
             public void run() { if (web != null && pageReady) web.evaluateJavascript(code, null); }
         });
     }
+
+    /** 5.3: the tuner's reading (Hz, 0 = no clear note) and the input level */
+    void tuned(double hz, double db) { js("window.__sdTune && window.__sdTune(" + Math.round(hz * 100) / 100.0 + "," + Math.round(db) + ")"); }
 
     private static String q(String s) {
         return JSONObject.quote(s == null ? "" : s);
@@ -181,7 +228,11 @@ public class MainActivity extends Activity implements Player.Listener {
         js("window.__sdJobChunk && window.__sdJobChunk(" + q(id) + "," + from + ",'" + android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP) + "')");
     }
 
+    private final java.util.Set<String> heavyIds = java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
+    private boolean askedNotif;
+
     private void jobProgress(String id, double f) {
+        if (heavyIds.contains(id)) WorkService.progress(this, f);   // 4.0.1: the percentage also in the notification
         js("window.__sdJobProgress && window.__sdJobProgress(" + q(id) + "," + f + ")");
     }
 
@@ -202,6 +253,15 @@ public class MainActivity extends Activity implements Player.Listener {
             } catch (Exception e) {
                 return notFound();
             }
+        }
+        if (path.startsWith("/__np/")) {   // 5.15: a photo taken during a recording (notes)
+            String n = path.substring("/__np/".length());
+            File f = new File(new File(getFilesDir(), "np"), n);
+            if (!npName(n) || !f.isFile()) return notFound();
+            try {
+                headers.put("Cache-Control", "max-age=86400");
+                return new WebResourceResponse("image/jpeg", null, 200, "OK", headers, new java.io.FileInputStream(f));
+            } catch (IOException e) { return notFound(); }
         }
         headers.put("Cache-Control", "no-cache");
         if (path.contains("..")) return notFound();
@@ -283,16 +343,88 @@ public class MainActivity extends Activity implements Player.Listener {
         if (code == REQ_FILE && fileCallback != null) {
             fileCallback.onReceiveValue(result == RESULT_OK ? urisFrom(data) : null);
             fileCallback = null;
+        } else if (code == REQ_CAM) {
+            final String name = camName;
+            camName = null;
+            if (name == null) return;
+            final boolean ok = result == RESULT_OK;
+            final android.graphics.Bitmap thumb = ok && data != null && data.getExtras() != null && data.getExtras().get("data") instanceof android.graphics.Bitmap
+                ? (android.graphics.Bitmap) data.getExtras().get("data") : null;
+            new Thread(new Runnable() {
+                @Override public void run() {
+                    File dir = new File(getFilesDir(), "np");
+                    File tmp = new File(dir, name + ".tmp"), out = new File(dir, name);
+                    boolean done = ok && shrinkPhoto(tmp, thumb, out);
+                    tmp.delete();
+                    js("window.__sdPhoto && window.__sdPhoto(" + q(name) + "," + done + ")");
+                }
+            }).start();
         } else if (code == REQ_VIDEO) {
             Uri[] uris = result == RESULT_OK ? urisFrom(data) : null;
             if (uris != null && uris.length > 0) importVideos(uris);
+        } else if (code == REQ_VIDEO_TL) {
+            Uri[] uris = result == RESULT_OK ? urisFrom(data) : null;
+            js("window.__sdVideo && window.__sdVideo(" + (uris != null && uris.length > 0 ? q(uris[0].toString()) : "null") + ")");
         } else if (code == REQ_PICK) {
             Uri[] uris = result == RESULT_OK ? urisFrom(data) : null;
             if (uris != null && uris.length > 0) importUris(uris, true);
         } else if (code == REQ_DELETE && pendingDeleteJob != null) {
             String id = pendingDeleteJob;
             pendingDeleteJob = null;
-            jobDone(id, result == RESULT_OK, result == RESULT_OK ? "{\"deleted\":true}" : "{\"deleted\":false}");
+            org.json.JSONArray d = pendingDeleteDone, k = pendingDeleteAsk;
+            pendingDeleteDone = pendingDeleteAsk = null;
+            if (d != null) {   // batch: own files went before the dialog
+                if (result == RESULT_OK && k != null) for (int i = 0; i < k.length(); i++) d.put(k.opt(i));
+                jobDone(id, d.length() > 0, "{\"deleted\":" + (result == RESULT_OK) + ",\"done\":" + d + "}");
+            } else jobDone(id, result == RESULT_OK, result == RESULT_OK ? "{\"deleted\":true}" : "{\"deleted\":false}");
+        }
+    }
+
+    /* ---------- 5.15: note photos (files/np): the camera app writes the full picture, it is kept at most 1600 px ---------- */
+
+    static boolean npName(String n) {
+        return n != null && n.matches("[A-Za-z0-9_-]{1,64}\\.jpg");
+    }
+
+    private static boolean shrinkPhoto(File in, android.graphics.Bitmap thumb, File out) {
+        android.graphics.Bitmap b = null;
+        int rot = 0;
+        try {
+            if (in.length() > 0) {
+                android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+                o.inJustDecodeBounds = true;
+                android.graphics.BitmapFactory.decodeFile(in.getPath(), o);
+                int s = 1;
+                while (Math.max(o.outWidth, o.outHeight) / (s * 2) >= 1600) s *= 2;
+                o = new android.graphics.BitmapFactory.Options();
+                o.inSampleSize = s;
+                b = android.graphics.BitmapFactory.decodeFile(in.getPath(), o);
+                try {
+                    int or = new android.media.ExifInterface(in.getPath()).getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1);
+                    rot = or == 6 ? 90 : or == 3 ? 180 : or == 8 ? 270 : 0;
+                } catch (Exception ignored) { }
+            }
+            if (b == null) b = thumb;   // a camera app that ignored the output file and gave back only a small picture
+            if (b == null) return false;
+            float k = 1600f / Math.max(b.getWidth(), b.getHeight());
+            android.graphics.Matrix m = new android.graphics.Matrix();
+            if (k < 1) m.postScale(k, k);
+            if (rot != 0) m.postRotate(rot);
+            if (!m.isIdentity()) {
+                android.graphics.Bitmap r = android.graphics.Bitmap.createBitmap(b, 0, 0, b.getWidth(), b.getHeight(), m, true);
+                if (r != b && b != thumb) b.recycle();
+                b = r;
+            }
+            FileOutputStream f = new FileOutputStream(out);
+            boolean ok = b.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, f);
+            f.close();
+            if (!ok) out.delete();
+            return ok;
+        } catch (Throwable e) {   // OutOfMemoryError too: the recording must not suffer for a photo
+            out.delete();
+            return false;
+        } finally {
+            if (b != null && b != thumb) b.recycle();
         }
     }
 
@@ -316,10 +448,19 @@ public class MainActivity extends Activity implements Player.Listener {
         handleIntent(intent);
     }
 
+    static final String ACTION_QUICK_REC = "app.sesdefteri.RECORD";
+    private volatile boolean quickRec;
+
     private void handleIntent(Intent intent) {
         if (intent == null || intent.getAction() == null) return;
         List<Uri> uris = new ArrayList<>();
         String action = intent.getAction();
+        if (ACTION_QUICK_REC.equals(action)) {
+            intent.setAction(null);
+            quickRec = true;
+            js("window.__sdQuickRec && window.__sdQuickRec()");
+            return;
+        }
         try {
             if (Intent.ACTION_SEND.equals(action)) {
                 Uri u = intent.getParcelableExtra(Intent.EXTRA_STREAM);
@@ -333,11 +474,20 @@ public class MainActivity extends Activity implements Player.Listener {
             }
         } catch (Exception ignored) { }
         intent.setAction(null);
+        // videos shared from the gallery: their sound becomes a recording
+        List<Uri> vids = new ArrayList<>();
+        for (int i = uris.size() - 1; i >= 0; i--) {
+            String m = null;
+            try { m = getContentResolver().getType(uris.get(i)); } catch (Exception ignored) { }
+            if (m == null) m = intent.getType();
+            if (m != null && m.startsWith("video/")) vids.add(0, uris.remove(i));
+        }
+        if (!vids.isEmpty()) importVideos(vids.toArray(new Uri[0]));
         if (!uris.isEmpty()) importUris(uris.toArray(new Uri[0]), false);
     }
 
     private void importUris(final Uri[] uris, final boolean picked) {
-        js("window.__sdBusy && window.__sdBusy(" + q(uris.length > 1 ? uris.length + " dosya ekleniyor…" : "Dosya ekleniyor…") + ")");
+        js("window.__sdBusy && window.__sdBusy(" + uris.length + ")");   // the page says it in the app's language
         pool.execute(new Runnable() {
             @Override
             public void run() {
@@ -409,6 +559,8 @@ public class MainActivity extends Activity implements Player.Listener {
         return systemDark();
     }
 
+    private android.widget.FrameLayout root;
+
     private void applyBars(String mode) {
         boolean dark = isDark();
         boolean stage = "stage".equals(mode);
@@ -417,6 +569,12 @@ public class MainActivity extends Activity implements Player.Listener {
         Window w = getWindow();
         w.setStatusBarColor(color);
         w.setNavigationBarColor(color);
+        if (root != null) root.setBackgroundColor(color);
+        if (Build.VERSION.SDK_INT >= 30 && w.getInsetsController() != null) {
+            int m = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+            w.getInsetsController().setSystemBarsAppearance(lightIcons ? 0 : m, m);
+            return;
+        }
         View d = w.getDecorView();
         int flags = d.getSystemUiVisibility();
         if (lightIcons) {
@@ -433,14 +591,34 @@ public class MainActivity extends Activity implements Player.Listener {
     public void onConfigurationChanged(Configuration cfg) {
         super.onConfigurationChanged(cfg);
         boolean dark = isDark();
-        web.setBackgroundColor(dark ? 0xFF0F1412 : 0xFFEDF1EE);
+        if (web != null) web.setBackgroundColor(dark ? 0xFF0F1412 : 0xFFEDF1EE);
         applyBars(barMode);
         js("window.__sdTheme && window.__sdTheme('" + (dark ? "dark" : "light") + "')");
+    }
+
+    private boolean resumed, needRecreate;
+    static volatile boolean visible;   // the app is on screen (no "work done" notification then)
+
+    @Override
+    protected void onStop() {
+        Tuner.stop();   // 5.14.2: the tuner does not keep the microphone when the app is left; it starts again on return
+        super.onStop();
+    }
+
+    @Override
+    protected void onPause() {
+        resumed = false;
+        visible = false;
+        super.onPause();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
+        visible = true;
+        try { ((android.app.NotificationManager) getSystemService(NOTIFICATION_SERVICE)).cancel(10); } catch (Exception ignored) { }
+        if (needRecreate) { needRecreate = false; recreate(); return; }
         js("window.__sdResume && window.__sdResume()");
     }
 
@@ -448,12 +626,21 @@ public class MainActivity extends Activity implements Player.Listener {
 
     @Override
     public void onBackPressed() {
-        if (web != null && web.canGoBack()) web.goBack();
-        else moveTaskToBack(true);
+        goBack();
+    }
+
+    private void goBack() {
+        if (web != null && web.canGoBack()) { web.goBack(); return; }
+        if (web == null) { moveTaskToBack(true); return; }
+        // 4.0.1: on the main screen the page may still step back (another tab → Recordings, a picked clip → none)
+        web.evaluateJavascript("window.__sdBack ? !!window.__sdBack() : false", new android.webkit.ValueCallback<String>() {
+            @Override public void onReceiveValue(String v) { if (!"true".equals(v)) moveTaskToBack(true); }
+        });
     }
 
     @Override
     protected void onDestroy() {
+        Tuner.stop();
         Player.I.init(this, null);
         Timeline.stop();
         if (web != null) {
@@ -463,6 +650,51 @@ public class MainActivity extends Activity implements Player.Listener {
         }
         if (!Recorder.active()) { pool.shutdown(); bgPool.shutdownNow(); studioPool.shutdown(); }
         super.onDestroy();
+    }
+
+    /* ---------- crash notes: kept on the phone only, shown once at the next start so the user can send them ---------- */
+
+    private static boolean crashHooked;
+
+    private static void hookCrashes(final Context app) {
+        if (crashHooked) return;
+        crashHooked = true;
+        final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+            @Override public void uncaughtException(Thread t, Throwable e) {
+                try { saveCrash(app, "thread " + t.getName() + "\n" + android.util.Log.getStackTraceString(e)); } catch (Throwable ignored) { }
+                if (prev != null) prev.uncaughtException(t, e); else System.exit(2);
+            }
+        });
+    }
+
+    static void saveCrash(Context c, String what) {
+        String v = "";
+        try { v = c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName; } catch (Exception ignored) { }
+        String s = "Ses Defteri " + v + ", Android " + Build.VERSION.RELEASE + " (" + Build.VERSION.SDK_INT + "), " + Build.MANUFACTURER + " " + Build.MODEL + "\n"
+            + new java.util.Date() + "\n" + what;
+        if (s.length() > 8000) s = s.substring(0, 8000);
+        try {
+            java.io.FileOutputStream o = new java.io.FileOutputStream(new java.io.File(c.getFilesDir(), "crash.txt"));
+            try { o.write(s.getBytes("UTF-8")); } finally { o.close(); }
+        } catch (Exception ignored) { }
+    }
+
+    /** a note about something that went wrong without closing the app (kept for Settings › Send a problem note) */
+    static void saveNote(Context c, String what) {
+        if (c == null) return;
+        try {
+            java.io.File f = new java.io.File(c.getFilesDir(), "notes.txt");
+            String old = "";
+            if (f.exists() && f.length() < 6000) {
+                byte[] b = new byte[(int) f.length()];
+                java.io.FileInputStream in = new java.io.FileInputStream(f);
+                try { int n = in.read(b); old = n > 0 ? new String(b, 0, n, "UTF-8") : ""; } finally { in.close(); }
+            }
+            String s = old + new java.util.Date() + " " + what + "\n";
+            java.io.FileOutputStream o = new java.io.FileOutputStream(f);
+            try { o.write(s.getBytes("UTF-8")); } finally { o.close(); }
+        } catch (Exception ignored) { }
     }
 
     /* ---------- JavaScript bridge ---------- */
@@ -482,6 +714,38 @@ public class MainActivity extends Activity implements Player.Listener {
         /* -- environment -- */
         @JavascriptInterface public boolean isDark() { return MainActivity.this.isDark(); }
 
+        /** the note of the last unexpected close, once ("" when there is none) */
+        /** the problem notes (stalls, failed downloads …) with the phone model, then cleared */
+        @JavascriptInterface public String takeNotes() {
+            java.io.File f = new java.io.File(getFilesDir(), "notes.txt");
+            if (!f.exists()) return "";
+            String v = "";
+            try { v = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { }
+            try {
+                byte[] b = new byte[(int) Math.min(f.length(), 8000)];
+                java.io.FileInputStream in = new java.io.FileInputStream(f);
+                int n;
+                try { n = in.read(b); } finally { in.close(); }
+                f.delete();
+                return n > 0 ? "Ses Defteri " + v + ", Android " + Build.VERSION.RELEASE + " (" + Build.VERSION.SDK_INT + "), " + Build.MANUFACTURER + " " + Build.MODEL + "\n" + new String(b, 0, n, "UTF-8") : "";
+            } catch (Exception e) { return ""; }
+        }
+        @JavascriptInterface public String lastCrash() {
+            java.io.File f = new java.io.File(getFilesDir(), "crash.txt");
+            if (!f.exists()) return "";
+            try {
+                byte[] b = new byte[(int) Math.min(f.length(), 16000)];
+                java.io.FileInputStream in = new java.io.FileInputStream(f);
+                int n;
+                try { n = in.read(b); } finally { in.close(); }
+                return n > 0 ? new String(b, 0, n, "UTF-8") : "";
+            } catch (Exception e) {
+                return "";
+            } finally {
+                f.delete();
+            }
+        }
+
         @JavascriptInterface public String caps() {
             JSONObject o = new JSONObject();
             try {
@@ -492,6 +756,18 @@ public class MainActivity extends Activity implements Player.Listener {
                 o.put("asr", Studio.asrAvailable());
                 o.put("sep", Separator.available());
                 o.put("mp3", Mp3.available());
+                o.put("opus", Build.VERSION.SDK_INT >= 29);
+                o.put("spk", Speakers.ready(MainActivity.this));
+                o.put("hd", Hd.ready(MainActivity.this));
+                o.put("tag", Sounds.ready(MainActivity.this));
+                o.put("uvr", Separator.uvrReady(MainActivity.this));
+                o.put("uvrOk", Separator.uvrFits(MainActivity.this));
+                android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+                android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+                am.getMemoryInfo(mi);
+                o.put("ramMb", mi.totalMem >> 20);
+                o.put("cores", Device.cores());
+                o.put("weak", am.isLowRamDevice() || mi.totalMem < (3L << 30));
                 o.put("folder", MediaLib.scoped() ? "Music/Ses Defteri" : "Android/data/app.sesdefteri/files/Music/Ses Defteri");
             } catch (Exception ignored) { }
             return o.toString();
@@ -503,7 +779,7 @@ public class MainActivity extends Activity implements Player.Listener {
             Str.prefs(MainActivity.this).edit().putString("theme", mode).apply();
             ui(new Runnable() {
                 @Override public void run() {
-                    web.setBackgroundColor(MainActivity.this.isDark() ? 0xFF0F1412 : 0xFFEDF1EE);
+                    if (web != null) web.setBackgroundColor(MainActivity.this.isDark() ? 0xFF0F1412 : 0xFFEDF1EE);
                     applyBars(barMode);
                 }
             });
@@ -584,6 +860,18 @@ public class MainActivity extends Activity implements Player.Listener {
             });
         }
 
+        /** one video for the project's sound to go into; the answer comes back through window.__sdVideo */
+        @JavascriptInterface public void pickVideoFor() {
+            ui(new Runnable() {
+                @Override public void run() {
+                    Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("video/*");
+                    try { startActivityForResult(i, REQ_VIDEO_TL); } catch (Exception ignored) { js("window.__sdVideo && window.__sdVideo(null)"); }
+                }
+            });
+        }
+
         @JavascriptInterface public void openSoundSettings() {
             ui(new Runnable() {
                 @Override public void run() {
@@ -596,8 +884,10 @@ public class MainActivity extends Activity implements Player.Listener {
             try {
                 android.os.Vibrator v = (android.os.Vibrator) getSystemService(VIBRATOR_SERVICE);
                 if (v == null) return;
-                if (Build.VERSION.SDK_INT >= 26) v.vibrate(android.os.VibrationEffect.createOneShot(Math.max(5, ms), 60));
-                else v.vibrate(Math.max(5, ms));
+                // 4.0.1: a long press is felt clearly (amplitude 60 of 255 was too weak on many phones)
+                if (ms >= 15 && Build.VERSION.SDK_INT >= 29) v.vibrate(android.os.VibrationEffect.createPredefined(android.os.VibrationEffect.EFFECT_HEAVY_CLICK));
+                else if (Build.VERSION.SDK_INT >= 26) v.vibrate(android.os.VibrationEffect.createOneShot(Math.max(10, ms), ms >= 15 ? 255 : 120));
+                else v.vibrate(Math.max(10, ms));
             } catch (Exception ignored) { }
         }
 
@@ -610,35 +900,46 @@ public class MainActivity extends Activity implements Player.Listener {
             return a.toString();
         }
 
+        /** Shares one file, or several when srcJson is an array (3.5: selecting several). */
         @JavascriptInterface public void share(final String srcJson, final String title, final String mime) {
             ui(new Runnable() {
                 @Override public void run() {
                     try {
-                        JSONObject src = new JSONObject(srcJson);
-                        Uri uri = MediaLib.srcUri(src);
-                        if (uri == null) {
-                            File f = MediaLib.srcFile(src);
-                            if (f == null) return;
-                            File dir = new File(getCacheDir(), "share");
-                            dir.mkdirs();
-                            File copy = new File(dir, f.getName());
-                            java.io.FileInputStream in = new java.io.FileInputStream(f);
-                            FileOutputStream out = new FileOutputStream(copy);
-                            byte[] b = new byte[65536]; int n;
-                            while ((n = in.read(b)) > 0) out.write(b, 0, n);
-                            in.close(); out.close();
-                            uri = new Uri.Builder().scheme("content").authority(ShareProvider.AUTHORITY).appendPath(copy.getName()).build();
-                        }
-                        Intent send = new Intent(Intent.ACTION_SEND);
+                        ArrayList<Uri> uris = new ArrayList<>();
+                        if (srcJson.trim().startsWith("[")) {
+                            JSONArray a = new JSONArray(srcJson);
+                            for (int i = 0; i < a.length(); i++) { Uri u = shareUri(a.getJSONObject(i)); if (u != null) uris.add(u); }
+                        } else { Uri u = shareUri(new JSONObject(srcJson)); if (u != null) uris.add(u); }
+                        if (uris.isEmpty()) return;
+                        Intent send;
+                        if (uris.size() == 1) { send = new Intent(Intent.ACTION_SEND); send.putExtra(Intent.EXTRA_STREAM, uris.get(0)); }
+                        else { send = new Intent(Intent.ACTION_SEND_MULTIPLE); send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris); }
                         send.setType(mime == null || mime.isEmpty() ? "audio/*" : mime);
-                        send.putExtra(Intent.EXTRA_STREAM, uri);
                         send.putExtra(Intent.EXTRA_TITLE, title);
-                        send.setClipData(ClipData.newRawUri(title, uri));
+                        ClipData cd = ClipData.newRawUri(title, uris.get(0));
+                        for (int i = 1; i < uris.size(); i++) cd.addItem(new ClipData.Item(uris.get(i)));
+                        send.setClipData(cd);
                         send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         startActivity(Intent.createChooser(send, Str.get(MainActivity.this, "share")));
                     } catch (Exception ignored) { }
                 }
             });
+        }
+
+        private Uri shareUri(JSONObject src) throws Exception {
+            Uri uri = MediaLib.srcUri(src);
+            if (uri != null) return uri;
+            File f = MediaLib.srcFile(src);
+            if (f == null) return null;
+            File dir = new File(getCacheDir(), "share");
+            dir.mkdirs();
+            File copy = new File(dir, f.getName());
+            java.io.FileInputStream in = new java.io.FileInputStream(f);
+            FileOutputStream out = new FileOutputStream(copy);
+            byte[] b = new byte[65536]; int n;
+            while ((n = in.read(b)) > 0) out.write(b, 0, n);
+            in.close(); out.close();
+            return new Uri.Builder().scheme("content").authority(ShareProvider.AUTHORITY).appendPath(copy.getName()).build();
         }
 
         /** Shares a small text file (subtitles, transcript). */
@@ -703,6 +1004,108 @@ public class MainActivity extends Activity implements Player.Listener {
             return id;
         }
 
+        /* -- 4.1: background work that outlives the screen (see Bg) -- */
+        @JavascriptInterface public String bgStart(String kind, String key, String label, String argsJson) {
+            try { return Bg.start(kind, key, label, new JSONObject(argsJson)); } catch (Exception e) { return ""; }
+        }
+        @JavascriptInterface public void bgPause(String key) { Bg.pause(key); }
+        @JavascriptInterface public void bgResume(String key) { Bg.resume(key); }
+        @JavascriptInterface public void bgCancel(String key) { Bg.cancel(key); }
+        @JavascriptInterface public void bgForget(String key) { Bg.forget(key); }
+        @JavascriptInterface public String bgList() { return Bg.list(); }
+        @JavascriptInterface public String bgResult(String key) { return Bg.result(key); }
+
+        /** 4.0.1: deletes several files with one confirmation; with "media management" (Android 12+) none is asked */
+        @JavascriptInterface public String deleteMediaMany(final String srcsJson) {
+            final String id = UUID.randomUUID().toString();
+            ui(new Runnable() {
+                @Override public void run() {
+                    try {
+                        org.json.JSONArray a = new org.json.JSONArray(srcsJson);
+                        // 4.2: says which ones went, so a partial delete (own files gone, the rest refused) is not lost
+                        List<Uri> left = new ArrayList<>();
+                        org.json.JSONArray done = new org.json.JSONArray(), ask = new org.json.JSONArray();
+                        for (int i = 0; i < a.length(); i++) {
+                            JSONObject src = a.getJSONObject(i);
+                            Player.I.releaseIfCurrentSrc(src.toString());
+                            if (MediaLib.deleteOwn(MainActivity.this, src)) { done.put(i); continue; }
+                            Uri u = MediaLib.srcUri(src);
+                            if (u != null) { left.add(u); ask.put(i); }
+                        }
+                        if (!left.isEmpty() && Build.VERSION.SDK_INT >= 30) {
+                            PendingIntent pi = MediaStore.createDeleteRequest(getContentResolver(), left);
+                            pendingDeleteJob = id; pendingDeleteDone = done; pendingDeleteAsk = ask;
+                            startIntentSenderForResult(pi.getIntentSender(), REQ_DELETE, null, 0, 0, 0);
+                            return;
+                        }
+                        // Android 10: one confirmation per file (no batch request there): the page asks for those one by one
+                        jobDone(id, done.length() > 0, "{\"deleted\":" + (done.length() == a.length()) + ",\"done\":" + done + ",\"single\":" + ask + "}");
+                    } catch (Exception e) {
+                        jobDone(id, false, "{\"deleted\":false}");
+                    }
+                }
+            });
+            return id;
+        }
+        /** 5.14.2: how many of these project files are gone (["path", …]) */
+        @JavascriptInterface public int missing(String paths) {
+            int n = 0;
+            try {
+                JSONArray a = new JSONArray(paths);
+                for (int i = 0; i < a.length(); i++) if (!new java.io.File(a.getString(i)).isFile()) n++;
+            } catch (Exception ignored) { }
+            return n;
+        }
+        /** Android 12+: "media management" lets the app delete without asking every time */
+        @JavascriptInterface public boolean canManageMedia() {
+            if (Build.VERSION.SDK_INT < 31) return Build.VERSION.SDK_INT < 30;
+            try { return MediaStore.canManageMedia(MainActivity.this); } catch (Throwable e) { return false; }
+        }
+        @JavascriptInterface public void askManageMedia() {
+            if (Build.VERSION.SDK_INT < 31) return;
+            ui(new Runnable() {
+                @Override public void run() {
+                    try { startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_MANAGE_MEDIA, Uri.parse("package:" + getPackageName()))); }
+                    catch (Exception e) { try { startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))); } catch (Exception ignored) { } }
+                }
+            });
+        }
+
+        /* -- 5.15: note photos -- */
+        @JavascriptInterface public boolean takePhoto(final String name) {
+            if (!npName(name)) return false;
+            ui(new Runnable() {
+                @Override public void run() {
+                    try {
+                        File dir = new File(getFilesDir(), "np");
+                        dir.mkdirs();
+                        new File(dir, name + ".tmp").delete();
+                        Uri out = new Uri.Builder().scheme("content").authority(ShareProvider.AUTHORITY).appendPath("cam").appendPath(name + ".tmp").build();
+                        Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                        i.putExtra(MediaStore.EXTRA_OUTPUT, out);
+                        i.setClipData(ClipData.newRawUri("", out));
+                        i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        camName = name;
+                        startActivityForResult(i, REQ_CAM);
+                    } catch (Exception e) {
+                        camName = null;
+                        js("window.__sdPhoto && window.__sdPhoto(" + q(name) + ",false)");
+                    }
+                }
+            });
+            return true;
+        }
+        @JavascriptInterface public boolean npHas(String name) {
+            return npName(name) && new File(new File(getFilesDir(), "np"), name).length() > 0;
+        }
+        @JavascriptInterface public void npDel(String name) {
+            if (npName(name)) new File(new File(getFilesDir(), "np"), name).delete();
+        }
+        @JavascriptInterface public void npShare(String name, String title) {
+            if (!npName(name)) return;
+            try { share(new JSONObject().put("path", new File(new File(getFilesDir(), "np"), name).getPath()).toString(), title, "image/jpeg"); } catch (Exception ignored) { }
+        }
+
         /* -- recorder -- */
         @JavascriptInterface public String recStart(String mode, String name, String opts) {
             if (!has(Manifest.permission.RECORD_AUDIO)) return "{\"ok\":false,\"error\":\"perm\"}";
@@ -714,6 +1117,14 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public boolean recResume() { return Recorder.resumeManual(); }
         @JavascriptInterface public String recInfo() { return Recorder.info(); }
         @JavascriptInterface public float recLevel() { return Recorder.level(); }
+        @JavascriptInterface public String recMeter() { return Recorder.meter(); }
+        @JavascriptInterface public boolean recMonitor(boolean on) { return Recorder.monitor(on); }
+        @JavascriptInterface public void recMonFx(double rev, double echo) { Recorder.monitorFx(rev, echo); }
+        @JavascriptInterface public void setLowLat(boolean on) { Timeline.lowLat = on; }
+        @JavascriptInterface public void setAccel(boolean on) { Device.accel = on; Separator.setAccel(on); }
+        @JavascriptInterface public String aiCrash() { return Device.lastCrash(MainActivity.this); }
+        @JavascriptInterface public void setLite(boolean on) { Device.lite = on; }
+        @JavascriptInterface public String recFx(boolean ns, boolean aec) { return Recorder.fx(ns, aec).toString(); }
         @JavascriptInterface public String recStop() {
             ui(new Runnable() { @Override public void run() { getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); } });
             return Recorder.stop(MainActivity.this);
@@ -738,6 +1149,9 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public void plPause() { ui(new Runnable() { @Override public void run() { Player.I.pause(); } }); }
         @JavascriptInterface public void plSeek(final double ms) { ui(new Runnable() { @Override public void run() { Player.I.seek((long) ms); } }); }
         @JavascriptInterface public void plRate(final double r) { ui(new Runnable() { @Override public void run() { Player.I.setRate((float) r); } }); }
+        @JavascriptInterface public void plPitch(final double st) { ui(new Runnable() { @Override public void run() { Player.I.setPitch((float) st); } }); }
+        @JavascriptInterface public boolean tunerStart() { return Tuner.start(MainActivity.this); }
+        @JavascriptInterface public void tunerStop() { Tuner.stop(); }
         @JavascriptInterface public void plNext() { ui(new Runnable() { @Override public void run() { Player.I.next(); } }); }
         @JavascriptInterface public void plPrev() { ui(new Runnable() { @Override public void run() { Player.I.prev(); } }); }
         @JavascriptInterface public void plShuffle(final boolean on) { ui(new Runnable() { @Override public void run() { Player.I.setShuffle(on); } }); }
@@ -750,10 +1164,33 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public void plLoop(final double a, final double b) { ui(new Runnable() { @Override public void run() { Player.I.setLoop((long) a, (long) b); } }); }
         @JavascriptInterface public void plSkips(final String id, final String json) { ui(new Runnable() { @Override public void run() { Player.I.setSkips(id, json); } }); }
         @JavascriptInterface public void plSleep(final double ms, final boolean end) { ui(new Runnable() { @Override public void run() { Player.I.setSleep((long) ms, end); } }); }
-        @JavascriptInterface public String tlPlay(String json, double sec) { try { Timeline.play(json, sec); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
+        @JavascriptInterface public String tlPlay(String json, double sec) { try { Player.I.timelineFocus(); Timeline.play(json, sec); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
+        /** 2.9: from may be negative (count-in), and play at least until minSec even without clips (metronome) */
+        @JavascriptInterface public String tlPlayFrom(String json, double sec, double minSec) { try { Player.I.timelineFocus(); Timeline.fixedClicks = null; Timeline.play(json, sec, Math.round(minSec * Timeline.RATE)); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
         @JavascriptInterface public void tlUpdate(String json) { try { Timeline.update(json); } catch (Exception ignored) { } }
-        @JavascriptInterface public void tlStop() { Timeline.stop(); }
+        @JavascriptInterface public void tlStop() { Timeline.stop(); Player.I.timelineFocusDone(); }
         @JavascriptInterface public double tlPos() { return Timeline.pos(); }
+        @JavascriptInterface public String tlMeter() { return Timeline.meter(); }
+        @JavascriptInterface public void tlClick(String json) { Timeline.click(json); }
+        @JavascriptInterface public String tlCalib() { try { Timeline.calibrate(); return ""; } catch (Exception e) { return String.valueOf(e.getMessage()); } }
+
+        /** true once after the app was opened from the "new recording" shortcut */
+        @JavascriptInterface public boolean takeQuickRec() { boolean q = quickRec; quickRec = false; return q; }
+
+        /** asks the launcher to put a "new recording" icon on the home screen (Android 8+) */
+        @JavascriptInterface public boolean pinRecShortcut(String label) {
+            if (Build.VERSION.SDK_INT < 26) return false;
+            try {
+                android.content.pm.ShortcutManager sm = getSystemService(android.content.pm.ShortcutManager.class);
+                if (sm == null || !sm.isRequestPinShortcutSupported()) return false;
+                Intent i = new Intent(ACTION_QUICK_REC).setClass(MainActivity.this, MainActivity.class);
+                android.content.pm.ShortcutInfo si = new android.content.pm.ShortcutInfo.Builder(MainActivity.this, "rec-pin")
+                    .setShortLabel(label).setIcon(android.graphics.drawable.Icon.createWithResource(MainActivity.this, R.mipmap.ic_rec)).setIntent(i).build();
+                return sm.requestPinShortcut(si, null);
+            } catch (Exception e) {
+                return false;
+            }
+        }
 
         /* -- background jobs: waveform, editing, saving -- */
         @JavascriptInterface public String job(final String kind, final String argsJson) {
@@ -762,17 +1199,29 @@ public class MainActivity extends Activity implements Player.Listener {
             jobs.put(id, cancel);
             boolean bg = false;
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
-            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind);
-            if (heavy) WorkService.begin(MainActivity.this);
+            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"spectro".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind) && !"ttsStatus".equals(kind) && !"ttsDelete".equals(kind);
+            if (heavy) {
+                heavyIds.add(id);
+                WorkService.label(null);
+                WorkService.begin(MainActivity.this);
+                // 4.0.1: the "done" notification needs this permission (Android 13+); asked once per start, when long work begins
+                if (Build.VERSION.SDK_INT >= 33 && !askedNotif && !has(Manifest.permission.POST_NOTIFICATIONS)) {
+                    askedNotif = true;
+                    ui(new Runnable() { @Override public void run() { try { requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF); } catch (Exception ignored) { } } });
+                }
+            }
             (bg ? bgPool : heavy || "wsClean".equals(kind) || "tlClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
                 @Override
                 public void run() {
+                    String model = null;
                     try {
                         JSONObject a = new JSONObject(argsJson);
                         AudioTools.Progress p = new AudioTools.Progress() {
                             @Override public void on(double f) { jobProgress(id, f); }
                         };
                         JSONObject res;
+                        model = Device.model(kind, a);
+                        if (model != null) Device.begin(MainActivity.this, model);
                         if ("peaks".equals(kind)) {
                             AudioTools.Chunks ch = new AudioTools.Chunks() {
                                 @Override public void on(int from, byte[] data) { jobChunk(id, from, data); }
@@ -803,6 +1252,10 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.init(MainActivity.this, a.getJSONObject("src"), p, cancel);
                         } else if ("wsOp".equals(kind)) {
                             res = Workspace.op(MainActivity.this, a, p, cancel);
+                        } else if ("ttsSpeak".equals(kind)) {
+                            res = Tts.speak(MainActivity.this, a, p, cancel);
+                        } else if ("tlSfx".equals(kind)) {
+                            res = Timeline.sfx(MainActivity.this, a);
                         } else if ("tlAdd".equals(kind)) {
                             res = Timeline.add(MainActivity.this, a, p, cancel);
                         } else if ("fillers".equals(kind)) {
@@ -815,6 +1268,12 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = AsrModels.delete(MainActivity.this, a);
                         } else if ("asrStatus".equals(kind)) {
                             res = AsrModels.status(MainActivity.this);
+                        } else if ("sounds".equals(kind)) {
+                            res = Sounds.scan(MainActivity.this, a, p, cancel);
+                        } else if ("fwords".equals(kind)) {
+                            res = Workspace.fillerWords(MainActivity.this, a, p, cancel);
+                        } else if ("tlLoud".equals(kind)) {
+                            res = Workspace.clipLoud(a, p, cancel);
                         } else if ("loudness".equals(kind)) {
                             res = Workspace.loudness(MainActivity.this, a, p, cancel);
                         } else if ("ringtone".equals(kind)) {
@@ -827,12 +1286,28 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = Workspace.diagnose(MainActivity.this, a, p, cancel);
                         } else if ("clean".equals(kind)) {
                             res = Workspace.clean(MainActivity.this, a, p, cancel);
+                        } else if ("hdGet".equals(kind)) {
+                            res = Hd.download(MainActivity.this, p, cancel);
+                        } else if ("spkGet".equals(kind)) {
+                            res = Speakers.download(MainActivity.this, p, cancel);
+                        } else if ("tlSpk".equals(kind)) {
+                            res = Speakers.run(MainActivity.this, a, p, cancel);
                         } else if ("tlSep".equals(kind)) {
                             res = Separator.split(MainActivity.this, a, p, cancel);
                         } else if ("tlRender".equals(kind)) {
                             res = Timeline.render(MainActivity.this, a, p, cancel);
+                        } else if ("spectro".equals(kind)) {
+                            res = Workspace.spectro(a);
+                        } else if ("latency".equals(kind)) {
+                            res = Timeline.latency(MainActivity.this, a, p, cancel);
+                        } else if ("vad".equals(kind)) {
+                            res = Speakers.vad(MainActivity.this, a, p, cancel);
+                        } else if ("audiogram".equals(kind)) {
+                            res = Audiogram.run(MainActivity.this, a, p, cancel);
+                        } else if ("tlVideo".equals(kind)) {
+                            res = VideoMux.run(MainActivity.this, a, p, cancel);
                         } else if ("tlClean".equals(kind)) {
-                            Timeline.clean(MainActivity.this, a.optJSONArray("keep"));
+                            Timeline.clean(MainActivity.this, a.optJSONArray("keep"), a.optLong("since", Long.MAX_VALUE));
                             res = new JSONObject();
                         } else if ("wsExport".equals(kind)) {
                             res = Workspace.export(MainActivity.this, a, p, cancel);
@@ -845,6 +1320,12 @@ public class MainActivity extends Activity implements Player.Listener {
                             JSONObject tsrc = a.getJSONObject("src");
                             tsrc.put("_model", a.optString("model", ""));
                             res = Studio.transcribe(MainActivity.this, tsrc, a.optString("lang", ""), p, cancel);
+                        } else if ("musicKey".equals(kind)) {
+                            res = Studio.musicKey(MainActivity.this, a.getJSONObject("src"), p, cancel);
+                        } else if ("accelTest".equals(kind)) {
+                            res = Separator.accelTest(MainActivity.this, p, cancel);
+                        } else if ("songMap".equals(kind)) {
+                            res = Studio.songMap(MainActivity.this, a.getJSONObject("src"), p, cancel);
                         } else if ("beats".equals(kind)) {
                             res = Studio.beats(MainActivity.this, a.getJSONObject("src"), p, cancel);
                         } else {
@@ -855,7 +1336,8 @@ public class MainActivity extends Activity implements Player.Listener {
                         String msg = e instanceof OutOfMemoryError ? "memory" : String.valueOf(e.getMessage());
                         jobDone(id, false, "{\"error\":" + q(msg) + "}");
                     } finally {
-                        if (heavy) WorkService.end(MainActivity.this);
+                        if (model != null) Device.end();
+                        if (heavy) { heavyIds.remove(id); WorkService.end(MainActivity.this); }
                     }
                 }
             });

@@ -62,44 +62,60 @@ final class AsrModels {
         for (String h : hosts(m)) {
             try { for (int i = 0; i < SMALL.length; i++) sizes[i] = size(h + SMALL[i]); host = h; break; } catch (Exception ignored) { }
         }
-        if (host == null) throw new IllegalStateException("download-unreachable");
+        if (host == null) { fromGithub(c, m, d, p, cancel); return finish(c, d); }
         long total = 0, done = 0;
         for (long s : sizes) total += s;
-        for (int i = 0; i < SMALL.length; i++) {
-            File f = new File(d, SMALL[i]);
-            if (f.isFile() && f.length() == sizes[i]) { done += sizes[i]; continue; }
-            File part = new File(d, SMALL[i] + ".part");
-            long have = part.isFile() ? part.length() : 0;
-            HttpURLConnection con = (HttpURLConnection) new URL(host + SMALL[i]).openConnection();
-            con.setConnectTimeout(20000);
-            con.setReadTimeout(30000);
-            if (have > 0) con.setRequestProperty("Range", "bytes=" + have + "-");
-            int code = con.getResponseCode();
-            if (code != 200 && code != 206) throw new IllegalStateException("download-" + code);
-            if (code == 200) have = 0;   // the server ignored the range: start over
-            InputStream is = con.getInputStream();
-            RandomAccessFile out = new RandomAccessFile(part, "rw");
-            try {
-                out.setLength(have);
-                out.seek(have);
-                byte[] b = new byte[1 << 16];
-                int n;
-                long last = 0;
-                while ((n = is.read(b)) > 0) {
-                    if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
-                    out.write(b, 0, n);
-                    have += n;
-                    if (have - last > (1 << 20)) { last = have; p.on((double) (done + have) / total); }
-                }
-            } finally {
-                out.close();
-                is.close();
-                con.disconnect();
+        try {
+            for (int i = 0; i < SMALL.length; i++) {
+                File f = new File(d, SMALL[i]);
+                if (f.isFile() && f.length() == sizes[i]) { done += sizes[i]; continue; }
+                fetch(host + SMALL[i], f, sizes[i], done, total, p, cancel);
+                done += sizes[i];
             }
-            if (part.length() != sizes[i]) throw new IllegalStateException("download-short");
-            if (!part.renameTo(f)) throw new IllegalStateException("download-rename");
-            done += sizes[i];
+        } catch (InterruptedException e) {
+            throw e;
+        } catch (Exception e) {
+            if (cancel != null && cancel.get()) throw e;
+            fromGithub(c, m, d, p, cancel);
         }
+        return finish(c, d);
+    }
+
+    /** 3.4.6: Hugging Face could not be reached from the phone ("no internet"), GitHub can (the voices come from there):
+     *  the sherpa-onnx release archive holds the same int8 files, only those are unpacked */
+    static final String GH = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-";
+
+    private static void fromGithub(Context c, String m, final File d, final AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        String url = GH + m + ".tar.bz2";
+        File arc = new File(d, "whisper.tar.bz2");
+        long n;
+        try { n = size(url); } catch (Exception e) { MainActivity.saveNote(c, "whisper " + m + " download: " + e.getMessage()); throw new IllegalStateException("download-unreachable"); }
+        if (!arc.isFile() || arc.length() != n)
+            fetch(url, arc, n, 0, n, new AudioTools.Progress() { @Override public void on(double f) { p.on(f * 0.9); } }, cancel);
+        p.on(0.91);
+        final java.util.List<String> want = java.util.Arrays.asList(files(m));
+        InputStream in = new java.io.BufferedInputStream(new java.io.FileInputStream(arc), 1 << 16);
+        boolean ok = false;
+        try {
+            Untar.extract(in, new Untar.Place() {
+                @Override public File to(String name) {
+                    String base = name.substring(name.lastIndexOf('/') + 1);
+                    return want.contains(base) ? new File(d, base) : null;
+                }
+            });
+            ok = true;
+        } finally {
+            in.close();
+            if (!ok) {   // 5.14.2: a broken archive is downloaded again next time, and no half set of files stays
+                arc.delete();
+                for (String f : want) new File(d, f).delete();
+            }
+        }
+        arc.delete();
+        for (String f : files(m)) if (!new File(d, f).isFile()) throw new IllegalStateException("download-short");
+    }
+
+    private static JSONObject finish(Context c, File d) throws Exception {
         // the voice detector goes next to the model so both load from files
         File vad = new File(d, "silero_vad.onnx");
         if (!vad.isFile()) {
@@ -110,7 +126,92 @@ final class AsrModels {
         return status(c);
     }
 
-    private static long size(String url) throws Exception {
+    /** downloads url into f (resumable through f.part); progress counts from done of total bytes */
+    static void fetch(String url, File f, long size, long done, long total, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        File part = new File(f.getParentFile(), f.getName() + ".part");
+        long have = part.isFile() ? part.length() : 0;
+        HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
+        con.setConnectTimeout(20000);
+        con.setReadTimeout(30000);
+        if (have > 0) con.setRequestProperty("Range", "bytes=" + have + "-");
+        int code = con.getResponseCode();
+        if (code != 200 && code != 206) throw new IllegalStateException("download-" + code);
+        if (code == 200) have = 0;   // the server ignored the range: start over
+        InputStream is = con.getInputStream();
+        RandomAccessFile out = new RandomAccessFile(part, "rw");
+        try {
+            out.setLength(have);
+            out.seek(have);
+            byte[] b = new byte[1 << 16];
+            int n;
+            long last = 0;
+            while ((n = is.read(b)) > 0) {
+                if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
+                out.write(b, 0, n);
+                have += n;
+                if (have - last > (1 << 20)) { last = have; p.on((double) (done + have) / total); }
+            }
+        } finally {
+            out.close();
+            is.close();
+            con.disconnect();
+        }
+        if (part.length() != size) throw new IllegalStateException("download-short");
+        String want = SHA.get(url);
+        if (want != null && !want.equals(sha256(part))) { part.delete(); throw new IllegalStateException("download-bad"); }
+        if (!part.renameTo(f)) throw new IllegalStateException("download-rename");
+    }
+
+    /** 5.14.3: SHA-256 of every model with a fixed address (GitHub releases); Hugging Face files are checked by size only */
+    static final java.util.Map<String, String> SHA = new java.util.HashMap<>();
+    static {
+        SHA.put("https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2",
+                "911b2083efd7c0dca2ac3b358b75222660dc09fb716d64fbfc417ba6c99ff3de");
+        SHA.put("https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.tar.bz2",
+                "486a46afbb7ba798507190ffe02fea2dd726049af212e774537efac6afb210a6");
+        SHA.put("https://github.com/Topping1/LavaSR-ONNX/releases/download/Alpha-v0.1/enhancer_backbone.onnx",
+                "841e96d261dffdf1dc974f3d29e2cfcf1b16fd0b358749c1ace0bbfa1d4c8ddd");
+        SHA.put("https://github.com/Topping1/LavaSR-ONNX/releases/download/Alpha-v0.1/enhancer_backbone.onnx.data",
+                "a125a4ede7cfdd1073d906a3cadf2171a30be6a40f296ad28772e0ba258de8c5");
+        SHA.put("https://github.com/Topping1/LavaSR-ONNX/releases/download/Alpha-v0.1/enhancer_spec_head.onnx",
+                "f66fd164c55fd1b07e5cea5e687c71522b192f452691128fd7ae4e6b26dbc683");
+        SHA.put("https://github.com/Topping1/LavaSR-ONNX/releases/download/Alpha-v0.1/enhancer_spec_head.onnx.data",
+                "b855e309b027af9aa75285b97b345571b6bd695a30fde434d06c979d83885fd6");
+        SHA.put("https://github.com/k2-fsa/sherpa-onnx/releases/download/audio-tagging-models/sherpa-onnx-ced-tiny-audio-tagging-2024-04-19.tar.bz2",
+                "84baf315b57d61aa69480c4fee878dab54cbc7be3e877db334e65d8b087e23c3");
+        SHA.put("https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
+                "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2");
+        SHA.put("https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/UVR-MDX-NET-Inst_HQ_5.onnx",
+                "487e35ae87ed9af9914c85c357e60800c07b8196949e274fe884c18a0c620dbb");
+    }
+
+    static String sha256(File f) throws Exception {
+        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+        InputStream in = new java.io.FileInputStream(f);
+        try { byte[] b = new byte[1 << 16]; int n; while ((n = in.read(b)) > 0) md.update(b, 0, n); } finally { in.close(); }
+        StringBuilder sb = new StringBuilder();
+        for (byte x : md.digest()) sb.append(String.format(java.util.Locale.ROOT, "%02x", x));
+        return sb.toString();
+    }
+
+    /** file size: HEAD, or when that is refused (signed download links only allow GET) the first byte with GET */
+    static long size(String url) throws Exception {
+        try { return head(url); } catch (Exception e) {
+            HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
+            con.setConnectTimeout(15000);
+            con.setReadTimeout(15000);
+            con.setRequestProperty("Range", "bytes=0-0");
+            try {
+                int code = con.getResponseCode();
+                String cr = con.getHeaderField("Content-Range");
+                if (code == 206 && cr != null && cr.lastIndexOf('/') > 0) return Long.parseLong(cr.substring(cr.lastIndexOf('/') + 1).trim());
+                if (code == 200 && con.getContentLengthLong() > 0) return con.getContentLengthLong();
+                throw new IllegalStateException("head-" + code);
+            } finally { con.disconnect(); }
+        }
+    }
+
+    private static long head(String url) throws Exception {
         HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
         con.setRequestMethod("HEAD");
         con.setConnectTimeout(15000);

@@ -88,6 +88,17 @@ public final class Loudness extends Node {
         return g.get((int) Math.round(0.95 * (g.size() - 1))) - g.get((int) Math.round(0.10 * (g.size() - 1)));
     }
 
+    /** momentary (last 400 ms) and short-term (last 3 s) loudness in LUFS, for live meters */
+    public double momentary() { return recent(4); }
+    public double shortTerm() { return recent(30); }
+    private double recent(int k) {
+        if (nSubs == 0) return Double.NEGATIVE_INFINITY;
+        k = Math.min(k, nSubs);
+        double s = 0;
+        for (int i = nSubs - k; i < nSubs; i++) s += subs[i];
+        return lufs(s / k);
+    }
+
     static double lufs(double ms) { return ms <= 0 ? Double.NEGATIVE_INFINITY : -0.691 + 10 * Math.log10(ms); }
 
     public static double of(float[][] x, double fs) {

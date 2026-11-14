@@ -112,10 +112,13 @@ final class MediaLib {
                     boolean own = pkg.equals(owner) || (rel != null && rel.contains(FOLDER));
                     boolean isRecFlag = Build.VERSION.SDK_INT >= 31 && cur.getInt(cur.getColumnIndexOrThrow(MediaStore.Audio.Media.IS_RECORDING)) != 0;
                     boolean isMusic = cur.getInt(cur.getColumnIndexOrThrow(MediaStore.Audio.Media.IS_MUSIC)) != 0;
-                    String hay = ((rel == null ? "" : rel) + " " + (name == null ? "" : name)).toLowerCase(Locale.ROOT);
+                    // 5.14.3: the words are looked for in the folder; in the file name only as a recorder's prefix
+                    // ("Call Me Maybe.mp3" or "The Voice.mp3" are songs, "Call_2024….m4a" or "Voice 012.m4a" are recordings)
+                    String dirL = (rel == null ? "" : rel).toLowerCase(Locale.ROOT), nm = (name == null ? "" : name).toLowerCase(Locale.ROOT);
                     boolean rec = own || isRecFlag || !isMusic
-                        || hay.contains("record") || hay.contains("voice") || hay.contains("kayıt") || hay.contains("kayit")
-                        || hay.contains("sound_recorder") || hay.contains("call") || hay.contains("ptt-") || hay.contains("aud-");
+                        || dirL.contains("record") || dirL.contains("voice") || dirL.contains("kayıt") || dirL.contains("kayit")
+                        || dirL.contains("sound_recorder") || dirL.contains("call")
+                        || nm.matches("^(call|voice|record|rec|kay[ıi]t|ptt|aud)[ _-]?\\d.*") || nm.startsWith("ptt-") || nm.startsWith("aud-");
                     JSONObject o = new JSONObject();
                     o.put("id", "m:" + id);
                     o.put("mediaId", id);
@@ -222,16 +225,24 @@ final class MediaLib {
     }
 
     static Target create(Context c, String displayName, String mime) throws IOException {
+        return create(c, displayName, mime, "");
+    }
+
+    /** 3.7: recordings can go to Music (default), Recordings (Android 12+), Podcasts or Download, always in a "Ses Defteri" folder */
+    static Target create(Context c, String displayName, String mime, String dir) throws IOException {
         Target t = new Target();
         t.name = displayName;
         if (scoped()) {
             ContentValues v = new ContentValues();
             v.put(MediaStore.MediaColumns.DISPLAY_NAME, displayName);
             v.put(MediaStore.MediaColumns.MIME_TYPE, mime);
-            v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/" + FOLDER);
+            boolean dl = "download".equals(dir);
+            String base = dl ? Environment.DIRECTORY_DOWNLOADS : "podcasts".equals(dir) ? Environment.DIRECTORY_PODCASTS
+                : "recordings".equals(dir) && Build.VERSION.SDK_INT >= 31 ? Environment.DIRECTORY_RECORDINGS : Environment.DIRECTORY_MUSIC;
+            v.put(MediaStore.MediaColumns.RELATIVE_PATH, base + "/" + FOLDER);
             v.put(MediaStore.MediaColumns.IS_PENDING, 1);
             Uri u = null;
-            try { u = c.getContentResolver().insert(audioCollection(), v); } catch (Exception ignored) { }
+            try { u = c.getContentResolver().insert(dl ? MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY) : audioCollection(), v); } catch (Exception ignored) { }
             if (u == null) {
                 v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + FOLDER);
                 u = c.getContentResolver().insert(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), v);
@@ -315,6 +326,15 @@ final class MediaLib {
             out.close(); out = null;
             JSONObject o = publish(c, t);
             if (o == null) throw new IOException("publish failed");
+            // the media library has not read a fresh file yet: its length was 0 and the player/wave had nothing to go by
+            try {
+                if (o.optLong("dur", 0) <= 0) {
+                    JSONObject src = o.optJSONObject("src");
+                    Uri su = src != null ? srcUri(src) : null;
+                    File sf = src != null ? srcFile(src) : null;
+                    o.put("dur", su != null ? AudioTools.durationMs(c.getApplicationContext(), su) : sf != null ? AudioTools.durationMs(null, sf) : 0);
+                }
+            } catch (Exception ignored) { }
             return o;
         } catch (IOException e) {
             discard(c, t);
@@ -329,6 +349,7 @@ final class MediaLib {
     static JSONObject copyInTarget(Context c, Target t, File from) throws IOException {
         InputStream in = null;
         OutputStream out = null;
+        JSONObject item = null;
         try {
             in = new FileInputStream(from);
             out = open(c, t);
@@ -336,10 +357,12 @@ final class MediaLib {
             int n;
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
             out.close(); out = null;
-            return publish(c, t);
+            item = publish(c, t);
+            return item;
         } finally {
             try { if (in != null) in.close(); } catch (IOException ignored) { }
             try { if (out != null) out.close(); } catch (IOException ignored) { }
+            if (item == null) discard(c, t);   // 5.14.2: a half-written copy (storage full) is not left behind, in every format
         }
     }
 

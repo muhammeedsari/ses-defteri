@@ -60,7 +60,10 @@ public class PlayerService extends Service {
             // a service started with startForegroundService must always enter the foreground first
             if (Build.VERSION.SDK_INT >= 29) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
             else startForeground(ID, n);
-        } catch (Exception ignored) { }
+        } catch (Exception e) {   // 5.14.3: e.g. started from the background on Android 12+: noted, and the service does not linger
+            MainActivity.saveNote(this, "player service: " + e);
+            if (!p.isPlaying()) { stopSelf(); return START_NOT_STICKY; }
+        }
         if (A_STOP.equals(a)) {
             p.stop();
             try {

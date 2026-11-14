@@ -45,6 +45,7 @@ public final class Enhancer {
         public double hpfHz;
         public double[] notches = new double[0];
         public boolean clicks, plosives;
+        public boolean voice = true;              // 5.14.2: a voice recording with no speech found gets at most +6 dB
         public double[] noisePower;               // null = no noise reduction
         public double nrDb, overSub;
         public double[] eqBandsDb;                // null = no EQ
@@ -95,6 +96,7 @@ public final class Enhancer {
     public static Plan plan(Analyzer.Analysis a, Options o) {
         Plan p = new Plan();
         p.analysis = a;
+        p.voice = o.voice;
         p.fs = a.fs;
         p.inCh = a.inCh;
         p.channelMode = a.channelMode;

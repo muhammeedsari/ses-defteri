@@ -17,7 +17,7 @@ public final class Transcriber {
     public static final class Segment {
         public final double start, end;
         public final String text;
-        Segment(double s, double e, String t) { start = s; end = e; text = t; }
+        public Segment(double s, double e, String t) { start = s; end = e; text = t; }
     }
 
     public interface Listener { void onSegment(Segment s); }
@@ -29,6 +29,7 @@ public final class Transcriber {
     private int winFill;
     private Listener listener;
     public String detectedLang = "";
+    public double offset;   // 4.1: seconds already done before the first sample given (a resumed run)
 
     /**
      * @param assets AssetManager (paths are asset names) or null (paths are files)
@@ -100,7 +101,7 @@ public final class Transcriber {
         while (!vad.empty()) {
             SpeechSegment s = vad.front();
             vad.pop();
-            double st = s.start / (double) RATE, en = st + s.samples.length / (double) RATE;
+            double st = offset + s.start / (double) RATE, en = st + s.samples.length / (double) RATE;
             // each sentence at a steady level: quiet or far-away speech is recognised as well as close speech
             float[] x = s.samples;
             float pk = 0;
@@ -135,6 +136,19 @@ public final class Transcriber {
         }
         if (t.matches("[\\p{Punct}\\s♪]*")) return "";
         return t;
+    }
+
+    /** 4.7: one short 16 kHz snippet straight to Whisper (no voice detection); "" when nothing was said */
+    public String recognize(float[] x) {
+        float pk = 0;
+        for (float v : x) pk = Math.max(pk, Math.abs(v));
+        if (pk > 1e-4f && pk < 0.7f) { float g = Math.min(12f, 0.8f / pk); x = x.clone(); for (int i = 0; i < x.length; i++) x[i] *= g; }
+        OfflineStream os = rec.createStream();
+        os.acceptWaveform(x, RATE);
+        rec.decode(os);
+        OfflineRecognizerResult r = rec.getResult(os);
+        os.release();
+        return clean(r.text);
     }
 
     public void release() { vad.release(); rec.release(); }

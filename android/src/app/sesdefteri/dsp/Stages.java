@@ -359,7 +359,7 @@ public final class Stages {
         final float fb, mix;
         final float[][] buf;
         int w;
-        final long tail;
+        final long tail, fade;
         public Delay(int ch, double fs, double ms, double feedback, double mixAmt) {
             this.ch = ch;
             d = Math.max(1, (int) Math.round(fs * ms / 1000));
@@ -367,7 +367,8 @@ public final class Stages {
             mix = (float) Math.max(0, Math.min(1, mixAmt));
             buf = new float[ch][d];
             double rep = fb > 0.01 ? Math.log(0.001) / Math.log(fb) : 1;
-            tail = Math.min((long) (fs * 4), (long) (d * (rep + 1)));
+            tail = Math.min((long) (fs * 20), (long) (d * (rep + 1)));   // 5.14.3: up to 20 s (was 4 s)
+            fade = Math.min(tail, (long) (fs * 0.5));
         }
         @Override public void push(float[][] b, int n) throws Exception {
             for (int i = 0; i < n; i++) {
@@ -381,8 +382,13 @@ public final class Stages {
             next.push(b, n);
         }
         @Override public void end() throws Exception {
-            float[][] z = new float[ch][4096];
-            for (long t = 0; t < tail; t += 4096) { for (float[] q : z) java.util.Arrays.fill(q, 0); push(z, (int) Math.min(4096, tail - t)); }
+            float[][] z = new float[ch][512];
+            for (long t = 0; t < tail; t += 512) {
+                long left = tail - t;
+                if (left < fade) { float g = (float) Math.max(0, (left - 512) / (double) left); for (float[] q : buf) for (int i = 0; i < q.length; i++) q[i] *= g; }   // 5.14.3: the echo fades out instead of stopping
+                for (float[] q : z) java.util.Arrays.fill(q, 0);
+                push(z, (int) Math.min(512, left));
+            }
             next.end();
         }
     }
@@ -396,11 +402,14 @@ public final class Stages {
         final float[][] cf;
         final float fb, damp, wet, dry;
         final long tail;
-        public Reverb(int ch, double fs, double room, double mixAmt) {
+        public Reverb(int ch, double fs, double room, double mixAmt) { this(ch, fs, room, mixAmt, 0.3); }
+
+        /** soft: 0 bright … 1 dark tail (3.8 "softness") */
+        public Reverb(int ch, double fs, double room, double mixAmt, double soft) {
             this.ch = ch;
             double sc = fs / 44100.0;
             fb = (float) (0.7 + 0.28 * Math.max(0, Math.min(1, room)));
-            damp = 0.3f;
+            damp = (float) Math.max(0.05, Math.min(0.9, soft));
             wet = (float) Math.max(0, Math.min(1, mixAmt)) * 0.35f;
             dry = 1f - (float) Math.max(0, Math.min(1, mixAmt)) * 0.3f;
             cb = new float[ch][COMB.length][]; ab = new float[ch][AP.length][];
