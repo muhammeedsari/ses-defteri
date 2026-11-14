@@ -346,6 +346,7 @@ final class MediaLib {
     static JSONObject copyInTarget(Context c, Target t, File from) throws IOException {
         InputStream in = null;
         OutputStream out = null;
+        JSONObject item = null;
         try {
             in = new FileInputStream(from);
             out = open(c, t);
@@ -353,10 +354,12 @@ final class MediaLib {
             int n;
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
             out.close(); out = null;
-            return publish(c, t);
+            item = publish(c, t);
+            return item;
         } finally {
             try { if (in != null) in.close(); } catch (IOException ignored) { }
             try { if (out != null) out.close(); } catch (IOException ignored) { }
+            if (item == null) discard(c, t);   // 5.14.2: a half-written copy (storage full) is not left behind, in every format
         }
     }
 

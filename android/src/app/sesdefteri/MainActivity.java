@@ -525,6 +525,12 @@ public class MainActivity extends Activity implements Player.Listener {
     static volatile boolean visible;   // the app is on screen (no "work done" notification then)
 
     @Override
+    protected void onStop() {
+        Tuner.stop();   // 5.14.2: the tuner does not keep the microphone when the app is left; it starts again on return
+        super.onStop();
+    }
+
+    @Override
     protected void onPause() {
         resumed = false;
         visible = false;
@@ -559,6 +565,7 @@ public class MainActivity extends Activity implements Player.Listener {
 
     @Override
     protected void onDestroy() {
+        Tuner.stop();
         Player.I.init(this, null);
         Timeline.stop();
         if (web != null) {
@@ -964,6 +971,15 @@ public class MainActivity extends Activity implements Player.Listener {
                 }
             });
             return id;
+        }
+        /** 5.14.2: how many of these project files are gone (["path", …]) */
+        @JavascriptInterface public int missing(String paths) {
+            int n = 0;
+            try {
+                JSONArray a = new JSONArray(paths);
+                for (int i = 0; i < a.length(); i++) if (!new java.io.File(a.getString(i)).isFile()) n++;
+            } catch (Exception ignored) { }
+            return n;
         }
         /** Android 12+: "media management" lets the app delete without asking every time */
         @JavascriptInterface public boolean canManageMedia() {

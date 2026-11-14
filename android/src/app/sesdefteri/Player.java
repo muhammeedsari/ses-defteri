@@ -502,9 +502,14 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
         try {
             mp = newPlayer(it);
             mp.prepareAsync();
-        } catch (Exception e) {
+        } catch (Exception e) {   // 5.14.2: the file cannot be opened (deleted, moved): stop cleanly instead of "playing" nothing
             error = "load";
             releasePlayer();
+            playing = false; wantPlay = false;
+            PlayerService.update(app, false);
+            updateMeta(it);
+            emit("error");
+            return;
         }
         updateMeta(it);
         loadArt(it);
@@ -629,6 +634,7 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     /* ---------- controls ---------- */
 
     synchronized void play() {
+        if (sleepAt > 0 && System.currentTimeMillis() >= sleepAt) { sleepAt = 0; sleepEnd = false; }   // 5.14.2: a timer that ran out while paused does not stop the new start
         if (mp == null) {
             if (current() != null) load(0, true);
             return;

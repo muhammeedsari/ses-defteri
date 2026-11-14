@@ -332,7 +332,7 @@ final class Recorder {
                 MediaLib.discard(c, target);
                 target = null;
                 res.put("ok", false);
-                res.put("error", "empty");
+                res.put("error", fail != null && s != null && s.frames() > rate / 10 ? "write" : "empty");
                 return res.toString();
             }
             JSONObject item = MediaLib.publish(c, target);
@@ -340,6 +340,7 @@ final class Recorder {
             if (item == null) { res.put("ok", false); res.put("error", "publish"); return res.toString(); }
             res.put("ok", true);
             res.put("item", item);
+            if (fail != null) res.put("cut", true);   // the loop stopped early (storage full, microphone lost): what came before is kept
         } catch (Exception e) {
             try { res.put("ok", false); res.put("error", String.valueOf(e.getMessage())); } catch (Exception ignored) { }
         }
@@ -359,7 +360,7 @@ final class Recorder {
             ar.release();
         }
         ar = null;
-        return fail == null && sink != null && sink.frames() > rate / 10;
+        return sink != null && sink.frames() > rate / 10;
     }
 
     static synchronized void cancel(Context c) {
@@ -421,7 +422,7 @@ final class Recorder {
     static final class WavSink implements Sink {
         final FileChannel fc;
         ByteBuffer bb = ByteBuffer.allocate(0);
-        long fr;
+        long fr, hdr;
 
         WavSink(FileChannel fc) throws Exception { this.fc = fc; fc.write(ByteBuffer.wrap(app.sesdefteri.dsp.Wav.header(chans, rate, false, 0))); }
 
@@ -432,6 +433,10 @@ final class Recorder {
             bb.flip();
             while (bb.hasRemaining()) fc.write(bb);
             fr += n / chans;
+            if (fr - hdr >= rate * 5L) {   // every ~5 s: a recording cut short by a crash still plays
+                hdr = fr;
+                fc.write(ByteBuffer.wrap(app.sesdefteri.dsp.Wav.header(chans, rate, false, fr)), 0);   // positional: the write position stays
+            }
         }
         @Override public long frames() { return fr; }
         @Override public void finish() throws Exception {
@@ -556,7 +561,7 @@ final class Recorder {
 
     /** {"state": rec|paused|idle, "call": paused because of a call} */
     static synchronized String info() {
-        return "{\"state\":\"" + state + "\",\"call\":" + auto + "}";
+        return "{\"state\":\"" + state + "\",\"call\":" + auto + ",\"fail\":" + (fail != null) + "}";
     }
 
     static synchronized boolean resumeManual() { auto = false; return resume(); }

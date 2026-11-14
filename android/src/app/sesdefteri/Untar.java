@@ -42,6 +42,7 @@ final class Untar {
                 f.getParentFile().mkdirs();
                 File part = new File(f.getPath() + ".part");
                 OutputStream os = new FileOutputStream(part);
+                boolean ok = false;
                 try {
                     long left = size;
                     while (left > 0) {
@@ -50,7 +51,8 @@ final class Untar {
                         os.write(b, 0, n);
                         left -= n;
                     }
-                } finally { os.close(); }
+                    ok = true;
+                } finally { os.close(); if (!ok) part.delete(); }   // 5.14.2: a broken file is not left half-written
                 if (!part.renameTo(f)) throw new IOException("rename");
                 skip(in, pad);
             } else {
@@ -85,7 +87,16 @@ final class Untar {
         // output of the current block
         int tPos, left, last = -1, run, repeat;
         byte repByte;
-        boolean eof;
+        boolean eof, active;
+        int crc, want;   // 5.14.2: every block is checked against its CRC
+        static final int[] CRC = new int[256];
+        static {
+            for (int i = 0; i < 256; i++) {
+                int c = i << 24;
+                for (int k = 0; k < 8; k++) c = (c & 0x80000000) != 0 ? (c << 1) ^ 0x04c11db7 : c << 1;
+                CRC[i] = c;
+            }
+        }
 
         Bz2(InputStream in) throws IOException { this.in = new java.io.BufferedInputStream(in, 1 << 16); header(); }
 
@@ -120,7 +131,7 @@ final class Untar {
                 if (magic != 0x314159265359L) throw new IOException("bz2 block");
                 break;
             }
-            bits(32);   // block CRC
+            want = bits(32);   // block CRC
             if (bit() != 0) throw new IOException("bz2 randomised");
             int origPtr = bits(24);
             // symbols in use
@@ -219,6 +230,7 @@ final class Untar {
             tPos = tt[origPtr] >>> 8;
             left = n;
             last = -1; run = 0;
+            crc = -1; active = true;
             return true;
         }
 
@@ -255,10 +267,12 @@ final class Untar {
             while (got < len) {
                 int c = next();
                 if (c < 0) {
+                    if (active) { active = false; if (~crc != want) throw new IOException("bz2 crc"); }
                     if (got > 0) return got;
                     if (!block()) { eof = true; return -1; }
                     continue;
                 }
+                crc = (crc << 8) ^ CRC[((crc >>> 24) ^ c) & 0xff];
                 b[off + got++] = (byte) c;
             }
             return got;

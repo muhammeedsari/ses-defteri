@@ -167,6 +167,9 @@ final class VideoMux {
             File d = new File(base, MediaLib.FOLDER);
             if (!d.exists()) d.mkdirs();
             f = new File(d, name);
+            int dot = name.lastIndexOf('.');
+            for (int i = 2; f.exists(); i++)   // 5.14.2: never over an earlier video with the same name
+                f = new File(d, (dot > 0 ? name.substring(0, dot) : name) + " (" + i + ")" + (dot > 0 ? name.substring(dot) : ""));
             out = new FileOutputStream(f);
         }
         InputStream in = new FileInputStream(from);
@@ -193,7 +196,7 @@ final class VideoMux {
         }
         JSONObject o = new JSONObject();
         o.put("src", src);
-        o.put("name", name);
+        o.put("name", f != null ? f.getName() : name);
         o.put("gallery", u != null);
         return o;
     }

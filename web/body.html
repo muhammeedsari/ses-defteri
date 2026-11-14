@@ -250,6 +250,7 @@
 <script src="i18n59.js"></script>
 <script src="i18n60.js"></script>
 <script src="i18n61.js"></script>
+<script src="i18n62.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -261,10 +262,13 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.14.1';
+const VERSION = '5.14.2';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem('sd:' + k, JSON.stringify(v)); } catch (e) {} }
+  set(k, v) {
+    try { localStorage.setItem('sd:' + k, JSON.stringify(v)); if (k === 'proj') this.pw = 0; return true; }
+    catch (e) { if (k === 'proj' && !this.pw) { this.pw = 1; try { toast(t('tlSaveFail'), 6000); } catch (x) {} } return false; }   // 5.14.2: a project that could not be saved says so, once
+  }
 };
 const bars = m => { if (AND) { try { AND.setBars(m); } catch (e) {} } };
 const POL = document.permissionsPolicy || document.featurePolicy;
@@ -2793,6 +2797,15 @@ function tlLoad() {
   if (!TL.p.tracks.length) TL.p.tracks.push({ vol: 0, mute: false });
   if (TL.p.clips.length) for (let i = TL.p.tracks.length - 1; i >= 0 && TL.p.tracks.length > 1; i--)   // 4.4.1: empty tracks close up
     if (!TL.p.clips.some(c => c.tr === i)) { TL.p.tracks.splice(i, 1); for (const c of TL.p.clips) if (c.tr > i) c.tr--; }
+  setTimeout(() => tlMissing(), 600);
+}
+/** 5.14.2: clips whose file is gone are silent in playback and export: say how many */
+function tlMissing(list) {
+  if (!AND || !AND.missing || !TL.p) return 0;
+  const ps = [...new Set((list || TL.p.clips).map(c => c.path).filter(Boolean))];
+  let n = 0; try { n = ps.length ? AND.missing(JSON.stringify(ps)) : 0; } catch (e) {}
+  if (n) toast(t('tlMissing', { n }), 6000);
+  return n;
 }
 const tlLen = c => c.out - c.in;
 const tlEnd = () => TL.p.clips.reduce((m, c) => Math.max(m, c.at + tlLen(c)), 0);
@@ -2841,14 +2854,14 @@ function tlUndo(redo) {
 function tlClean() {
   const keep = new Set(), cb = tlClip(), add = c => { keep.add(c.path); if (c.prev) keep.add(c.prev); if (c.src) keep.add(c.src); for (const h of c.hc || []) keep.add(h.path); for (const f of c.fx || []) if (f.b) { keep.add(f.b.path); if (f.b.src) keep.add(f.b.src); for (const h of f.b.hc || []) keep.add(h.path); } };
   TL.p.clips.forEach(add);
-  if (cb) keep.add(cb.path);
+  if (cb) add(cb);   // 5.14.2: the copied clip keeps its effect backups too
   for (const s of TL.undo.concat(TL.redo)) try { JSON.parse(s).clips.forEach(add); } catch (e) {}
   try { runJob('tlClean', { keep: [...keep], since: Date.now() - 60000 }).catch(() => {}); } catch (e) {}
 }
 /** what the native mixer plays: one entry per audible clip */
 function tlMix() {
   const tr = TL.p.tracks;
-  return TL.p.clips.filter(c => tr[c.tr] && !tr[c.tr].mute).map(c => { const [xi, xo] = tlXf(c); return { path: c.path, at: c.at, in: c.in, len: tlLen(c),
+  return TL.p.clips.filter(c => tr[c.tr] && !tr[c.tr].mute).map(c => { const [xi, xo] = tlXf(c); return { id: c.id, path: c.path, at: c.at, in: c.in, len: tlLen(c),
     g: Math.pow(10, ((c.gain || 0) + (tr[c.tr].vol || 0)) / 20), pan: c.pan || 0, fx: c.rk && c.rk.some(f => RACK[f.k]) ? c.rk.filter(f => RACK[f.k]) : null, fi: c.fi || 0, fo: c.fo || 0, xi, xo, env: tlEnvMix(c), duck: tr[c.tr].duck ? (tr[c.tr].duckDb || -12) : 0, eq: c.eq || null, bass: c.bass || 0, treble: c.treble || 0,
     talk: TL.p.aiDuck && !tr[c.tr].duck && c.vad && c.vad.path === c.path ? c.vad.segs : null }; }).concat(TL.p.master && TL.p.master.on && !TL.abOff ? [{ master: TL.p.master }] : []);
 }
@@ -3350,8 +3363,9 @@ async function tlExport() {
     const fa = { format: f }; if (EXQ[f]) fa.kbps = EXQ[f][q];
     if (S.chans === 'mono' || S.chans === 'stereo') fa.chans = S.chans;
     let clips = tlMix();
-    if (solo) clips = clips.filter(m => m.path === sel.path && m.at === sel.at).map(m => Object.assign(m, { at: 0, xi: 0, xo: 0, duck: 0 }));
+    if (solo) clips = clips.filter(m => m.id === sel.id).map(m => Object.assign(m, { at: 0, xi: 0, xo: 0, duck: 0 }));
     if (!clips.length) { toast(t('exMuted'), 3500); return; }
+    tlMissing(clips.filter(m => m.path));
     try {
       const mix = await tlRunJob(t('tlMixing'), 'tlRender', { clips });
       if (how === 'ring') {
@@ -4547,7 +4561,7 @@ async function tlRec() {
   if (!res.ok) { toast(t('recFail'), 4200); return; }
   // hear the other tracks (and the metronome, with one bar to count in) while recording
   const ck = tlClickCfg(), pre = ck.on && ck.count ? ck.bar * 60 / ck.bpm : 0, cue = ck.on || (ls.get('recCue', true) && TL.pos < tlEnd() - 0.1);
-  TL.rec = { at: TL.pos - pre, pre, cue, t0: performance.now(), started: Date.now() };
+  TL.rec = { at: TL.pos - pre, pre, cue, t0: performance.now(), started: Date.now(), f: 0 };
   if (cue) tlPlay(null, TL.pos - pre, ck.on ? 3600 : 0);
   renderTlBar();
   const loop = () => {
@@ -4556,6 +4570,7 @@ async function tlRec() {
     if (!TL.play) TL.pos = Math.max(0, r.at + len);
     const el = $('#tlRecT'); if (el) el.textContent = len < r.pre ? '−' + Math.ceil(r.pre - len) : fmt(len - r.pre);
     drawTl();
+    if (!(++r.f % 30)) { let i = {}; try { i = JSON.parse(AND.recInfo()); } catch (e) {} if (i.fail) { tlRecStop(); return; } }
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
@@ -4567,6 +4582,7 @@ async function tlRecStop() {
   try { res = JSON.parse(AND.recStop()); } catch (e) { res = {}; }
   renderTlBar(); drawTl();
   if (!res.ok || !res.item) { toast(t(res.error === 'empty' ? 'recShort' : 'recSaveFail'), 4000); return; }
+  if (res.cut) toast(t('recCut'), 6000);
   const it = fromNative(res.item, null);
   Object.assign(it, { title: defaultTitle('voice', r.started), userTitle: true, created: r.started, categoryId: defaultCat(), notes: '', bookmarks: [], source: 'mic', mode: 'voice', fav: false, kind: 'rec' });
   S.items.set(it.id, it); await saveRec(it);
@@ -5405,6 +5421,7 @@ async function finishNative() {
   try { res = JSON.parse(AND.recStop()); } catch (e) { res = { ok: false }; }
   R.native = false;
   if (!res.ok || !res.item) { R.state = 'idle'; updateRecUI(); closeOverlay('rec'); toast(t(res.error === 'empty' ? 'recShort' : 'recSaveFail'), 4000); return; }
+  if (res.cut) toast(t('recCut'), 6000);
   const it = fromNative(res.item, null);
   it.title = defaultTitle(R.mode, R.started); it.userTitle = true; it.created = R.started;
   if (!it.duration) it.duration = R.endEl;
@@ -5529,6 +5546,7 @@ function showRecWarn(k) {
 }
 function recCallSync() {
   let i = {}; try { i = JSON.parse(AND.recInfo()); } catch (e) { return; }
+  if (i.fail && (R.state === 'rec' || R.state === 'paused')) { stopRec(false); return; }   // 5.14.2: storage full or microphone lost: keep what was recorded
   if (i.call && R.state === 'rec') { R.acc = elapsed(); R.state = 'paused'; R.callPaused = true; updateRecUI(); showRecWarn('wCall'); }
   else if (R.callPaused && i.state === 'rec' && R.state === 'paused') { R.callPaused = false; R.t0 = performance.now(); R.state = 'rec'; updateRecUI(); showRecWarn(null); }
 }
@@ -5731,6 +5749,7 @@ async function wakeOn() {
 function wakeOff() { try { R.wake && R.wake.release(); } catch (e) {} R.wake = null; }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
+  if (NATIVE && window.__sdTune) try { AND.tunerStart(); } catch (e) {}
   if (!R.native && (R.state === 'rec' || R.state === 'paused') && !R.wake) wakeOn();
   if (NATIVE && audio.refresh) audio.refresh();
   scheduleBackground(1500);
@@ -5944,7 +5963,8 @@ const pauseArgs = () => ({ pmax: S.pauseMax, pkeep: PAUSE_KEEP[S.pauseMax] || 0.
 const tlClip = () => ls.get('tlClip', null);
 function tlCopy(cut) {
   const c = tlSel(); if (!c) return;
-  ls.set('tlClip', { path: c.path, ch: c.ch, dur: c.dur, in: c.in, out: c.out, gain: c.gain || 0, fi: c.fi || 0, fo: c.fo || 0, eq: c.eq || null, bass: c.bass || 0, treble: c.treble || 0, env: c.env || null, fx: c.fx || [], name: c.name || '', kind: c.kind || tlKind(c.tr), at: c.at });
+  const cb = JSON.parse(JSON.stringify(c)); delete cb.id; delete cb.tr; cb.kind = c.kind || tlKind(c.tr);   // 5.14.2: everything, effect list (rk) and pan too
+  ls.set('tlClip', cb);
   if (cut) tlDelete(); else renderTlBar();
   toast(t(cut ? 'tlCutDone' : 'tlCopied'));
 }
@@ -6525,7 +6545,7 @@ function welcome() {
   if (stack.length) return;   // a shortcut opened the recorder: try again next start
   const last = ls.get('lastVer', '');
   ls.set('lastVer', VERSION);
-  if (!ls.get('introDone', false) && !last && !S.items.size) { showIntro(false); return; }
+  if (!ls.get('introDone', false) && !last && !S.items.size) { ls.set('news4101', true); showIntro(false); return; }   // 5.14.2: a new install does not get the news card on its second start
   ls.set('introDone', true);
   const mm = v => String(v).split('.').slice(0, 2).join('.');   // a fix release (4.0.1) does not show the card again
   // 4.10.1: the card was out of date in 4.10, so it shows once more; the edit-screen hint is new too

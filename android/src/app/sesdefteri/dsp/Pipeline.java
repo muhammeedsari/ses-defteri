@@ -176,7 +176,8 @@ public final class Pipeline {
 
     /** gain that lands on the target loudness after the limiter (measured, up to 3 tries) */
     static double finalGain(Enhancer.Plan plan, double midLufs, FileTemp tmp, int fs) throws Exception {
-        double gain = Double.isInfinite(midLufs) ? 0 : Enhancer.clamp(plan.target.lufs - midLufs, -30, 30);
+        double max = plan.voice && plan.analysis != null && plan.analysis.speechFrames == 0 ? 6 : 36;   // 5.14.2: only noise found: do not lift it 30 dB
+        double gain = Double.isInfinite(midLufs) ? 0 : Enhancer.clamp(plan.target.lufs - midLufs, -30, Math.min(30, max));
         for (int it = 0; it < 3; it++) {
             Loudness probe = new Loudness(plan.outCh, fs);
             Limiter lim = new Limiter(plan.outCh, fs, plan.target.ceilingDb, gain);
@@ -185,7 +186,7 @@ public final class Pipeline {
             tmp.replay(lim, null);
             double got = probe.integrated();
             if (Double.isInfinite(got) || Math.abs(plan.target.lufs - got) < 0.2) break;
-            gain = Enhancer.clamp(gain + (plan.target.lufs - got) * 1.1, -30, 36);
+            gain = Enhancer.clamp(gain + (plan.target.lufs - got) * 1.1, -30, max);
         }
         return gain;
     }
