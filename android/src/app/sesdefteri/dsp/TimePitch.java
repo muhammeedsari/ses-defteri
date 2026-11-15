@@ -174,6 +174,8 @@ public final class TimePitch extends Node {
         }
         fft.transform(cre, cim, false);
         for (int k = 0; k < bins; k++) env[k] = cre[k];
+        double e0 = 0, e1 = 0;
+        for (int k = 0; k < bins; k++) e0 += mag[k] * mag[k];
         for (int k = 0; k < bins; k++) {
             double src = k * pitch;
             double e;
@@ -182,6 +184,13 @@ public final class TimePitch extends Node {
             double d = e - env[k];
             if (d > 2.3) d = 2.3;                                 // at most +20 dB
             mag[k] *= Math.exp(d);
+            e1 += mag[k] * mag[k];
+        }
+        // 5.14.3: the frame keeps its energy, so keeping the formants does not change the level (was about -4 dB)
+        if (e1 > 1e-12 && e0 > 1e-12) {
+            double g = Math.sqrt(e0 / e1);
+            if (g > 2) g = 2; else if (g < 0.5) g = 0.5;
+            for (int k = 0; k < bins; k++) mag[k] *= g;
         }
     }
 

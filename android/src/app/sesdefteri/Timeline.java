@@ -23,6 +23,8 @@ final class Timeline {
     private Timeline() { }
 
     static final int RATE = 48000;
+    static final double HALF_PI = Math.PI / 2;
+    static final float ENV_FLOOR = -40;   // the bottom of the volume line is silence
 
     static File dir(Context c) {
         File d = new File(c.getFilesDir(), "proj");
@@ -49,11 +51,27 @@ final class Timeline {
         }
     }
 
-    static void clean(Context c, JSONArray keep) {
+    /** 3.3: a ready-made sound, synthesised into a new project clip */
+    static JSONObject sfx(Context c, JSONObject a) throws Exception {
+        String id = a.getString("id");
+        float[][] y = app.sesdefteri.dsp.Sfx.finish(id, app.sesdefteri.dsp.Sfx.make(id, RATE), RATE);
+        File out = new File(dir(c), "c" + System.nanoTime() + ".wav");
+        Studio.WavNode w = new Studio.WavNode(out, RATE);
+        w.push(y, y[0].length);
+        w.end();
+        JSONObject o = new JSONObject();
+        o.put("path", out.getAbsolutePath());
+        o.put("dur", y[0].length * 1000.0 / RATE);
+        o.put("ch", 2);
+        return o;
+    }
+
+    /** deletes project files not in keep; files written at or after `since` (when keep was made) are spared: a job queued before this one may have just made them */
+    static void clean(Context c, JSONArray keep, long since) {
         java.util.HashSet<String> k = new java.util.HashSet<>();
         if (keep != null) for (int i = 0; i < keep.length(); i++) k.add(keep.optString(i));
         File[] fs = dir(c).listFiles();
-        if (fs != null) for (File f : fs) if (!k.contains(f.getAbsolutePath())) f.delete();
+        if (fs != null) for (File f : fs) if (!k.contains(f.getAbsolutePath()) && f.lastModified() < since) f.delete();
     }
 
     /* ---------- mixing ---------- */
@@ -62,19 +80,94 @@ final class Timeline {
         RandomAccessFile f;
         int ch, rate;
         long frames, at, in, len;
-        float g, duck = 1;   // duck: gain while the other tracks are speaking (1 = never ducked)
-        int fi, fo;
+        float g, pl = 1, pr = 1, duck = 1;   // pl / pr: left / right balance (4.13 pan); duck: gain while the other tracks are speaking (1 = never ducked)
+        int fi, fo, xi, xo;   // xi / xo: crossfades with the neighbouring clip on the same track (equal power)
+        double[] et; float[] ed;   // volume line: times in frames from the clip start, levels in dB
         byte[] buf = new byte[0];
         java.util.ArrayList<app.sesdefteri.dsp.Biquad> eq;   // live 5-band EQ (null = flat)
+        app.sesdefteri.dsp.Tone tone;   // bass / treble (null = off)
         float[][] tmp = new float[2][0];
+        app.sesdefteri.dsp.Node rack;   // 5.0: the clip's own live effects (null = none)
+        RackOut rout;
+        long tail;                      // how long its echoes ring on after the clip ends (frames)
+    }
+
+    /** the end of a clip's effect chain: holds what came out */
+    static final class RackOut extends app.sesdefteri.dsp.Node {
+        float[][] o; int n;
+        @Override public void push(float[][] b, int n) { o = b; this.n = n; }
+        @Override public void end() { }
+    }
+
+    /** 5.0: live effects of one clip, in order: [{k, on, v:{…}}]; every one keeps the timing (no look-ahead) */
+    static void rack(Clip k, JSONArray fx) throws Exception {
+        if (fx == null) return;
+        app.sesdefteri.dsp.Node head = null, tail = null;
+        int ch = k.ch;
+        long t = 0;
+        for (int i = 0; i < fx.length(); i++) {
+            JSONObject f = fx.getJSONObject(i);
+            if (!f.optBoolean("on", true)) continue;
+            JSONObject v = f.optJSONObject("v");
+            if (v == null) v = new JSONObject();
+            String kind = f.optString("k");
+            app.sesdefteri.dsp.Node n;
+            if ("reverb".equals(kind)) {
+                double room = v.optDouble("room", 50) / 100;
+                n = new app.sesdefteri.dsp.Stages.Reverb(ch, RATE, room, v.optDouble("mix", 30) / 100, v.optDouble("soft", 30) / 100);
+                t = Math.max(t, (long) (RATE * Math.min(5, 1 + 3 * room)));
+            } else if ("delay".equals(kind)) {
+                double ms = v.optDouble("ms", 300), fb = Math.min(0.9, v.optDouble("fb", 35) / 100);
+                n = new app.sesdefteri.dsp.Stages.Delay(ch, RATE, ms, fb, v.optDouble("mix", 35) / 100);
+                double rep = fb > 0.01 ? Math.log(0.001) / Math.log(fb) : 1;
+                t = Math.max(t, Math.min(RATE * 4L, (long) (RATE * ms / 1000 * (rep + 1))));
+            } else if ("comp".equals(kind)) {
+                double a = v.optDouble("amt", 50) / 100, thr = -12 - 24 * a, ratio = 1.5 + 4.5 * a;
+                n = new app.sesdefteri.dsp.Stages.Compressor(ch, RATE, thr, ratio);
+                Gain mk = new Gain(ch, Math.pow(10, Math.min(9, -thr * (1 - 1 / ratio) * 0.35) / 20));
+                n.to(mk);
+                if (head == null) head = n; else tail.to(n);
+                tail = mk;
+                continue;
+            } else if ("widen".equals(kind)) { n = new app.sesdefteri.dsp.Fx.Widen(ch, RATE, v.optDouble("amt", 60) / 100); ch = 2; }
+            else if ("eightd".equals(kind)) { n = new app.sesdefteri.dsp.Fx.EightD(ch, RATE, Math.max(2, Math.min(20, v.optDouble("period", 8)))); ch = 2; }
+            else if ("double".equals(kind)) { n = new Wet(ch, new app.sesdefteri.dsp.Fx.Double(ch, RATE), v.optDouble("mix", 70) / 100); ch = 2; }
+            else if ("lofi".equals(kind)) { n = new Wet(ch, new app.sesdefteri.dsp.Fx.LoFi(ch, RATE), v.optDouble("mix", 80) / 100); ch = 2; }
+            else continue;
+            if (head == null) head = n; else tail.to(n);
+            tail = n;
+        }
+        if (head == null) return;
+        k.rout = new RackOut();
+        tail.to(k.rout);
+        k.rack = head;
+        k.tail = t;
+    }
+
+    static final class Gain extends app.sesdefteri.dsp.Node {
+        final int ch; final float g;
+        Gain(int ch, double g) { this.ch = ch; this.g = (float) g; }
+        @Override public void push(float[][] b, int n) throws Exception { for (int c = 0; c < ch; c++) for (int i = 0; i < n; i++) b[c][i] *= g; next.push(b, n); }
+    }
+
+    /** a stereo effect blended with the dry sound: out = dry · (1 − w) + effect · w */
+    static final class Wet extends app.sesdefteri.dsp.Node {
+        final int ch; final float w; final app.sesdefteri.dsp.Node fx; final RackOut got = new RackOut();
+        float[][] dry = new float[2][0], o = new float[2][0];
+        Wet(int ch, app.sesdefteri.dsp.Node fx, double w) { this.ch = ch; this.fx = fx; this.w = (float) Math.max(0, Math.min(1, w)); fx.to(got); }
+        @Override public void push(float[][] b, int n) throws Exception {
+            if (dry[0].length < n) { dry = new float[2][n]; o = new float[2][n]; }
+            for (int c = 0; c < 2; c++) System.arraycopy(b[Math.min(c, ch - 1)], 0, dry[c], 0, n);
+            fx.push(b, n);
+            for (int c = 0; c < 2; c++) { float[] e = got.o[Math.min(c, got.o.length - 1)]; for (int i = 0; i < n; i++) o[c][i] = dry[c][i] * (1 - w) + e[i] * w; }
+            next.push(o, n);
+        }
     }
 
     /** same bands as the eqpreset op: shelf 100 Hz, peaks 300 Hz / 1 kHz / 3 kHz, shelf 8 kHz */
     static java.util.ArrayList<app.sesdefteri.dsp.Biquad> eq(JSONArray g, double bass, double treble) {
         java.util.ArrayList<app.sesdefteri.dsp.Biquad> l = new java.util.ArrayList<>();
-        // "bass boost" / "treble boost" buttons: wide shelves under the 5-band EQ
-        if (bass != 0) l.add(new app.sesdefteri.dsp.Biquad(2).setLowShelf(RATE, 150, 0.6, bass));
-        if (treble != 0) l.add(new app.sesdefteri.dsp.Biquad(2).setHighShelf(RATE, 5000, 0.6, treble));
+        // bass / treble buttons: dsp/Tone (4.2), applied after these bands
         if (g == null || g.length() < 5) return l.isEmpty() ? null : l;
         double[] mid = { 300, 1000, 3000 };
         double v = g.optDouble(0, 0);
@@ -85,19 +178,24 @@ final class Timeline {
         return l.isEmpty() ? null : l;
     }
 
-    /** clips: [{path, at, in, len (seconds), g (linear), fi, fo (seconds)}] */
+    /** clips: [{path, at, in, len (seconds), g (linear), fi, fo, xi, xo (seconds), env: [[t (s from clip start), dB]]}] */
     static final class Engine {
         final Clip[] clips;
         final long end;
         final int ch;
 
+        long[] ta = new long[0], tb = new long[0];   // 4.10: where somebody speaks (AI ducking), project frames, sorted, merged
+
         Engine(JSONArray a) throws Exception {
             java.util.ArrayList<Clip> l = new java.util.ArrayList<>();
+            java.util.ArrayList<long[]> talk = new java.util.ArrayList<>();
             long e = 0;
             int c2 = 1;
             try {
                 for (int i = 0; i < a.length(); i++) {
                     JSONObject o = a.getJSONObject(i);
+                    JSONObject ms = o.optJSONObject("master");   // 5.0: mastering of the whole mix
+                    if (ms != null) { if (ms.optBoolean("on", true)) master = new app.sesdefteri.dsp.Master(RATE, ms.optString("style", "natural"), ms.optDouble("amt", 50) / 100); continue; }
                     File file = new File(o.getString("path"));
                     if (!file.exists()) continue;
                     Workspace.Info inf = Workspace.info(file);
@@ -107,15 +205,35 @@ final class Timeline {
                     k.in = Math.max(0, Math.min(inf.frames, Math.round(o.getDouble("in") * RATE)));
                     k.len = Math.max(0, Math.min(inf.frames - k.in, Math.round(o.getDouble("len") * RATE)));
                     k.g = (float) o.optDouble("g", 1);
+                    double pn = Math.max(-1, Math.min(1, o.optDouble("pan", 0) / 100));   // balance: the centre stays as it was
+                    if (pn > 0) k.pl = (float) (1 - pn); else if (pn < 0) k.pr = (float) (1 + pn);
+                    if (pn != 0) c2 = 2;
                     k.fi = (int) Math.round(o.optDouble("fi", 0) * RATE);
                     k.fo = (int) Math.round(o.optDouble("fo", 0) * RATE);
+                    k.xi = (int) Math.round(o.optDouble("xi", 0) * RATE);
+                    k.xo = (int) Math.round(o.optDouble("xo", 0) * RATE);
+                    JSONArray ev = o.optJSONArray("env");
+                    if (ev != null && ev.length() > 0) {
+                        k.et = new double[ev.length()]; k.ed = new float[ev.length()];
+                        for (int j = 0; j < ev.length(); j++) { JSONArray pt = ev.getJSONArray(j); k.et[j] = pt.getDouble(0) * RATE; k.ed[j] = (float) pt.getDouble(1); }
+                    }
+                    JSONArray tk = o.optJSONArray("talk");   // speech stretches of this clip (seconds of its file): music dips just before and stays down through them
+                    if (tk != null) for (int j = 0; j < tk.length(); j++) {
+                        JSONArray x = tk.getJSONArray(j);
+                        long t0 = Math.max(k.at, k.at + Math.round((x.getDouble(0) - 0.25) * RATE) - k.in), t1 = Math.min(k.at + k.len, k.at + Math.round((x.getDouble(1) + 0.15) * RATE) - k.in);
+                        if (t1 > t0) talk.add(new long[] { t0, t1 });
+                    }
                     double dd = o.optDouble("duck", 0);
                     if (dd < 0) k.duck = (float) Math.pow(10, dd / 20);
-                    k.eq = eq(o.optJSONArray("eq"), o.optDouble("bass", 0), o.optDouble("treble", 0));
+                    k.eq = eq(o.optJSONArray("eq"), 0, 0);
+                    double tb = o.optDouble("bass", 0), tt = o.optDouble("treble", 0);
+                    if (tb != 0 || tt != 0) k.tone = new app.sesdefteri.dsp.Tone(RATE, tb, tt);
                     if (k.len <= 0 || k.g <= 0) continue;
+                    rack(k, o.optJSONArray("fx"));
+                    if (k.rack != null) c2 = 2;
                     k.f = new RandomAccessFile(file, "r");
                     l.add(k);
-                    e = Math.max(e, k.at + k.len);
+                    e = Math.max(e, k.at + k.len + k.tail);
                     if (k.ch > 1) c2 = 2;
                 }
             } catch (Exception x) {
@@ -124,6 +242,13 @@ final class Timeline {
             }
             clips = l.toArray(new Clip[0]);
             end = e;
+            if (!talk.isEmpty()) {
+                java.util.Collections.sort(talk, new java.util.Comparator<long[]>() { @Override public int compare(long[] x, long[] y) { return Long.compare(x[0], y[0]); } });
+                java.util.ArrayList<long[]> m = new java.util.ArrayList<>();
+                for (long[] x : talk) { long[] last = m.isEmpty() ? null : m.get(m.size() - 1); if (last != null && x[0] <= last[1] + RATE / 2) last[1] = Math.max(last[1], x[1]); else m.add(new long[] { x[0], x[1] }); }
+                ta = new long[m.size()]; tb = new long[m.size()];
+                for (int i = 0; i < m.size(); i++) { ta[i] = m.get(i)[0]; tb[i] = m.get(i)[1]; }
+            }
             ch = c2;
         }
 
@@ -133,17 +258,33 @@ final class Timeline {
         private static final float THR = 0.02f, E_ATK = (float) (1 - Math.exp(-1.0 / (0.005 * RATE))), E_REL = (float) Math.exp(-1.0 / (0.25 * RATE)),
             D_ATK = (float) (1 - Math.exp(-1.0 / (0.08 * RATE))), D_REL = (float) (1 - Math.exp(-1.0 / (0.6 * RATE)));
 
-        /** frames [pos, pos+n) of every clip mixed into out (2 channels, cleared here) */
+        app.sesdefteri.dsp.Master master;
+
+        /** frames [pos, pos+n) of every clip mixed into out (2 channels, cleared here), then the mastering */
         void render(long pos, int n, float[][] out) throws Exception {
+            mixAll(pos, n, out);
+            if (master != null) master.process(out, n);
+        }
+
+        private void mixAll(long pos, int n, float[][] out) throws Exception {
             for (float[] o : out) java.util.Arrays.fill(o, 0, n, 0f);
             boolean ducked = false;
             for (Clip k : clips) { if (k.duck < 1) ducked = true; else add(k, pos, n, out, null); }
             if (!ducked) return;
             if (dep.length < n) dep = new float[n];
+            int ti = 0;
+            if (ta.length > 0) { int lo = 0, hi = ta.length; while (lo < hi) { int mid = (lo + hi) >>> 1; if (tb[mid] <= pos) lo = mid + 1; else hi = mid; } ti = lo; }
             for (int i = 0; i < n; i++) {
-                float x = Math.max(Math.abs(out[0][i]), Math.abs(out[1][i]));
-                env = x > env ? env + (x - env) * E_ATK : env * E_REL;
-                float tg = env > THR ? 1 : 0;
+                float tg;
+                if (ta.length > 0) {   // AI ducking: speech found by the detector, a cough or a clap does not count
+                    long fr = pos + i;
+                    while (ti < ta.length && tb[ti] <= fr) ti++;
+                    tg = ti < ta.length && ta[ti] <= fr ? 1 : 0;
+                } else {
+                    float x = Math.max(Math.abs(out[0][i]), Math.abs(out[1][i]));
+                    env = x > env ? env + (x - env) * E_ATK : env * E_REL;
+                    tg = env > THR ? 1 : 0;
+                }
                 depth += (tg - depth) * (tg > depth ? D_ATK : D_REL);
                 dep[i] = depth;
             }
@@ -152,37 +293,62 @@ final class Timeline {
 
         private void add(Clip k, long pos, int n, float[][] out, float[] dep) throws Exception {
             {
-                long a = Math.max(pos, k.at), z = Math.min(pos + n, k.at + k.len);
+                long a = Math.max(pos, k.at), z = Math.min(pos + n, k.at + k.len + k.tail);
                 if (z <= a) return;
-                int cnt = (int) (z - a), off = (int) (a - pos), bytes = cnt * k.ch * 2;
+                int cnt = (int) (z - a), off = (int) (a - pos);
+                long zf = Math.min(z, k.at + k.len);   // past the clip only its echoes go on: silence goes in
+                int rd = (int) Math.max(0, zf - a), bytes = cnt * k.ch * 2;
                 if (k.buf.length < bytes) k.buf = new byte[bytes];
-                k.f.seek(44 + (k.in + a - k.at) * k.ch * 2);
-                k.f.readFully(k.buf, 0, bytes);
+                if (rd > 0) { k.f.seek(44 + (k.in + a - k.at) * k.ch * 2); k.f.readFully(k.buf, 0, rd * k.ch * 2); }
+                java.util.Arrays.fill(k.buf, rd * k.ch * 2, bytes, (byte) 0);
                 byte[] b = k.buf;
                 int q = 0;
                 float[] L = out[0], Rr = out[1];
                 int base = off;
-                if (k.eq != null) {
+                double[] et = k.et;
+                int j = 0;
+                if (et != null) while (j < et.length - 1 && et[j + 1] <= a - k.at) j++;
+                final boolean post = k.eq != null || k.tone != null || k.rack != null;
+                if (post) {
                     if (k.tmp[0].length < cnt) k.tmp = new float[2][cnt];
                     L = k.tmp[0]; Rr = k.tmp[1]; base = 0;
                     java.util.Arrays.fill(L, 0, cnt, 0f); java.util.Arrays.fill(Rr, 0, cnt, 0f);
                 }
                 for (int i = 0; i < cnt; i++) {
-                    long r = a - k.at + i;
+                    long r = Math.min(a - k.at + i, k.len - 1);
                     float g = k.g;
                     if (k.fi > 0 && r < k.fi) g *= (float) r / k.fi;
                     if (k.fo > 0 && k.len - r < k.fo) g *= (float) (k.len - r) / k.fo;
+                    if (k.xi > 0 && r < k.xi) g *= (float) Math.sin(HALF_PI * r / k.xi);
+                    if (k.xo > 0 && k.len - r < k.xo) g *= (float) Math.sin(HALF_PI * (k.len - r) / k.xo);
+                    if (et != null) {
+                        float db;
+                        if (r <= et[0]) db = k.ed[0];
+                        else {
+                            while (j < et.length - 1 && et[j + 1] <= r) j++;
+                            db = j == et.length - 1 ? k.ed[j] : k.ed[j] + (float) ((k.ed[j + 1] - k.ed[j]) * (r - et[j]) / (et[j + 1] - et[j]));
+                        }
+                        g *= db <= ENV_FLOOR ? 0 : (float) Math.exp(db * 0.11512925);
+                    }
                     if (dep != null) g *= 1 - dep[off + i] * (1 - k.duck);
                     float l = (short) ((b[q] & 0xff) | (b[q + 1] << 8)) / 32768f;
                     q += 2;
                     float rr = l;
                     if (k.ch > 1) { rr = (short) ((b[q] & 0xff) | (b[q + 1] << 8)) / 32768f; q += 2; }
-                    L[base + i] += l * g;
-                    Rr[base + i] += rr * g;
+                    if (post) { L[i] += l * g; Rr[i] += rr * g; }
+                    else { L[base + i] += l * g * k.pl; Rr[base + i] += rr * g * k.pr; }
                 }
-                if (k.eq != null) {
-                    for (app.sesdefteri.dsp.Biquad f : k.eq) { f.process(0, L, 0, cnt); f.process(1, Rr, 0, cnt); }
-                    for (int i = 0; i < cnt; i++) { out[0][off + i] += L[i]; out[1][off + i] += Rr[i]; }
+                if (post) {
+                    if (k.eq != null) for (app.sesdefteri.dsp.Biquad f : k.eq) { f.process(0, L, 0, cnt); f.process(1, Rr, 0, cnt); }
+                    if (k.tone != null) k.tone.process(L, Rr, cnt);
+                    float[] oL = L, oR = Rr;
+                    if (k.rack != null) {
+                        // a mono clip goes in as one channel (L and R hold the same samples)
+                        k.rack.push(k.ch > 1 ? new float[][] { L, Rr } : new float[][] { L }, cnt);
+                        float[][] y = k.rout.o;
+                        oL = y[0]; oR = y.length > 1 ? y[1] : y[0];
+                    }
+                    for (int i = 0; i < cnt; i++) { out[0][off + i] += oL[i] * k.pl; out[1][off + i] += oR[i] * k.pr; }
                 }
             }
         }
@@ -199,22 +365,28 @@ final class Timeline {
         volatile boolean stop;
         Engine eng;
         AudioTrack track;
+        final Meter meter = new Meter();
+        long minEnd;   // play at least this far (the latency test has clicks but no clips)
 
         Play(Engine e, long start) { eng = e; this.start = start; }
 
         @Override public void run() {
-            final int BL = 1024;
+            final int BL = lowLat ? 256 : 1024;
             float[][] mix = new float[2][BL];
             short[] pcm = new short[BL * 2];
             long pos = start;
             try {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
                 track.play();
                 while (!stop) {
                     Engine p = pending;
                     if (p != null) { pending = null; eng.close(); eng = p; }
-                    if (pos >= eng.end) break;
-                    int n = (int) Math.min(BL, eng.end - pos);
+                    long end = Math.max(eng.end, minEnd);
+                    if (pos >= end) break;
+                    int n = (int) Math.min(BL, end - pos);
                     eng.render(pos, n, mix);
+                    meter.feed(mix, n);
+                    clicks(pos, n, mix);
                     for (int i = 0, j = 0; i < n; i++) {
                         for (int c = 0; c < 2; c++, j++) {
                             float v = mix[c][i], av = Math.abs(v);
@@ -244,12 +416,24 @@ final class Timeline {
     }
 
     static synchronized void play(String json, double sec) throws Exception {
+        fixedClicks = null;
+        play(json, sec, 0);
+    }
+
+    static volatile boolean lowLat;   // 5.4: Settings > Low latency
+
+    static synchronized void play(String json, double sec, long minEnd) throws Exception {
         stop();
         Engine e = new Engine(new JSONArray(json));
         int min = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT);
-        Play p = new Play(e, Math.max(0, Math.round(sec * RATE)));
-        p.track = new AudioTrack(AudioManager.STREAM_MUSIC, RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT,
-            Math.max(min * 2, RATE / 10 * 4), AudioTrack.MODE_STREAM);
+        Play p = new Play(e, Math.round(sec * RATE));   // negative: count-in before the start
+        p.minEnd = minEnd;
+        if (lowLat && android.os.Build.VERSION.SDK_INT >= 26) {   // 5.4: a 40 ms buffer on the phone's fast audio path
+            p.track = new AudioTrack.Builder()
+                .setAudioFormat(new AudioFormat.Builder().setSampleRate(RATE).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
+                .setBufferSizeInBytes(Math.max(min, RATE / 25 * 4)).setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY).build();
+        } else p.track = new AudioTrack(AudioManager.STREAM_MUSIC, RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT,
+            Math.max(min * 2, RATE / 5 * 4), AudioTrack.MODE_STREAM);   // 200 ms: room for the phone to be busy (waveforms, effects) without a gap
         synchronized (Play.class) { Play.cur = p; }
         Thread th = new Thread(p, "timeline");
         th.setPriority(Thread.MAX_PRIORITY);
@@ -277,7 +461,176 @@ final class Timeline {
         Play p;
         synchronized (Play.class) { p = Play.cur; }
         if (p == null) return -1;
-        try { return (p.start + (p.track.getPlaybackHeadPosition() & 0xffffffffL)) / (double) RATE; } catch (Exception e) { return p.start / (double) RATE; }
+        try { return Math.max(0, (p.start + (p.track.getPlaybackHeadPosition() & 0xffffffffL)) / (double) RATE); } catch (Exception e) { return Math.max(0, p.start / (double) RATE); }
+    }
+
+    /* ---------- 2.9: metronome (heard while playing and recording, never exported) ---------- */
+
+    static volatile double clickBpm;          // 0 = off
+    static volatile int clickBar = 4;
+    static volatile float clickVol = 0.5f;
+    static volatile long[] fixedClicks;       // latency test: clicks at these frames instead of a beat
+    static final float[] HI = clickWave(1600), LO = clickWave(1000);
+
+    private static float[] clickWave(double hz) {
+        float[] w = new float[(int) (0.03 * RATE)];
+        for (int i = 0; i < w.length; i++) w[i] = (float) (Math.sin(2 * Math.PI * hz * i / RATE) * Math.exp(-i / (0.006 * RATE)));
+        return w;
+    }
+
+    static void click(String json) {
+        try {
+            JSONObject o = new JSONObject(json);
+            clickBar = Math.max(1, Math.min(12, o.optInt("bar", 4)));
+            clickVol = (float) Math.max(0, Math.min(1, o.optDouble("vol", 0.5)));
+            clickBpm = o.optBoolean("on", false) ? Math.max(30, Math.min(300, o.optDouble("bpm", 120))) : 0;
+        } catch (Exception ignored) { }
+    }
+
+    private static void addWave(float[] w, long at, long pos, int n, float[][] mix, float g) {
+        for (int i = (int) Math.max(0, at - pos); i < n && pos + i - at < w.length; i++) {
+            float v = w[(int) (pos + i - at)] * g;
+            mix[0][i] += v; mix[1][i] += v;
+        }
+    }
+
+    static void clicks(long pos, int n, float[][] mix) {
+        long[] fx = fixedClicks;
+        int len = HI.length;
+        if (fx != null) { for (long at : fx) if (at + len > pos && at < pos + n) addWave(HI, at, pos, n, mix, 0.7f); return; }
+        double bpm = clickBpm;
+        if (bpm <= 0) return;
+        double per = 60.0 * RATE / bpm;
+        for (long k = (long) Math.ceil((pos - len) / per); k * per < pos + n; k++) {
+            long at = Math.round(k * per);
+            if (at + len <= pos) continue;
+            boolean one = Math.floorMod(k, (long) clickBar) == 0;
+            addWave(one ? HI : LO, at, pos, n, mix, clickVol * (one ? 0.9f : 0.6f));
+        }
+    }
+
+    /** latency test: clicks at uneven times (so the match can't be off by a beat), 5 s long */
+    static final double[] CALIB = { 1.0, 1.35, 1.9, 2.2, 2.85, 3.3, 3.6, 4.2 };
+
+    static synchronized void calibrate() throws Exception {
+        long[] f = new long[CALIB.length];
+        for (int i = 0; i < f.length; i++) f[i] = Math.round(CALIB[i] * RATE);
+        fixedClicks = f;
+        play("[]", 0, 5L * RATE);
+    }
+
+    /** where the clicks landed in the test recording: ms to skip at the start of an overdub so it lines up */
+    static JSONObject latency(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        fixedClicks = null;
+        final float[][] env = { new float[8000] };
+        final int[] len = { 0 };
+        AudioTools.decode(c, a.getJSONObject("src"), new AudioTools.PcmSink() {
+            long frame; int rate; double prev, acc; int cnt;
+            @Override public void pcm(short[] d, int count, int ch, int sr) {
+                rate = sr;
+                int per = Math.max(1, sr / 1000);
+                for (int i = 0; i < count; i += ch) {
+                    double x = d[i] / 32768.0, hp = x - prev; prev = x;   // first difference: the click, not the room hum
+                    acc += hp * hp;
+                    if (++cnt == per) {
+                        if (len[0] == env[0].length) env[0] = java.util.Arrays.copyOf(env[0], len[0] * 2);
+                        env[0][len[0]++] = (float) acc;
+                        acc = 0; cnt = 0;
+                    }
+                }
+            }
+        }, p, cancel);
+        JSONObject r = new JSONObject();
+        r.put("ms", match(env[0], len[0]));
+        return r;
+    }
+
+    /** e: energy per ms of the test recording → offset (ms) of the click pattern in it */
+    static int match(float[] e, int n) {
+        float[] on = new float[n];
+        for (int i = 1; i < n; i++) on[i] = Math.max(0, e[i] - e[i - 1]);
+        double best = -1, second = 0; int bd = 0;
+        double[] score = new double[1001];
+        for (int d = -200; d <= 800; d++) {
+            double s = 0;
+            for (double t : CALIB) {
+                int m = (int) Math.round(t * 1000) + d;
+                float mx = 0;
+                for (int j = m - 2; j <= m + 2; j++) if (j >= 0 && j < n) mx = Math.max(mx, on[j]);
+                s += mx;
+            }
+            score[d + 200] = s;
+            if (s > best) { best = s; bd = d; }
+        }
+        double[] srt = score.clone();
+        java.util.Arrays.sort(srt);
+        double med = srt[srt.length / 2];
+        for (int d = -200; d <= 800; d++) if (Math.abs(d - bd) > 20) second = Math.max(second, score[d + 200]);
+        if (best <= 0 || best < med * 4 || best < second * 1.3) throw new IllegalStateException("nolat");
+        return bd;
+    }
+
+    /* ---------- 2.8: live meter (spectrum, LUFS, peak) of what is playing ---------- */
+
+    static final class Meter {
+        static final int RING = 1 << 16, N = 2048, BANDS = 32;
+        final float[] ring = new float[RING];
+        long written;
+        final int rate;
+        final app.sesdefteri.dsp.Loudness lu;
+        float peak;
+
+        Meter() { this(RATE); }
+        Meter(int rate) { this.rate = rate; lu = new app.sesdefteri.dsp.Loudness(2, rate); }
+        final app.sesdefteri.dsp.Fft fft = new app.sesdefteri.dsp.Fft(N);
+        final double[] win = app.sesdefteri.dsp.Fft.hann(N, false), re = new double[N], im = new double[N];
+        final float[] bands = new float[BANDS];
+
+        synchronized void feed(float[][] mix, int n) {
+            lu.measure(mix, n);
+            for (int i = 0; i < n; i++) {
+                float l = mix[0][i], r = mix[1][i];
+                ring[(int) ((written + i) & (RING - 1))] = (l + r) * 0.5f;
+                float a = Math.max(Math.abs(l), Math.abs(r));
+                if (a > peak) peak = a;
+            }
+            written += n;
+        }
+
+        /** the spectrum at the frame that is being heard now (`played` frames since the start) */
+        synchronized String json(long played) {
+            long end = Math.min(written, Math.max(N, played));
+            for (int i = 0; i < N; i++) { re[i] = end - N + i < 0 ? 0 : ring[(int) ((end - N + i) & (RING - 1))] * win[i]; im[i] = 0; }
+            fft.transform(re, im, false);
+            // 32 log bands, 40 Hz – 16 kHz, in dB (0 dB = full-scale sine)
+            StringBuilder b = new StringBuilder("{\"b\":[");
+            double lo = 40, step = Math.pow(16000 / 40.0, 1.0 / BANDS), bin = (double) rate / N;
+            for (int k = 0; k < BANDS; k++) {
+                double f0 = lo * Math.pow(step, k), f1 = f0 * step, s = 0;
+                int a = Math.max(1, (int) Math.floor(f0 / bin)), z = Math.max(a + 1, (int) Math.ceil(f1 / bin));
+                for (int j = a; j < z && j < N / 2; j++) s = Math.max(s, re[j] * re[j] + im[j] * im[j]);
+                double db = 10 * Math.log10(s / (N * N / 16.0) + 1e-12);
+                bands[k] = (float) Math.max(-90, Math.min(6, db));
+                if (k > 0) b.append(',');
+                b.append(Math.round(bands[k]));
+            }
+            b.append("],\"m\":").append(r1(lu.momentary())).append(",\"s\":").append(r1(lu.shortTerm()))
+             .append(",\"i\":").append(r1(lu.integrated())).append(",\"pk\":").append(r1(20 * Math.log10(Math.max(1e-6, peak)))).append('}');
+            peak *= 0.9f;   // slow fall
+            return b.toString();
+        }
+
+        private static double r1(double v) { return Double.isInfinite(v) || Double.isNaN(v) ? -99 : Math.round(v * 10) / 10.0; }
+    }
+
+    /** JSON for the live meter, or "" when nothing is playing */
+    static String meter() {
+        Play p;
+        synchronized (Play.class) { p = Play.cur; }
+        if (p == null) return "";
+        long played;
+        try { played = p.track.getPlaybackHeadPosition() & 0xffffffffL; } catch (Exception e) { played = 0; }
+        return p.meter.json(played);
     }
 
     /* ---------- final mix ---------- */

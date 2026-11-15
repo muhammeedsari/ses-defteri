@@ -3,7 +3,28 @@ import java.util.*;
 public class JSONObject {
   final LinkedHashMap<String,Object> m = new LinkedHashMap<>();
   public JSONObject() {}
-  public JSONObject(String s) { }
+  public JSONObject(String s) { JSONObject o = (JSONObject) new P(s).val(); m.putAll(o.m); }
+  /** tiny parser so tests can feed JSON text */
+  static final class P {
+    final String s; int i;
+    P(String s) { this.s = s; }
+    void ws() { while (i < s.length() && Character.isWhitespace(s.charAt(i))) i++; }
+    Object val() {
+      ws(); char c = s.charAt(i);
+      if (c == '{') { i++; JSONObject o = new JSONObject(); ws(); if (s.charAt(i) == '}') { i++; return o; }
+        while (true) { ws(); String k = (String) val(); ws(); i++; o.m.put(k, val()); ws(); if (s.charAt(i++) == '}') return o; } }
+      if (c == '[') { i++; JSONArray a = new JSONArray(); ws(); if (s.charAt(i) == ']') { i++; return a; }
+        while (true) { a.l.add(val()); ws(); if (s.charAt(i++) == ']') return a; } }
+      if (c == '"') { StringBuilder b = new StringBuilder(); i++;
+        while (s.charAt(i) != '"') { char d = s.charAt(i++); if (d == '\\') { d = s.charAt(i++); if (d == 'n') d = '\n'; else if (d == 'u') { d = (char) Integer.parseInt(s.substring(i, i + 4), 16); i += 4; } } b.append(d); }
+        i++; return b.toString(); }
+      if (s.startsWith("true", i)) { i += 4; return Boolean.TRUE; }
+      if (s.startsWith("false", i)) { i += 5; return Boolean.FALSE; }
+      if (s.startsWith("null", i)) { i += 4; return null; }
+      int a = i; while (i < s.length() && "+-0123456789.eE".indexOf(s.charAt(i)) >= 0) i++;
+      String n = s.substring(a, i); if (n.matches("-?\\d+")) return Long.parseLong(n); return Double.parseDouble(n);
+    }
+  }
   public JSONObject put(String k, Object v) { m.put(k, v); return this; }
   public JSONObject put(String k, double v) { m.put(k, v); return this; }
   public JSONObject put(String k, long v) { m.put(k, v); return this; }
@@ -17,6 +38,11 @@ public class JSONObject {
   public String optString(String k, String d) { Object v = m.get(k); return v == null ? d : String.valueOf(v); }
   public String optString(String k) { return optString(k, ""); }
   public double optDouble(String k, double d) { Object v = m.get(k); return v instanceof Number ? ((Number) v).doubleValue() : d; }
+  public double optDouble(String k) { return optDouble(k, Double.NaN); }
+  public int optInt(String k) { return optInt(k, 0); }
+  public Object opt(String k) { return m.get(k); }
+  public JSONObject putOpt(String k, Object v) { if (k != null && v != null) m.put(k, v); return this; }
+  public JSONArray names() { JSONArray a = new JSONArray(); for (String k : m.keySet()) a.put(k); return a; }
   public double getDouble(String k) { return ((Number) m.get(k)).doubleValue(); }
   public int optInt(String k, int d) { Object v = m.get(k); return v instanceof Number ? ((Number) v).intValue() : d; }
   public boolean optBoolean(String k) { return optBoolean(k, false); }

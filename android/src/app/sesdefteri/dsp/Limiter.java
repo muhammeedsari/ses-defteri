@@ -98,6 +98,7 @@ public final class Limiter extends Node {
                 }
                 double t = greq[dq[dqHead & (R - 1)]];
                 env = t < env ? t : env + (t - env) * relCoef;
+                if (k == 0) { java.util.Arrays.fill(envRing, env); envSum = env * L; }   // 5.14.3: the first 3 ms are limited too
                 int ki = (int) (k & (R - 1)), ei = (int) (k % L);
                 envSum += env - envRing[ei];
                 envRing[ei] = env;
