@@ -1125,6 +1125,10 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public String aiCrash() { return Device.lastCrash(MainActivity.this); }
         @JavascriptInterface public void setLite(boolean on) { Device.lite = on; }
         @JavascriptInterface public String recFx(boolean ns, boolean aec) { return Recorder.fx(ns, aec).toString(); }
+        // 5.16: live text while recording (switched on and off by the person)
+        @JavascriptInterface public String liveOn(String lang) { return LiveText.on(MainActivity.this, lang, Recorder.rateNow(), Recorder.secNow()); }
+        @JavascriptInterface public void liveOff() { LiveText.stop(false); }
+        @JavascriptInterface public String livePoll(int from) { return LiveText.poll(from); }
         @JavascriptInterface public String recStop() {
             ui(new Runnable() { @Override public void run() { getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); } });
             return Recorder.stop(MainActivity.this);
@@ -1199,7 +1203,7 @@ public class MainActivity extends Activity implements Player.Listener {
             jobs.put(id, cancel);
             boolean bg = false;
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
-            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"spectro".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind) && !"ttsStatus".equals(kind) && !"ttsDelete".equals(kind);
+            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"spectro".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind) && !"ttsStatus".equals(kind) && !"ttsDelete".equals(kind) && !"liveEnd".equals(kind);
             if (heavy) {
                 heavyIds.add(id);
                 WorkService.label(null);
@@ -1266,6 +1270,8 @@ public class MainActivity extends Activity implements Player.Listener {
                             res = AsrModels.download(MainActivity.this, a, p, cancel);
                         } else if ("asrDelete".equals(kind)) {
                             res = AsrModels.delete(MainActivity.this, a);
+                        } else if ("liveEnd".equals(kind)) {
+                            res = LiveText.end(cancel);
                         } else if ("asrStatus".equals(kind)) {
                             res = AsrModels.status(MainActivity.this);
                         } else if ("sounds".equals(kind)) {

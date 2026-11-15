@@ -1,4 +1,4 @@
-# Ses Defteri — sürüm sürüm tüm özellikler (1.3 → 5.15)
+# Ses Defteri — sürüm sürüm tüm özellikler (1.3 → 5.16)
 
 Bu dosya uygulamanın her sürümde kazandığı özellikleri tek yerde toplar. Teknik ayrıntılar için: `DURUM.md` (1.3–4.0), `DEVIR-4.3-4.12.md`, `DEVIR-4.12-5.14.md`, kod haritası `MIMARI.md`.
 Sonradan değişen ya da kaldırılan özellikler yanında **(şimdi: …)** notuyla belirtildi.
@@ -8,7 +8,7 @@ Sonradan değişen ya da kaldırılan özellikler yanında **(şimdi: …)** not
 - **Kayıtlar:** kayıt (amaç, kalite, canlı gürültü bastırma, düşük gecikme, kendini duyma), liste, kategoriler, arama, sıralama, çöp kutusu, menü ve çoklu seçim.
 - **Müzik çalar:** çalma listeleri, sıra, EQ, eşit ses yüksekliği, sessizliği atla, A-B döngüsü, uyku zamanlayıcı, akorlar ve bölümler, sözler, Pratik, akort aleti.
 - **Düzenle (stüdyo):** en çok 4 katmanlı zaman çizelgesi, 6 araç grubu (YZ, Temizle, Onar, Ses-Ton, Kırp, Efekt), canlı efekt listesi, mastering, düzenleme geçmişi, dışa aktarma (MP3, M4A, WAV, FLAC, OGG/Opus, zil sesi, videoya koy, altyazılı video).
-- **Yapay zekâ (internetsiz):** yazıya dökme, metinden düzenleme, ses ayırma (2 ve 4 parça, kaliteli 2 parça), YZ gürültü temizliği, konuşmacı ayırma, HD ses, akıllı temizlik araçları, öksürük/gülme bulma.
+- **Yapay zekâ (internetsiz):** yazıya dökme (5.16: kayıt sırasında canlı yazı), metinden düzenleme, ses ayırma (2 ve 4 parça, kaliteli 2 parça), YZ gürültü temizliği, konuşmacı ayırma, HD ses, akıllı temizlik araçları, öksürük/gülme bulma.
 - **9 dil:** Türkçe, İngilizce, Almanca, Fransızca, İspanyolca, Portekizce, Rusça, Arapça, Çince.
 
 ---
@@ -112,6 +112,7 @@ Sonradan değişen ya da kaldırılan özellikler yanında **(şimdi: …)** not
 | 5.14 | İnceleme düzeltmeleri (Pratik'te "Akorları gizle" ikinci açılışta çalışıyor, Yapıştır yalnız kopya varken). Klip kartında Geçiş yerine **Çoğalt**; **işaret kaldırma** (İşareti kaldır, bayrağa iki dokunuş, Tüm işaretleri sil). |
 | 5.14.1 | Mastering'de (Doğal, Sıcak) ani yüksek seslerde çatırtı giderildi; ton değiştirme iptal edilince bellek boşaltılıyor. |
 | 5.15 | **Kayıt sırasında not alma:** tek dokunuşla etiketli işaret (Önemli, Soru, Yapılacak; dalga formunda renkli), zaman damgalı yazılı not (an, kutu açılınca alınır; kayıt beklemez), fotoğraf (telefonun kamera uygulaması çeker, uygulama içinde `files/np` altında en çok 1600 px JPEG saklanır, sayfaya `/__np/<ad>` ile gelir). Notlar metin dökümünde satır aralarında görünür. **Not sayfası** (oynatıcıda "Not sayfası"): başlık, kendi etiketlerin (`utags`), süzgeç (etiket/fotoğraf), işaret-not-fotoğraf ve metin zaman sırasıyla; dokununca o andan çalar; kopyala/paylaş. Sayfa kayıt sürerken yeniden yüklenirse (kamera belleği aldıysa) kayıt ekranı ve işaretler geri gelir (`recLive`, `Recorder.info().sec`). |
+| 5.16 | **Canlı yazı (kayıt sırasında):** kayıt ekranında "Canlı yazı" düğmesi (kayıttan önce amaç kartlarının altında, kayıt sırasında not düğmelerinin yanında); yalnız kişi açarsa çalışır. İndirilmiş Whisper (önce base; small canlıya yetişmez) + Silero VAD, cümle bitince yazı gelir (masaüstü ölçümü ~1–2 sn, 4 kat yavaş telefonda ~6 sn). Kayıt iş parçacığı beklemez: örnekler kuyruğa kopyalanır, işçi iş parçacığı (`asr/Live`, `LiveText`) 16 kHz'e çevirip yazar; 60 sn'den fazla birikirse eskisi atlanır ve zamanlar kaydırılarak dosyayla uyumlu kalır. Kayıt bitince "liveEnd" işi kalan sesi yazar, metin kaydın metni olur (`texts.live = true`, oynatıcıda "canlı yazıldı" notu; "Yeniden dök" tam metinle değiştirir). Ölçüm raporu: `analiz/canli-yazi-olcum-5.16.md` (Türkçe akış modeli sherpa-onnx'te yok). |
 
 ## Bilinen sınırlar (5.14.1)
 

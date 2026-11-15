@@ -121,6 +121,7 @@ final class Recorder {
             meter = new Timeline.Meter(rate);
             fail = null;
             peak = 0;
+            LiveText.reset();
             ar.startRecording();
             if (ar.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) throw new IllegalStateException("mic busy");
             state = "rec";
@@ -245,6 +246,7 @@ final class Recorder {
                 if (pk > peak) peak = pk;
                 meter.feed(fl, fr);
                 sink.write(buf, n);
+                LiveText.feed(fl, chans, fr);   // 5.16: only does something when live text is switched on
             }
         } catch (Exception e) {
             fail = e;
@@ -320,6 +322,7 @@ final class Recorder {
         try {
             if (ar == null) { res.put("ok", false); res.put("error", "idle"); return res.toString(); }
             boolean ok = halt();
+            LiveText.stop(false);   // what is still waiting is written down; the page collects it with the "liveEnd" job
             Sink s = sink;
             sink = null;
             try { if (ok && s != null) s.finish(); else if (s != null) s.abort(); } catch (Exception e) { ok = false; }
@@ -367,12 +370,17 @@ final class Recorder {
         cleanup(c, true);
     }
 
+    /** 5.16: for live text: the rate and how many seconds are in the file so far (0 when idle) */
+    static int rateNow() { return "idle".equals(state) ? 0 : rate; }
+    static double secNow() { Sink s = sink; return s == null || rate <= 0 ? 0 : s.frames() / (double) rate; }
+
     static synchronized boolean active() {
         return !"idle".equals(state);
     }
 
     private static void cleanup(Context c, boolean discard) {
         halt();
+        LiveText.reset();
         if (sink != null) sink.abort();
         sink = null;
         try { if (pfd != null) pfd.close(); } catch (Exception ignored) { }

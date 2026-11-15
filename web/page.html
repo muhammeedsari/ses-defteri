@@ -971,6 +971,13 @@ html:not(.tech) .pu-card small{display:none}
 .segs li.seg-mk{background:var(--accent-soft);font-size:13.5px}
 .segs li.seg-mk .ic{width:14px;height:14px;margin-left:6px;vertical-align:-2px}
 #noteSheet{z-index:26}
+/* 5.16: live text while recording */
+.rec-live{display:grid;gap:4px;padding:8px 10px;margin-top:6px;border-radius:12px;background:var(--stage-2);border:1px solid var(--stage-line)}
+.rl-st{margin:0;font-size:12px;color:var(--stage-muted)}
+.rl-list{list-style:none;margin:0;padding:0;display:grid;gap:3px;max-height:7.5em;overflow-y:auto}
+.rl-list li{display:flex;gap:8px;font-size:14px;line-height:1.35;color:var(--stage-ink)}
+.rl-list .tc{color:var(--stage-mark);flex:none;font-size:12px;padding-top:1px}
+.rn-row .chip[aria-pressed="true"]{border-color:var(--stage-mark);color:var(--stage-mark)}
 </style>
 
 <div class="seltop" id="selTop" hidden></div>
@@ -1077,6 +1084,7 @@ html:not(.tech) .pu-card small{display:none}
       <button class="rec-main" id="recMain" type="button"><span class="dot"></span></button>
       <button class="ctl-s" id="recDone" type="button" disabled style="justify-self:start"><span class="rnd" id="recDoneIc"></span><span data-t="done"></span></button>
     </div>
+    <div class="rec-live" id="recLiveBox" hidden><p class="rl-st" id="rlSt"></p><ol class="rl-list" id="rlList"></ol></div>
     <div class="rec-notes" id="recNotes" hidden><div class="rn-row" id="rnRow"></div><ol class="rn-list" id="rnList"></ol></div>
     <p class="rec-foot" id="recFoot"></p>
   </div>
@@ -1245,6 +1253,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n62.js"></script>
 <script src="i18n63.js"></script>
 <script src="i18n64.js"></script>
+<script src="i18n65.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -1256,7 +1265,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.15';
+const VERSION = '5.16';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) {
@@ -3494,6 +3503,7 @@ async function transcribeItem(it, auto) {
 }
 async function txApply(it, res, auto) {
   const rec = { id: it.id, segments: res.segments || [], srt: res.srt || '', lang: res.lang || '' };
+  if (res.live) rec.live = true;   // 5.16: written while recording; the full run can replace it
   await db.put('texts', rec).catch(() => {});
   S.texts.set(it.id, rec);
   it.tags = res.tags || []; it.ttext = res.text || '';
@@ -3518,6 +3528,7 @@ function renderText(r) {
   if (bz && bz.kind === 'transcribe') {
     h = `<p class="st-desc"><b>${esc(busyLabel(bz))}</b></p><div class="prog"><i style="width:${Math.round(bz.p * 100)}%"></i></div>`;
   } else if (tx && tx.segments && tx.segments.length) {
+    if (tx.live) h += `<p class="hint">${esc(t('liveDraft'))}</p>`;
     if (r.tags && r.tags.length) h += `<div class="tags">${r.tags.map(x => `<button class="tag" type="button" data-tag="${esc(x)}">#${esc(x)}</button>`).join('')}</div>`;
     const mk = (r.bookmarks || []).filter(b => b.note || b.tag || b.ph); let j = 0;
     const mkLi = b => `<li class="seg-mk"><button class="bm-time tc" type="button" data-seek="${b.t}">${fmt(b.t)}</button><span>${tagDot(b)}<b>${esc(b.label)}</b>${b.note ? ' ' + esc(b.note) : ''}${b.ph ? ic('cam') : ''}</span></li>`;
@@ -6372,6 +6383,7 @@ async function startRecNative() {
   if (!res.ok) { R.state = 'idle'; updateRecUI(); toast(t('recFail'), 4200); return; }
   R.native = true; R.levels = []; R.marks = []; R.acc = 0; R.curMax = 0; R.cancel = false; R.mon = false; R.mv = null;
   R.state = 'rec'; R.t0 = performance.now(); R.started = Date.now(); recLiveSave();
+  liveReset(); if (liveWanted()) liveStart();
   loopRec(); updateRecUI();
 }
 async function startRec() {
@@ -6437,6 +6449,7 @@ async function finishNative() {
   if (!res.ok || !res.item) { R.state = 'idle'; updateRecUI(); closeOverlay('rec'); toast(t(res.error === 'empty' ? 'recShort' : 'recSaveFail'), 4000); return; }
   if (res.cut) toast(t('recCut'), 6000);
   const it = fromNative(res.item, null);
+  const lv = R.lv.used; R.lv.used = false; renderLive();
   it.title = defaultTitle(R.mode, R.started); it.userTitle = true; it.created = R.started;
   if (!it.duration) it.duration = R.endEl;
   it.categoryId = defaultCat(); it.notes = ''; it.bookmarks = R.marks.slice(); it.source = 'mic'; it.mode = R.mode; it.fav = false; it.kind = 'rec';
@@ -6445,6 +6458,7 @@ async function finishNative() {
   S.items.set(it.id, it); await saveRec(it);
   await storePeaks(it.id, toBytes(R.levels), LR); storedPeakIds.add(it.id);
   it.purpose = R.purpose; await saveRec(it);
+  if (lv) liveCollect(it);
   R.state = 'idle'; R.levels = [];
   if (S.tab === 'music') { S.tab = 'rec'; ls.set('tab', 'rec'); }
   render();
@@ -6529,6 +6543,7 @@ function loopRec() {
     showRecTime(el);
     if (R.state === 'rec') recWarnCheck(m);
     if (R.native && frame % 20 === 0) recCallSync();
+    if (R.native && frame % 30 === 15) livePoll();
     if (R.native && frame % 3 === 0) { try { const j = AND.recMeter(); R.mv = j ? JSON.parse(j) : null; } catch (e) {} drawRecSpec(); }
     const lvl = m > 0 ? 20 * Math.log10(m) : -Infinity, now = performance.now();
     if (lvl > R.peakDb || now - R.peakAt > 900) { R.peakDb = lvl; R.peakAt = now; }
@@ -6604,9 +6619,11 @@ function renderRecFx() {
   if (!NATIVE) return;
   if (!R.fxCap) { try { R.fxCap = JSON.parse(AND.recFx(!!ls.get('recNs', false), !!ls.get('recAec', false))); } catch (e) { R.fxCap = { ns: true, aec: true }; } }
   box.innerHTML = [['ns', 'recNs'], ['aec', 'recAec']].filter(([k]) => R.fxCap[k] !== false).map(([k, key]) =>
-    `<button class="chip" type="button" data-fx="${key}" aria-pressed="${!!ls.get(key, false)}">${ic(k === 'ns' ? 'spark' : 'ear')}${esc(t(key))}</button>`).join('');
+    `<button class="chip" type="button" data-fx="${key}" aria-pressed="${!!ls.get(key, false)}">${ic(k === 'ns' ? 'spark' : 'ear')}${esc(t(key))}</button>`).join('')
+    + (CAPS.asr ? `<button class="chip" type="button" data-live aria-pressed="${liveWanted()}">${ic('textic')}${esc(t('liveTx'))}</button>` : '');
 }
 $('#recFx').addEventListener('click', e => {
+  if (e.target.closest('[data-live]')) { liveToggle(); return; }
   const b = e.target.closest('[data-fx]'); if (!b) return;
   const k = b.dataset.fx; ls.set(k, !ls.get(k, false));
   if (R.native && (R.state === 'rec' || R.state === 'paused')) { try { AND.recFx(!!ls.get('recNs', false), !!ls.get('recAec', false)); } catch (x) {} }
@@ -6743,7 +6760,7 @@ function updateRecUI() {
   $('#modeSeg').querySelectorAll('button').forEach(b => { b.disabled = R.state !== 'idle'; });
   $('#roomBox').hidden = R.state !== 'idle' || !NATIVE; renderPurpose();
   if (R.state === 'idle' || R.state === 'stopping') showRecWarn(null);
-  renderRecNotes();
+  renderRecNotes(); renderLive();
   const mc = $('#recMarkCount');
   mc.hidden = !R.marks.length; mc.innerHTML = R.marks.length ? `${ic('flag')}${esc(t('nMarks', { n: R.marks.length }))}` : '';
 }
@@ -7552,7 +7569,7 @@ function showIntro(again) {
   });
   document.body.appendChild(d); draw();
 }
-const NEWS = ['n6marks', 'n6notes', 'n6photo', 'n6page'];   // 5.15: renew with every minor version
+const NEWS = ['n7live', 'n7slow', 'n7after'];   // 5.16: renew with every minor version
 function showNews() {
   const card = openModal(`<h3>${esc(t('newsT', { v: VERSION.split('.').slice(0, 2).join('.') }))}</h3><ul class="news">${NEWS.map(k => `<li>${esc(t('news_' + k))}</li>`).join('')}</ul>
     <div class="modal-actions"><span class="spacer"></span><button class="btn primary" type="button" data-x>${esc(t('newsOk'))}</button></div>`, () => setTimeout(coachMaybe, 300));
@@ -7969,6 +7986,7 @@ function recReattach() {
   R.native = true; R.started = L.started || Date.now(); R.marks = L.marks || []; R.acc = i.sec || 0;
   R.levels = new Array(Math.floor(R.acc * LR)).fill(0); R.curMax = 0; R.cancel = false; R.mon = false; R.mv = null;
   R.state = i.state; R.callPaused = !!i.call; R.t0 = performance.now();
+  liveReset(); livePoll(true);
   loopRec(); updateRecUI();
 }
 function renderRecNotes() {
@@ -7978,14 +7996,17 @@ function renderRecNotes() {
     box.dataset.ok = 1;
     $('#rnRow').innerHTML = TAGS.map(k => `<button class="chip rn-c" type="button" data-rtag="${k}"><i style="--c:${TAGC[k]}"></i>${esc(t('tag_' + k))}</button>`).join('')
       + `<button class="chip rn-c" type="button" data-rn="note">${ic('edit')}${esc(t('rnNote'))}</button>`
-      + (NATIVE ? `<button class="chip rn-c" type="button" data-rn="photo">${ic('cam')}${esc(t('rnPhoto'))}</button>` : '');
+      + (NATIVE ? `<button class="chip rn-c" type="button" data-rn="photo">${ic('cam')}${esc(t('rnPhoto'))}</button>` : '')
+      + (NATIVE && CAPS.asr ? `<button class="chip rn-c" type="button" data-rn="live" aria-pressed="false">${ic('textic')}${esc(t('liveTx'))}</button>` : '');   // 5.16
   }
+  const lc = box.querySelector('[data-rn="live"]'); if (lc) lc.setAttribute('aria-pressed', liveWanted());
   $('#rnList').innerHTML = R.marks.slice(-3).reverse().map(m => `<li><button type="button" data-rmk="${m.id}"><span class="tc">${fmt(m.t)}</span>${tagDot(m)}${m.ph ? ic('cam') : ''}<span class="rn-t">${esc(m.note || m.label)}</span></button></li>`).join('');
 }
 $('#recNotes').addEventListener('click', e => {
   const tg = e.target.closest('[data-rtag]'), b = e.target.closest('[data-rn]'), m = e.target.closest('[data-rmk]');
   if (tg) addRecMark(tg.dataset.rtag);
   else if (b && b.dataset.rn === 'note') recNoteBox(null);
+  else if (b && b.dataset.rn === 'live') liveToggle();
   else if (b && b.dataset.rn === 'photo') takeNotePhoto({ rec: true, started: R.started, t: elapsed() });
   else if (m) recNoteBox(R.marks.find(x => x.id === m.dataset.rmk));
 });
@@ -8131,6 +8152,62 @@ $('#npTitle').addEventListener('change', () => { $('#plTitle').value = $('#npTit
 $('#npTitle').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
 $('#npNotes').addEventListener('input', () => { $('#plNotes').value = $('#npNotes').value; $('#plNotes').dispatchEvent(new Event('input')); });
 $('#plNotePage').addEventListener('click', openNotePage);
+
+/* ---------- 5.16: live text while recording: only when switched on, with the Whisper model already on the phone ----------
+   sentences come one by one a few seconds after they are said; when the recording ends they become the recording's text
+   (a draft: the full "Text" run can still be done later and replaces it) */
+R.lv = { used: false, on: false, segs: [], ready: false, lag: 0, skip: 0, err: '' };
+const liveWanted = () => !!ls.get('liveTx', false);
+function liveReset() { R.lv = { used: false, on: false, segs: [], ready: false, lag: 0, skip: 0, err: '' }; renderLive(); }
+function liveStart() {
+  if (!NATIVE || !CAPS.asr) return;
+  let r = {}; try { r = JSON.parse(AND.liveOn(S.textLang || '')); } catch (e) {}
+  if (!r.ok) { if (r.error !== 'idle') toast(t(r.error === 'asr-missing' ? 'liveNoModel' : 'liveFail'), 4000); return; }
+  R.lv.used = true; R.lv.on = true; R.lv.err = ''; renderLive();
+}
+async function liveToggle() {
+  if (!NATIVE || !CAPS.asr) return;
+  if (!liveWanted() && !hasAsr()) { await asrRefresh(); if (!hasAsr()) { asrOffer(); return; } }
+  ls.set('liveTx', !liveWanted());
+  const act = R.native && (R.state === 'rec' || R.state === 'paused');
+  if (act) { if (liveWanted()) liveStart(); else { try { AND.liveOff(); } catch (e) {} R.lv.on = false; } }
+  toast(t(liveWanted() ? 'liveTxOn' : 'liveTxOff'), 2600);
+  renderRecFx(); renderRecNotes(); renderLive();
+}
+function livePoll(force) {
+  if (!R.lv.used && !force) return;
+  let j = null; try { j = JSON.parse(AND.livePoll(R.lv.segs.length)); } catch (e) { return; }
+  if (!j) return;
+  const add = j.segs || [];
+  if (add.length) R.lv.segs = R.lv.segs.concat(add);
+  if (j.on) R.lv.used = true;
+  const ch = add.length || j.on !== R.lv.on || j.ready !== R.lv.ready || Math.round(j.lag || 0) !== Math.round(R.lv.lag) || (j.skip || 0) !== R.lv.skip || (j.error || '') !== R.lv.err;
+  R.lv.on = !!j.on; R.lv.ready = !!j.ready; R.lv.lag = j.lag || 0; R.lv.skip = j.skip || 0; R.lv.err = j.error || '';
+  if (ch || force) renderLive();
+}
+function renderLive() {
+  const box = $('#recLiveBox'); if (!box) return;
+  const act = R.state === 'rec' || R.state === 'paused';
+  box.hidden = !act || !(R.lv.on || R.lv.segs.length);
+  if (box.hidden) return;
+  const L = R.lv;
+  const st = L.err ? t('liveFail') : !L.on ? t('liveOffNow') : !L.ready ? t('liveLoad') : L.lag >= 8 ? t('liveLag', { n: Math.round(L.lag) }) : L.segs.length ? '' : t('liveWait');
+  $('#rlSt').textContent = st + (L.skip ? (st ? ' · ' : '') + t('liveSkip', { n: L.skip }) : '');
+  $('#rlSt').hidden = !$('#rlSt').textContent;
+  const list = $('#rlList');
+  list.innerHTML = L.segs.slice(-4).map(x => `<li><span class="tc">${fmt(x[0])}</span><span dir="auto">${esc(x[2])}</span></li>`).join('');
+  list.scrollTop = list.scrollHeight;
+}
+/* the recording ended: the last sentences are written down (in the background), then become the recording's text */
+async function liveCollect(it) {
+  let res = null;
+  try { res = await runJob('liveEnd', {}); } catch (e) { return; }
+  if (!res || !(res.segments || []).length) return;
+  if (S.texts.has(it.id) || BUSY.has(it.id) || !S.items.has(it.id)) return;   // a full run came first: it is the better text
+  res.lang = res.lang || S.textLang || ''; res.live = true;
+  await txApply(it, res, true);
+  toast(t('liveSaved'), 3200);
+}
 
 /* ---------- boot ---------- */
 let booted = false;

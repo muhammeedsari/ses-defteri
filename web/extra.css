@@ -623,3 +623,10 @@ html:not(.tech) .pu-card small{display:none}
 .segs li.seg-mk{background:var(--accent-soft);font-size:13.5px}
 .segs li.seg-mk .ic{width:14px;height:14px;margin-left:6px;vertical-align:-2px}
 #noteSheet{z-index:26}
+/* 5.16: live text while recording */
+.rec-live{display:grid;gap:4px;padding:8px 10px;margin-top:6px;border-radius:12px;background:var(--stage-2);border:1px solid var(--stage-line)}
+.rl-st{margin:0;font-size:12px;color:var(--stage-muted)}
+.rl-list{list-style:none;margin:0;padding:0;display:grid;gap:3px;max-height:7.5em;overflow-y:auto}
+.rl-list li{display:flex;gap:8px;font-size:14px;line-height:1.35;color:var(--stage-ink)}
+.rl-list .tc{color:var(--stage-mark);flex:none;font-size:12px;padding-top:1px}
+.rn-row .chip[aria-pressed="true"]{border-color:var(--stage-mark);color:var(--stage-mark)}
