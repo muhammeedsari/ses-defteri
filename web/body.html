@@ -283,7 +283,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.16';
+const VERSION = '5.16.1';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) {
@@ -5467,7 +5467,7 @@ async function finishNative() {
   if (!res.ok || !res.item) { R.state = 'idle'; updateRecUI(); closeOverlay('rec'); toast(t(res.error === 'empty' ? 'recShort' : 'recSaveFail'), 4000); return; }
   if (res.cut) toast(t('recCut'), 6000);
   const it = fromNative(res.item, null);
-  const lv = R.lv.used; R.lv.used = false; renderLive();
+  const lv = R.lv.used, lvLag = R.lv.lag; R.lv.used = false; renderLive();
   it.title = defaultTitle(R.mode, R.started); it.userTitle = true; it.created = R.started;
   if (!it.duration) it.duration = R.endEl;
   it.categoryId = defaultCat(); it.notes = ''; it.bookmarks = R.marks.slice(); it.source = 'mic'; it.mode = R.mode; it.fav = false; it.kind = 'rec';
@@ -5476,7 +5476,7 @@ async function finishNative() {
   S.items.set(it.id, it); await saveRec(it);
   await storePeaks(it.id, toBytes(R.levels), LR); storedPeakIds.add(it.id);
   it.purpose = R.purpose; await saveRec(it);
-  if (lv) liveCollect(it);
+  if (lv) liveCollect(it, lvLag);
   R.state = 'idle'; R.levels = [];
   if (S.tab === 'music') { S.tab = 'rec'; ls.set('tab', 'rec'); }
   render();
@@ -7209,7 +7209,7 @@ function renderLive() {
   box.hidden = !act || !(R.lv.on || R.lv.segs.length);
   if (box.hidden) return;
   const L = R.lv;
-  const st = L.err ? t('liveFail') : !L.on ? t('liveOffNow') : !L.ready ? t('liveLoad') : L.lag >= 8 ? t('liveLag', { n: Math.round(L.lag) }) : L.segs.length ? '' : t('liveWait');
+  const st = L.err ? t('liveFail') : !L.on ? t('liveOffNow') + (L.lag >= 8 ? ' · ' + t('liveLag', { n: Math.round(L.lag) }) : '') : !L.ready ? t('liveLoad') : L.lag >= 8 ? t('liveLag', { n: Math.round(L.lag) }) : L.segs.length ? '' : t('liveWait');
   $('#rlSt').textContent = st + (L.skip ? (st ? ' · ' : '') + t('liveSkip', { n: L.skip }) : '');
   $('#rlSt').hidden = !$('#rlSt').textContent;
   const list = $('#rlList');
@@ -7217,7 +7217,8 @@ function renderLive() {
   list.scrollTop = list.scrollHeight;
 }
 /* the recording ended: the last sentences are written down (in the background), then become the recording's text */
-async function liveCollect(it) {
+async function liveCollect(it, lag) {
+  if (lag >= 5) toast(t('liveRest', { n: Math.round(lag) }), 5000);
   let res = null;
   try { res = await runJob('liveEnd', {}); } catch (e) { return; }
   if (!res || !(res.segments || []).length) return;

@@ -77,6 +77,7 @@ public class MainActivity extends Activity implements Player.Listener {
     private final ExecutorService pool = Executors.newSingleThreadExecutor();
     /* enhancement, speech-to-text, mixing: one at a time, apart from waveform work */
     private final ExecutorService studioPool = Executors.newSingleThreadExecutor();
+    private final ExecutorService livePool = Executors.newCachedThreadPool();
     /* background waveform work runs on its own low-priority thread so it never holds up what is on screen */
     private final ExecutorService bgPool = Executors.newSingleThreadExecutor(new java.util.concurrent.ThreadFactory() {
         @Override public Thread newThread(Runnable r) { Thread t = new Thread(r, "sd-bg"); t.setPriority(Thread.MIN_PRIORITY); return t; }
@@ -1203,7 +1204,7 @@ public class MainActivity extends Activity implements Player.Listener {
             jobs.put(id, cancel);
             boolean bg = false;
             try { bg = new JSONObject(argsJson).optBoolean("bg", false); } catch (Exception ignored) { }
-            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"spectro".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind) && !"ttsStatus".equals(kind) && !"ttsDelete".equals(kind) && !"liveEnd".equals(kind);
+            final boolean heavy = !"peaks".equals(kind) && !"commit".equals(kind) && !"wsClean".equals(kind) && !"tlClean".equals(kind) && !"roomTest".equals(kind) && !"loudness".equals(kind) && !"spectro".equals(kind) && !"asrStatus".equals(kind) && !"asrDelete".equals(kind) && !"ttsStatus".equals(kind) && !"ttsDelete".equals(kind);
             if (heavy) {
                 heavyIds.add(id);
                 WorkService.label(null);
@@ -1214,7 +1215,8 @@ public class MainActivity extends Activity implements Player.Listener {
                     ui(new Runnable() { @Override public void run() { try { requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF); } catch (Exception ignored) { } } });
                 }
             }
-            (bg ? bgPool : heavy || "wsClean".equals(kind) || "tlClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
+            // 5.16: the live text of a stopped recording finishes on its own thread, never behind other work
+            ("liveEnd".equals(kind) ? livePool : bg ? bgPool : heavy || "wsClean".equals(kind) || "tlClean".equals(kind) ? studioPool : pool).execute(new Runnable() {
                 @Override
                 public void run() {
                     String model = null;
@@ -1271,7 +1273,7 @@ public class MainActivity extends Activity implements Player.Listener {
                         } else if ("asrDelete".equals(kind)) {
                             res = AsrModels.delete(MainActivity.this, a);
                         } else if ("liveEnd".equals(kind)) {
-                            res = LiveText.end(cancel);
+                            res = LiveText.end(p, cancel);
                         } else if ("asrStatus".equals(kind)) {
                             res = AsrModels.status(MainActivity.this);
                         } else if ("sounds".equals(kind)) {

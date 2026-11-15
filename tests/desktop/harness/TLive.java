@@ -2,7 +2,7 @@ import app.sesdefteri.asr.*;
 import java.io.*;
 import java.util.*;
 
-/** 5.16 desktop check (args: modelDir model wav lang speed maxBacklog; speed 4 = a phone 4x slower than this machine).
+/** 5.16 desktop check (args: modelDir model wav lang speed maxBacklog [overflowFile]; speed 4 = a phone 4x slower than this machine).
  *  Needs the sherpa-onnx linux-x64 JNI library on -Djava.library.path. Desktop check of the 5.16 live text: real-time feeding like the recorder, latency per sentence, skipping when slow */
 public class TLive {
     static float[] wav(String f, int[] rate) throws Exception {
@@ -20,7 +20,7 @@ public class TLive {
         int[] r = new int[1]; float[] x = wav(a[2], r); int rate = r[0];
         final List<Transcriber.Segment> out = new ArrayList<>();
         Live l = new Live(new Live.Maker() { public Transcriber make() {
-            return new Transcriber(null, dir, model, lang, 2); } }, rate, 0, out, cap);
+            return new Transcriber(null, dir, model, lang, 2); } }, rate, 0, out, cap, a.length > 6 ? new File(a[6]) : null, 3 * 3600);
         Thread th = new Thread(l); th.start();
         long t0 = System.nanoTime();
         int blk = rate / 50; float[][] buf = new float[2][blk]; int seen = 0;
@@ -36,7 +36,10 @@ public class TLive {
             maxLag = Math.max(maxLag, l.lag());
             synchronized (out) { for (; seen < out.size(); seen++) shown.put(seen, audioT); }
         }
+        double lagAtStop = l.lag(); long te = System.nanoTime();
         l.finish(); th.join();
+        System.out.printf("at stop %.1fs of audio waited; written down %.1fs after stop (wall)%s%n", lagAtStop, (System.nanoTime() - te) / 1e9,
+            a.length > 6 ? ", overflow file removed: " + !new File(a[6]).exists() : "");
         double feedEnd = x.length / (double) rate;
         System.out.printf("rate %d  ready %b  error '%s'  sentences %d  max backlog %.1fs  skipped %.1fs  lang %s%n", rate, l.ready, l.error, out.size(), maxLag, l.skipped(), l.lang);
         double sum = 0; int k = 0;

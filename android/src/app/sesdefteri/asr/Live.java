@@ -12,8 +12,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 5.16: live text while recording. The recorder hands over its samples (never waits), a worker thread turns them into
- * sentences with the same voice detector + Whisper as the later full run. When the phone is too slow the backlog is
- * capped: older audio is skipped and the times stay right. Pure Java, so it runs on a desktop JVM for testing.
+ * sentences with the same voice detector + Whisper as the later full run. When the phone is too slow, what does not fit
+ * in memory waits in a file (16-bit, in order) and is written down later, also after the recording ended; only when
+ * that file cannot grow (no space, over the limit) audio is skipped, and then the times stay right.
+ * Pure Java, so it runs on a desktop JVM for testing.
  */
 public final class Live implements Runnable {
     public interface Maker { Transcriber make() throws Exception; }
@@ -30,6 +32,16 @@ public final class Live implements Runnable {
     public volatile String error = "";
     public volatile String lang = "";
 
+    // the overflow file: once used, every new block goes there until the worker has caught up with it
+    public final java.io.File spillFile;
+    private final long spillMax;
+    private final Object lock = new Object();
+    private java.io.RandomAccessFile spillW, spillR;
+    private volatile boolean spilling, ending;
+    private final AtomicLong spilled = new AtomicLong();   // samples written to the file
+    private long spillRead;                                // samples read back (worker only)
+    private byte[] wb = new byte[0];
+
     /**
      * @param rate the recorder's sample rate
      * @param start seconds already recorded when this run begins (switched on during a recording)
@@ -37,14 +49,28 @@ public final class Live implements Runnable {
      * @param maxBacklog seconds of audio that may wait before the oldest is skipped
      */
     public Live(Maker maker, int rate, double start, List<Transcriber.Segment> out, double maxBacklog) {
-        this.maker = maker; this.rate = rate; this.start = start; this.out = out;
-        cap = (long) (maxBacklog * rate);
+        this(maker, rate, start, out, maxBacklog, null, 0);
     }
 
-    /** from the recording thread: mono samples, copied; skipped when the backlog is full */
+    /** spill: the overflow file (null = skip instead); maxSpill: seconds it may hold */
+    public Live(Maker maker, int rate, double start, List<Transcriber.Segment> out, double maxBacklog, java.io.File spill, double maxSpill) {
+        this.maker = maker; this.rate = rate; this.start = start; this.out = out;
+        cap = (long) (maxBacklog * rate);
+        spillFile = spill;
+        spillMax = (long) (maxSpill * rate);
+    }
+
+    /** from the recording thread: mono samples, copied; into the file or skipped when the memory backlog is full */
     public void feed(float[] mono, int n) {
         if (done || n <= 0) return;
-        if (queued.get() + n > cap) { dropped.addAndGet(n); return; }
+        if (spilling || queued.get() + n > cap) {
+            synchronized (lock) {
+                if (spilling || queued.get() + n > cap) {
+                    if (!spill(mono, n)) dropped.addAndGet(n);
+                    return;
+                }
+            }
+        }
         float[] c = new float[n];
         System.arraycopy(mono, 0, c, 0, n);
         queued.addAndGet(n);
@@ -60,13 +86,56 @@ public final class Live implements Runnable {
         feed(mono, n);
     }
 
-    /** seconds of audio still waiting */
-    public double lag() { return queued.get() / (double) rate; }
+    /** writes to the overflow file (lock held); false when it cannot */
+    private boolean spill(float[] x, int n) {
+        if (spillFile == null || done) return false;
+        try {
+            if (spillW == null) { spillW = new java.io.RandomAccessFile(spillFile, "rw"); spillW.setLength(0); }
+            long have = spilled.get() - spillRead;
+            if (have + n > spillMax || spillFile.getUsableSpace() < 300L << 20) return false;
+            if (wb.length < n * 2) wb = new byte[n * 2];
+            for (int i = 0; i < n; i++) {
+                int s = Math.round(x[i] * 32768f);   // the recorder's own 16-bit steps: nothing changes on the way back
+                if (s > 32767) s = 32767; else if (s < -32768) s = -32768;
+                wb[2 * i] = (byte) s; wb[2 * i + 1] = (byte) (s >> 8);
+            }
+            spillW.seek(spilled.get() * 2);
+            spillW.write(wb, 0, n * 2);
+            spilling = true;
+            spilled.addAndGet(n);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** worker: the next block from the overflow file, or null when it is used up (then new audio goes to memory again) */
+    private float[] unspill() throws Exception {
+        long n;
+        synchronized (lock) {
+            n = Math.min(spilled.get() - spillRead, rate / 2);
+            if (n <= 0) {
+                if (spilling) { spilling = false; spilled.set(0); spillRead = 0; }   // caught up: the file starts again from 0
+                return null;
+            }
+        }
+        if (spillR == null) spillR = new java.io.RandomAccessFile(spillFile, "r");
+        byte[] b = new byte[(int) n * 2];
+        spillR.seek(spillRead * 2);
+        spillR.readFully(b);
+        float[] x = new float[(int) n];
+        for (int i = 0; i < n; i++) x[i] = (short) ((b[2 * i] & 0xff) | (b[2 * i + 1] << 8)) / 32768f;
+        synchronized (lock) { spillRead += n; }
+        return x;
+    }
+
+    /** seconds of audio still waiting (in memory and in the file) */
+    public double lag() { return (queued.get() + Math.max(0, spilled.get() - spillRead)) / (double) rate; }
     /** seconds skipped because the phone could not keep up */
     public double skipped() { return dropped.get() / (double) rate; }
 
-    /** no more audio: what is waiting is still written down, then the worker ends */
-    public void finish() { q.offer(END); }
+    /** no more audio: what is waiting is still written down (the file too), then the worker ends */
+    public void finish() { ending = true; q.offer(END); }
 
     private volatile boolean abort;
     /** stop now, the waiting audio is dropped */
@@ -90,11 +159,16 @@ public final class Live implements Runnable {
             ready = true;
             float[][] one = new float[1][];
             long skippedSeen = 0;
+            boolean end = false;
             while (!abort) {
-                float[] b = q.poll(500, TimeUnit.MILLISECONDS);
-                if (b == null) continue;
-                if (b == END) break;
-                queued.addAndGet(-b.length);
+                // memory first: everything in the file came after it
+                float[] b = q.poll(end || spilling ? 0 : 200, TimeUnit.MILLISECONDS);
+                if (b == END) { end = true; continue; }
+                if (b != null) queued.addAndGet(-b.length);
+                else {
+                    b = spillFile == null ? null : unspill();
+                    if (b == null) { if (end) break; continue; }
+                }
                 long d = dropped.get();
                 // audio was skipped before this block: later sentences move by that much so their times match the file
                 if (d != skippedSeen) { t.offset += (d - skippedSeen) / (double) rate; skippedSeen = d; }
@@ -106,6 +180,12 @@ public final class Live implements Runnable {
             error = String.valueOf(e.getMessage());
         } finally {
             done = true;
+            synchronized (lock) {
+                try { if (spillW != null) spillW.close(); } catch (Exception ignored) { }
+                try { if (spillR != null) spillR.close(); } catch (Exception ignored) { }
+                if (spillFile != null) spillFile.delete();
+                spilled.set(0); spillRead = 0; spilling = false;
+            }
             q.clear();
             queued.set(0);
             if (tr != null) try { tr.release(); } catch (Throwable ignored) { }
