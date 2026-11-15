@@ -1,0 +1,57 @@
+Ses Defteri Türkçe test sesleri: dosyalarda söylenen cümleler (doğru metin)
+Yazıya dök / Sözleri çıkar sonucunu bununla karşılaştır. Noktalama ve büyük harf farkı önemli değil.
+
+== 01-tr-kadin-temiz.wav (22-tr-kadin-temiz.mp3 ve 20-tr-konusmali-video.mp4 aynı metin)
+- Bu bölgede kaldığınız sürece, genelde pasaport kontrol noktalarından tekrar geçmeden sınırdan geçebilirsiniz.
+- Sanal takım üyeleri genellikle onların yakın fiziksel grupları için danışılacak kişi görevi görür.
+- Oahu'da bir göstergede 6,34 inç'e ulaşan yağış "faydalı" olarak tanımlandı.
+- Sonraki raporlar uçağın bir bomba tehditi aldığını ve Afganistan'a geri çevrilip Kandahar'a indiğini bildirmiştir.
+- Bazı bilim insanları Triceratopsun, Kretase döneminde yaygın olan bir bitki türü olan sikas ile beslendiğini düşünmektedir.
+- Faz değişimine neden olan büyük deprem olayları, 10 Mart'ta yanardağın zirvesindeki kalderanın kuzeydoğu tarafında meydana geldi.
+- Çoğu ölüm, akıntıya karşı yüzmeye çalışma sonucu, ki bu imkansız olabilir, yorgunluk nedeniyle gerçekleşir.
+
+== 02-tr-erkek-temiz.wav (21-tr-sesli-mesaj.opus aynı metin)
+- Daha geleneksel kiliseler, Paskalya hafta sonu boyunca cumartesi gecesi Paskalya Nöbeti düzenlerler ve cemaatler genellikle Mesih'in dirilişini kutlamak için gece yarısı kutlamalara başlarlar.
+- Safari teriminin sıkça kullanılan kullanımı, özellikle savanalarda yaşayan çarpıcı Afrika yaban hayvanlarını izlemek için yapılan yolculukları ifade etmektedir.
+- Kırsal bölgelerde araba kullanmaya aşina değilseniz gözünüzü dört açın. Dik eğimler, dar şeritler ve keskin virajlar sizi bekliyor.
+- Şov, başlangıçta sadece, konuşma radyosuna odaklanan ve uzun süredir yayına devam eden bir internet radyo sitesi olan TogiNet Radio'da yayınlandı.
+- Bir filozof olan Aristoteles, her şeyin dört elementten bir veya daha fazlasının karışımından oluştuğunu teorileştirdi. Bunlar toprak, su, hava ve ateşti.
+- Bir gözlemci, sokaklarında çetelerinin dolaşarak mağazaları yağmalamasıyla Bişkek'in bir "anarşi" durumuna saplandığını söyledi.
+
+== 03-tr-iki-kisi-biri-kisik.wav
+- Kadın: Nijerya, zirvenin gerçekleşeceği hafta AfCFTA'ya dahil olmayı planladığını önceden duyurmuştu.
+- Erkek: Melek (2006), kuruluşların daha yüksek bir performans seviyesine ulaşmasına yardımcı olarak kullanılan bir yöntem olan Süreklilik yaklaşımını açıklar.
+- Kadın: Ateş ve boğaz ağrısının dışında, uzaktan çalışarak işimi yapmak için kendimi iyi ve zinde hissediyorum.
+- Erkek: Hong Kong siluetini meydana getiren binalar, Victoria Limanı’ndaki sularla daha da ön plana çıkan, parlayan bir sütunlu grafiğe benzetilir.
+- Kadın: ABD güçlerinin yönetimi ele geçirmesinin ardından mahkumların taciz edildiğinin ortaya çıkmasıyla hapishane kötü bir ün kazandı.
+- Erkek: Mesela, “öğrenme” ve “sosyalleşme”, İnternet kullanımı için önemli motivasyonlar olarak tavsiye edilmektedir (James ve diğerleri, 1995).
+- Kadın: Galapagos'un bölgeleri ve vahşi yaşamını görmek, en güzel Charles Darwin'in 1835'te yaptığı gibi bir botla yapılır.
+- Erkek: Point Marlon ve Fairmont arasındaki arazi, sık sık tenha, geri kalmış bölgelerden geçen Buffalo-Pittsburgh Otoyolu'nun en zorlu sürüş koşullarını sunuyor.
+
+== 04-tr-uc-kisi.wav
+- 1. kadın: Yolcu serabın peşinden giderek değerli enerjisini ve kalan suyunu boşa harcarsa bunlar tehlikeli olabilir.
+- Erkek: Burası İngiliz sömürgecilerin kendileri için aldıkları yer ve bu sebeple, bölgenin sömürge geçmişine dair delil arıyorsanız, başlamak için burası iyi bir yerdir.
+- 2. kadın: Bu tür başarı öyküleri, gelecekte değişime yönelik pozitif eğilimler yaratırken, değişimden de daha az korkmayı sağladı.
+- Erkek: Erkekleri reddederken katı olun ve istemediğinizi belirtmekten korkmayın (kültürel farklılıklar olsa da olmasa da davranışın doğru olduğu anlamına gelmez!).
+- 1. kadın: 18. asırda Kamboçya kendisini iki güçlü komşu olan Tayland ve Vietnam arasında buldu.
+- 2. kadın: Notlarında, bazı ebeveynlerin kaba bulduğu kelimeler kullanıyordu ve derslikte de küfürlü ifadeler kullandığı belirtiliyordu.
+- 1. kadın: Bu özellikle okuldan ayrılanlar arasında popülerdir ve eğitimlerinden ödün vermeden üniversiteden önce 1 yıl izin almalarını sağlar.
+- Erkek: Çoğunlukla boş yıl için yurt dışında bir kursa kayıt yaptırmak aslında kendi ülkenizde yüksek öğrenime geri dönme şansınızı artırabilir.
+- 2. kadın: Şüphesiz, Filipin halkının uzun yıllar sömürülmesiyle elde edilen ekstra kâr, ABD emperyalizminin başlıca kazançları arasında yer alıyor.
+
+== 12-tr-yankili-oda.wav
+- Goma'da gezinmek için boda-boda (motosiklet taksi) kullanabilirsiniz. Normal (yerel) fiyat, kısa mesafe için yaklaşık 500 Kongo Frangı'dır.
+- 20li yaşlarda olduğu bildirildi. Bieber yaptığı açıklamada, "Bu trajik kazada bulunmamış veya kazaya direkt olarak karışmamış olsam da kurbanın ailesine sabırlar diliyorum." dedi.
+- Kıyıdan Bangladeş ve Hindistan'ın iç bölgelerine 80 km kadar uzanan Sundarban, dünyanın en büyük kıyı mangrov kuşağıdır.
+
+== 14-tr-telefon-8khz.wav
+- Aslan sürüleri otuz civarında dişi ve yavruyla birlikte bir ila üç arasında değişen yetişkin akraba erkekten oluşur.
+- İptal politikaları değişiklik gösterir. Fakat Mart sonundan itibaren çoğu koronavirüs sebepli iptal politikası Olimpiyatların yapılması planlandığı Temmuz 2020'ye kadar uzamaz.
+- Zamanla, yeni nüfus yeni çevresine uyum sağlamaya başladıkça diğer popülasyondan gittikçe daha farklı görünmeye başlarlar.
+
+== 08-tr-supurge-gurultusu.wav
+- Köprünün altındaki dikey açıklık 15 metredir. İnşaat 2011 yılı Ağustos ayında tamamlandı, Mart 2017'ye kadar trafiğe açılmadı.
+- Liggins, hastanede çalışmaktayken, işten arta kalan zamanda prematüre doğumu incelemeye başladı.
+- Salı günü kesilmesi planlanıyordu ama olağanüstü hal mahkemesi kararıyla kurtarıldı.
+- Arasında çocuk ve yaşlıların da dahil olduğu altı tane rehine de, filipinli fotoğrafçılarla birlikte salıverildi.
+- Filipinli eski bir polis, Filipin'in başkenti Manila'da otobüslerini kaçırarak Hong Kong’lu turistleri rehin aldı.

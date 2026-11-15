@@ -1,0 +1,89 @@
+Ses Defteri test dosyaları, 2. set (2 Kasım 2026)
+
+İlk set (test-sesleri/) tamamen yapay seslerdi. Bu sette gerçek insan sesi, gerçek gürültü,
+gerçek oda yankısı, gerçek şarkı ve gerçek müzik var. Efektlerin gerçek kayıtta ne yaptığını
+görmek için bunları kullan. 16-20 arası dosyalar gerçek bir kayda bilerek kusur eklenerek
+hazırlandı (ne eklendiği yazıyor), böylece efektin işi tam olarak bilinir.
+
+Hepsi serbest lisanslı. Uygulamanın içine ya da mağaza görsellerine koyacaksan "Kaynak" satırındaki
+ismi anmak yeterli (CC BY). 08 numaralı dosyayı yalnızca kendi testlerinde kullan.
+
+------------------------------------------------------------------------------------------
+GERÇEK KAYITLAR
+------------------------------------------------------------------------------------------
+01-gercek-kafe-gurultusu.wav        ~42 sn. Kulaklık mikrofonuyla kalabalık kafeteryada konuşan 3 kişi
+                                    (tabak, konuşma uğultusu). Test: Temizle, gürültü temizleme,
+                                    YZ gürültü temizliği (DPDFNet). Arkadaki kalabalık gitmeli, ses bozulmamalı.
+02-gercek-klavye-sesi.wav           ~34 sn. Konuşurken yüksek sesle klavye yazılıyor. Test: YZ gürültü
+                                    temizliği, tık temizleme. Klasik gürültü temizliği burada zorlanır, YZ başarmalı.
+03-gercek-fotokopi-makinesi.wav     ~17 sn. Hoparlörlü toplantı, yanda fotokopi makinesi çalışıyor.
+                                    Test: gürültü temizleme (sürekli makine sesi), Temizle teşhisi.
+04-gercek-cips-citirtisi.wav        ~16 sn. Konuşurken cips yeniyor (çıtırtı, ağız sesi). Test: ağız sesi
+                                    temizleme, tık temizleme, YZ gürültü temizliği.
+05-gercek-yankili-koridor.wav       ~27 sn. Dizüstü mikrofonuyla boş koridorda konuşma (gerçek yankı); son
+                                    5 sn aynı kişi sessiz odada (karşılaştırma için). Test: yankı azaltma.
+06-yankili-oda-gercek-iz.wav        ~32 sn. Temiz konuşmaya gerçek odalarda ölçülmüş yankı uygulanmış
+                                    (yankı süresi 0,3-1,3 sn). Test: yankı azaltma, Sesi netleştir.
+07-sesli-kitap-uc-okuyucu.wav       ~47 sn. Üç farklı gönüllünün sesli kitap okuması (1 kadın, 2 erkek),
+                                    stüdyo kalitesi, İngilizce, doğal nefesler. Test: İngilizce Metne dök,
+                                    Konuşmacılar ("Kendisi bulsun" → 3 kişi), nefes kısma, EQ/netleştir.
+08-gercek-iki-kisi-sohbet.wav       30 sn. İki kişinin gerçek İngilizce sohbeti, yer yer üst üste konuşma.
+                                    Test: Konuşmacılar (2 kişi çıkmalı), Metne dök.
+09-ingilizce-jfk-konusmasi.wav      11 sn. Kennedy'nin 1961 konuşması ("ask not what your country...").
+                                    Test: Metne dök (İngilizce, sonuç bilinir), 24 bit stereo WAV açma.
+10-a-capella-sarki-1.wav / -2.wav   9 ve 12 sn. Gerçek insan sesi, müziksiz şarkı söylüyor. Test: Autotune
+                                    (gamı kendisi bulsun; etki "robot" ayarında net duyulur), ses yüksekliği.
+11-trompet-solo.ogg                 26 sn. Tek trompet, ilahi melodisi. Test: Autotune enstrümanda,
+                                    OGG açma, ritim işaretleri.
+12-sarki-vokalli-muzikli.mp3        2 dk 13 sn. Kadın vokalli, gitarlı gerçek şarkı. Test: Sesi ayır
+                                    (vokal / müzik), karaoke, çıkan vokale Autotune, EQ, bas/tiz.
+13-caz-enstrumantal.mp3             61 sn. Sözsüz caz (vibrafon, bas, davul). Test: EQ ve bas/tiz (bas net
+                                    duyulur), Sesi ayır (vokal kanalı neredeyse boş çıkmalı), çapraz geçiş.
+14-yayli-orkestra.mp3               46 sn. Brahms, Macar Dansı No. 5, yaylı orkestra. Test: EQ, seviye
+                                    eşitleme (sessiz-gürültülü bölümler), müzik çalar.
+15-video-big-buck-bunny.mp4         60 sn, 640x360, müzik ve efekt sesli animasyon. Test: video açma,
+                                    videodan ses alma, sesi değiştirip videoya geri koyma, kesme.
+
+------------------------------------------------------------------------------------------
+GERÇEK KAYITTAN HAZIRLANANLAR (kusur bilerek eklendi)
+------------------------------------------------------------------------------------------
+16-gercek-ses-50hz-60hz-ugultu.wav  ~37 sn. İlk yarı 50 Hz, ikinci yarı 60 Hz elektrik uğultusu (vızıltılı,
+                                    harmonikli), başta ve sonda sadece uğultu. Test: uğultu giderme
+                                    (iki frekansı da bulmalı), spektrumda çizgileri görme.
+17-gercek-ses-patlamis.wav          15 sn. Gerçek konuşma 18 dB fazla yükseltilip kırpılmış. Test: patlamış
+                                    ses onarma, Temizle teşhisi ("patlama var" demeli).
+18-plak-cizirtisi-tik.wav           30 sn, stereo. 14'teki orkestraya eski plak gibi tık, çatırtı ve hafif
+                                    hışırtı eklendi. Test: tık temizleme (müzik bozulmadan tıklar gitmeli).
+19-gercek-ses-seviyesi-dengesiz.wav ~55 sn. Gerçek okumalar sırayla çok yüksek, çok kısık, orta, kısık.
+                                    Test: seviye eşitleme, otomatik kazanç, LUFS.
+20-gercek-ses-uzun-sessizlikler.wav ~61 sn. Gerçek okumalar arasında 2,5 / 4 / 6,5 / 3 sn'lik sessizlikler.
+                                    Test: duraklama kısaltma, sessizliği atla (çalarken), bölümlere ayırma.
+
+------------------------------------------------------------------------------------------
+KAYNAKLAR VE LİSANSLAR
+------------------------------------------------------------------------------------------
+01-06  Microsoft DNS Challenge (Interspeech 2020) test seti, github.com/microsoft/DNS-Challenge
+       (dal interspeech2020/master, datasets/test_set). Lisans: CC BY 4.0.
+       01-05 Microsoft ofislerindeki gerçek kayıtlar (ms_realrec_*), 06 Graz Üniversitesi temiz
+       konuşması + Microsoft'un ölçtüğü oda yankıları (synthetic/with_reverb/clean).
+       01-05'te kısa parçalar 0,6 sn arayla birleştirildi, 48 kHz'e çevrildi.
+07, 16, 17, 19, 20  LibriSpeech (openslr.org/12), LibriVox gönüllü okumaları; librosa/data deposu
+       üzerinden. Lisans: CC BY 4.0. Okuyucular: Heather Barnett (Sense and Sensibility),
+       Anders Lankford (The Age of Chivalry), Garth Comira (Ashiel Mystery).
+08     pyannote-audio projesinin örnek dosyası (github.com/pyannote/pyannote-audio,
+       tutorials/assets/sample.wav). Depo MIT lisanslı ama sesin asıl kaynağı yazılmamış:
+       yalnızca kendi testin için kullan, uygulamaya ya da tanıtıma koyma.
+09     J. F. Kennedy göreve başlama konuşması (1961), ABD hükümeti eseri, kamu malı.
+       openai/whisper deposundaki test dosyası (tests/jfk.flac).
+10     vocadito veri seti (Bittner ve ark., 2021), CC BY 4.0; spotify/basic-pitch deposu
+       (tests/resources/vocadito_10.wav, vocadito_14.wav).
+11     "Jesu geh voran" (Adam Drese), trompet: Stefan Balke. CC BY 4.0. librosa/data (drese-tempo).
+12     "Let's Go Fishin'" - Karissa Hobbs, Free Music Archive. CC BY 3.0. librosa/data.
+13     "Vibe Ace" - Kevin MacLeod, Free Music Archive. CC BY 3.0. librosa/data.
+14, 18 Brahms, Hungarian Dance No. 5 - US Army Strings, Musopen. Kamu malı. librosa/data.
+15     Big Buck Bunny, (c) Blender Foundation, peach.blender.org. CC BY 3.0.
+       mediaelement/mediaelement-files deposu.
+
+Not: Bu ortamdan Freesound, Wikimedia Commons, OpenSLR ve Common Voice sitelerine erişim kapalıydı;
+aynı kaynakların GitHub'daki kopyaları kullanıldı. Gerçek insanın Türkçe konuşması serbest lisansla
+bulunamadı: Türkçe için ilk setteki dosyalar ve telefonla kendi kaydın en iyi test olur.

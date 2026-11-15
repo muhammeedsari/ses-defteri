@@ -1,0 +1,28 @@
+Ses Defteri test dosyaları (hepsi Claude tarafından üretildi, telif yok)
+
+01-konusma-temiz (.mp3 .m4a .flac)  ~50 sn Türkçe konuşma. Sesten metin (Whisper), dosya açma, paylaşma, ses çizgisi, Sesi netleştir öncesi karşılaştırma. Rakam ve şehir adları içerir.
+02-diyalog-iki-kisi.mp3              İki farklı ses, ikinci konuşmacı ~8 dB kısık. Konuşmacılar (ayırma + seslerin eşitlenmesi).
+03-konusma-gurultulu.mp3             01 + vantilatör gürültüsü + 50 Hz uğultu. Temizle, YZ gürültü temizliği, uğultu giderme.
+04-konusma-boguk.mp3                 01'in boğuk ve kısık hali. Sesi netleştir (Hafif/Dengeli/Güçlü).
+05-konusma-uzerinde-zil.wav          01 + 4., 11., 19. ve 27. saniyede 2,4 kHz bip. Spektrum + fırçayla silme.
+06-muzik-3dk.mp3                     3 dk enstrümantal (La minör, 100 BPM, davul 10. sn'den sonra). Arka planda çalma, kilit ekranı, ses ölçer, çapraz geçiş, ducking (01 ile birlikte), ritim işaretleri.
+07-sarki-detone.wav                  15 sn şarkı benzeri ses, her nota 20-45 sent yanlış, La minör. Autotune (gamı kendisi bulsun → La minör çıkmalı).
+08-video-yatay.mp4                   20 sn yatay video: her saniye ekran beyaz yanıp söner ve aynı anda bip çalar. Videoya koy / videodan ses alma; senkron kontrolü.
+09-video-dikey.mp4                   Aynısı, telefonla çekilmiş gibi dikey (döndürme bilgisiyle). "DIKEY" yazısı düz okunmalı.
+
+Videoya koy senkron testi: 06'yı ya da bip içeren 08'in sesini projeye koyup videoya yerleştir; bip ile beyaz flaş aynı anda olmalı.
+
+--- 30 Ekim eklenenler ---
+01-konusma-temiz.wav                 01'in 44,1 kHz WAV hali. Dosya açma (farklı örnekleme hızı).
+10-sohbet-uc-kisi.mp3                ~37 sn, üç farklı ses tatil planı konuşuyor. Konuşmacılar ("Kendisi bulsun" → 3 kişi çıkmalı).
+11-konusma-muzik-ustunde.mp3         ~25 sn, müzik üstünde podcast konuşması. Sesi ayır (konuşmayı koru / müziği kaldır), ses ölçer.
+12-sarki-muzikli.mp3                 ~15 sn, 07'deki detone şarkı + arka plan müziği. Önce Sesi ayır, sonra çıkan vokale Autotune.
+13-dolgu-tekrar-nefes.mp3            ~34 sn yemek tarifi: "ııı" dolgu sesleri, tekrar çekim ("Bugün size... bugün size"), nefesler, ağız şıklatmaları, 3,5 ve 4 sn'lik uzun duraklamalar. Dolgu/tekrar bulma, nefes kısma, ağız sesi temizleme, duraklama kısaltma.
+14-patlamis-ses.wav                  ~11 sn, aşırı yüksek kaydedilmiş, patlamış konuşma. Patlamış ses onarımı, Temizle teşhisi.
+15-yankili-oda.mp3                   ~12 sn, boş odada yankılı konuşma. Yankı azaltma, Temizle.
+16-seviyesi-dengesiz.mp3             ~17 sn, cümleler sırayla yakın/uzak (çok yüksek ve çok kısık). Seviye eşitleme, otomatik kazanç, LUFS.
+17-sadece-sol-kanal.wav              ~8 sn, ses yalnızca sol kanalda. Kanalları düzelt, tek sesten çift sese.
+18-ingilizce-konusma.mp3             ~20 sn İngilizce konuşma. Dil İngilizce iken Metne dök.
+19-telefon-gorusmesi-8khz.wav        10'un telefon kalitesi hali (8 kHz, dar bant). Dosya açma, Sesi netleştir, Metne dök.
+20-sesli-mesaj.ogg / .opus           01'in WhatsApp sesli mesajı gibi Opus hali. "Ses Defteri ile aç" ve Paylaş ile içe alma.
+21-uzun-toplanti.m4a                 ~6,5 dk toplantı: bütçe, işe alım, şirket gezisi (3 konu), hafif oda gürültüsü. Uzun dosyada metne dökme (arka planda), konuya göre bölümler, Temizle hızı.

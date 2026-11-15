@@ -1,0 +1,154 @@
+Ses Defteri test dosyaları, 3. set: GERÇEK TÜRKÇE KONUŞMA (10 Kasım 2026)
+5.14.1 test listesindeki maddeler için hazırlandı. Köşeli parantezdeki harfler test listesinin
+bölümleridir (A–V). Söylenen cümlelerin doğru metni METINLER.txt dosyasında.
+
+Konuşmalar gerçek insan sesi: Google FLEURS veri setinde gönüllülerin okuduğu Türkçe cümleler.
+Aynı kişinin cümleleri ses benzerliğiyle bulunup arka arkaya eklendi. 4 farklı ses var:
+"kadın" (çok temiz stüdyo kaydı), "erkek", "2. kadın" ve 5 dk'lık dosyada bunların karışımı.
+Öksürük, gülme, nefes, ağız sesi, süpürge, klavye, saat, çamaşır makinesi sesleri de gerçek kayıt
+(ESC-50, hepsi CC0). Uğultu, yankı, patlama, telefon hattı ve hışırtı bilerek eklendi; ne eklendiği yazıyor.
+Konuşmalar 16 kHz kaydedildi (üstte tiz yok); dosyalar 44,1 kHz'e çevrildi.
+
+------------------------------------------------------------------------------------------
+TEMİZ KONUŞMA
+------------------------------------------------------------------------------------------
+01-tr-kadin-temiz.wav        ~71 sn, tek kadın, çok temiz. [B] Yazıya dök (METINLER ile karşılaştır),
+                             Metinden düzenle (bir cümleyi sil, ses de gitmeli), Akıllı duraklama.
+                             [L] HD ses (16 kHz kayıt, tizler gelmeli), Sesi netleştir, Stüdyo sesi.
+                             [H] canlı ve hesaplanan efektler, efekt listesi, mastering 4 stil + A/B.
+                             [K] Akıllı kontrol, değişiklik işaretleri, düzenleme geçmişi.
+                             [M] 8D, Genişlet, Çiftle, Lo-fi, Ters çal, pan; WhatsApp için gönder; MP3'e çevir.
+22-tr-kadin-temiz.mp3        01'in MP3 hali. [U] MP3 açma, [T] başka uygulamadan paylaşınca tek kez eklenme.
+02-tr-erkek-temiz.wav        ~65 sn, tek erkek. [C] Hız ve ton (konuşmada +5/−5), iptal edip yeniden başlat,
+                             Ses değiştir (karakterler), İnce ses / Kalın ses, Harmoni/Düet.
+                             [B] Yazıya dök (erkek sesiyle). [D] hızlandırıcı açık/kapalı karşılaştırma.
+21-tr-sesli-mesaj.opus       02'nin WhatsApp sesli mesajı gibi Opus hali. [T] "Ses Defteri ile aç"/Paylaş, [M].
+
+------------------------------------------------------------------------------------------
+BİRDEN ÇOK KONUŞMACI
+------------------------------------------------------------------------------------------
+03-tr-iki-kisi-biri-kisik.wav ~82 sn, kadın ve erkek sırayla 8 cümle; erkek 10 dB KISIK.
+                             [B] Konuşmacılar (2 kişi, ayrı katmanlar), Konuşmacıya göre eşitle (ikisi aynı
+                             seviyeye gelmeli). [M] Projeyi eşitle.
+04-tr-uc-kisi.wav            ~91 sn, 3 kişi (kadın, erkek, 2. kadın) karışık sırayla 9 cümle.
+                             [B] Konuşmacılar "Kendisi bulsun" → 3 kişi çıkmalı.
+17-tr-uzun-5dk.m4a           ~5 dk, 3 kişi, hafif oda gürültüsü. [P] Yazıya dökme arka planda sürüyor mu,
+                             bu sırada uygulama kullanılabiliyor mu; durdur/devam. [M] Hafif mod. [U] M4A açma.
+
+------------------------------------------------------------------------------------------
+YAPAY ZEKÂ BULMA ARAÇLARI (olaylar ve zamanları belli)
+------------------------------------------------------------------------------------------
+05-tr-oksuruk-gulme.wav      ~80 sn erkek konuşması arasına gerçek öksürük ve gülme eklendi:
+                             0:08.7 öksürük, 0:22.9 gülme, 0:38.4 öksürük, 0:51.7 gülme, 1:05.6 öksürük.
+                             [B] Öksürük/gülme bulma: bu 5 yeri bulmalı.
+06-tr-nefes-agiz-sesi.wav    ~74 sn kadın konuşması, cümle aralarında gerçek nefes ve ağız/yudum sesi:
+                             0:09.8 nefes, 0:20.6 ağız/şapırtı, 0:35.2 nefes, 0:44.1 ağız/şapırtı, 0:54.3 nefes, 1:04.2 ağız/şapırtı.
+                             [B] Akıllı nefes, [O] Ağız sesi temizleme (konuşmanın kendisi değişmemeli).
+07-tr-uzun-sessizlikler.wav  ~69 sn, cümleler arası uzun boşluk (hafif oda hışırtısı var):
+                             0:07.8 2.5 sn sessizlik, 0:21.8 4.0 sn sessizlik, 0:38.1 6.5 sn sessizlik, 0:53.8 3.0 sn sessizlik.
+                             [B] Akıllı sessizlik, Akıllı duraklama, [O] Sessizliği atla (cümle uçları kesilmemeli),
+                             [H] efekt listesi varken duraklama kısalt.
+16-tr-seviyesi-dengesiz.wav  ~65 sn, erkek, cümleler farklı seviyede:
+                             0:00.5 normal, 0:09.4 çok kısık, 0:22.3 yüksek, 0:32.4 çok çok kısık, 0:40.2 biraz kısık, 0:52.4 kısık.
+                             [O] Eşit ses yüksekliği, [M] Projeyi eşitle, Temizle'de seviye önerisi.
+
+------------------------------------------------------------------------------------------
+GÜRÜLTÜ VE KUSURLAR
+------------------------------------------------------------------------------------------
+08-tr-supurge-gurultusu.wav  ~46 sn erkek + gerçek elektrikli süpürge, gürültü konuşmaya çok yakın.
+                             [B] Gelişmiş YZ gürültü temizliği, [L] Stüdyo sesi, [U] Temizle teşhisi.
+09-tr-klavye-saat-tiki.wav   ~43 sn kadın + gerçek klavye yazma ve saat tıkırtısı (kesik kesik gürültü).
+                             [B] YZ gürültü temizliği (klasik gürültü azaltma burada zorlanır), tık temizleme.
+10-tr-camasir-makinesi-ilk4sn-sadece-gurultu.wav
+                             ~45 sn, ilk 4 saniyede SADECE çamaşır makinesi sesi, sonra erkek konuşması.
+                             [O] Gürültüyü buradan öğren: ilk 4 sn'yi seç, öğret, sonra tümüne uygula;
+                             azaltma ve hassasiyet ayarlarını dene. [D] hızlandırıcı açıkken gürültü temizliği.
+11-tr-50hz-ugultu.wav        ~45 sn kadın + 50 Hz elektrik uğultusu (harmonikli), ilk 1,5 sn sadece uğultu.
+                             [U] Temizle uğultuyu bulmalı. Spektrumda alt çizgiler görünür.
+12-tr-yankili-oda.wav        ~39 sn erkek, büyük boş oda yankısı eklendi (yankı süresi ~0,9 sn).
+                             [H] Yankı azalt, [L] Stüdyo sesi (oda sesi ayarı), Sesi netleştir.
+13-tr-patlamis.wav           ~30 sn kadın, 18 dB fazla yükseltilip kırpıldı (patlamış).
+                             [U] Temizle "patlama var" demeli, onarım. [H] Mastering'de sert sesler.
+14-tr-telefon-8khz.wav       ~36 sn erkek, telefon hattı gibi (8 kHz, dar bant, sıkıştırılmış).
+                             [L] HD ses (tizler gelmeli), Sesi netleştir, [B] Yazıya dök (zor durum).
+15-tr-konusma-muzik-ustunde.wav ~54 sn, ilk 4 sn sadece müzik, sonra müziğin üstünde kadın konuşması.
+                             [B] Arka plan müziğini sil, Akıllı müzik kısma, Sesi ayır (2 parça / 4 parça),
+                             [R] Temizle'de Podcast seçince müzik uyarısı.
+
+------------------------------------------------------------------------------------------
+MÜZİK VE VİDEO
+------------------------------------------------------------------------------------------
+18-muzik-hisirtili.wav       2 dk, Çaykovski "Şeker Perisi Dansı" (orkestra), üstüne eski kaset gibi hışırtı.
+                             [E] Temizle (müzik): "Müzikte gürültü azalt" önermeli; şarkı klibinde Gürültü azalt,
+                             enstrümanlar bozulmamalı.
+19-muzik-temiz-piyano.wav    ~71 sn temiz piyano ragtime (net akorlar, sabit tempo). [E] temiz müzikte uğultu
+                             önerilmemeli. [F] Akorlar ve bölümler, [I] Pratik (hız, perde, A-B, Ton bul),
+                             [L] Ton ve tempo bulucu, [C] ton +5/−5 müzikte, [O] Bas/tiz, [R] EQ hazır ayarları.
+20-tr-konusmali-video.mp4    ~71 sn, 1280x720 video, sesi 01'deki Türkçe konuşma, ekranda süre yazıyor.
+                             [B] Altyazılı video (altyazı METINLER ile uyuşmalı, galeriye kaydedilmeli),
+                             [U] videodan ses alma / videoya koy.
+
+------------------------------------------------------------------------------------------
+BU SETTE OLMAYANLAR (eski setleri ya da kendi kaydını kullan)
+------------------------------------------------------------------------------------------
+- Türkçe ŞARKI (vokalli): serbest lisanslı bir tane bulunamadı. Sesi ayır, karaoke, Sözleri çıkar, Autotune
+  için test-sesleri-2/12 (İngilizce şarkı) ve 10 (a capella) kullan.
+- Gerçek "ııı / eee / yani / şey" dolguları: okuma kayıtlarında yok. [B] Gelişmiş ııı/eee silme ve Dolgu
+  kelimeleri için test-sesleri/13 ya da telefonla 1 dk serbest konuşma kaydı (bilerek "ııı" de) en iyisi.
+- Kayıt, düşük gecikme, kulaklıkta izleme, canlı gürültü bastırma, seviye yazısı [J, N, O]: canlı mikrofon
+  gerekir; telefonun yanında 19-muzik-temiz-piyano'yu başka cihazdan çalarak kayıt yapabilirsin.
+
+------------------------------------------------------------------------------------------
+KAYNAKLAR VE LİSANSLAR
+------------------------------------------------------------------------------------------
+Türkçe konuşmalar (01–17, 20–22): Google FLEURS (Conneau ve ark., 2022), tr_tr. Lisans: CC BY 4.0.
+       Kaynak: storage.googleapis.com/xtreme_translations/FLEURS102/tr_tr.tar.gz
+Ortam sesleri (ESC-50, K. J. Piczak 2015, github.com/karolpiczak/ESC-50); yalnızca CC0 klipler seçildi:
+       ESC-50 1-18631-A-23.wav: http://www.freesound.org/people/Walter_Odington/sounds/18631/ (CC0)
+       ESC-50 1-30709-B-23.wav: http://www.freesound.org/people/UncleSigmund/sounds/30709/ (CC0)
+       ESC-50 1-32373-A-35.wav: http://www.freesound.org/people/Walter_Odington/sounds/32373/ (CC0)
+       ESC-50 1-32373-B-35.wav: http://www.freesound.org/people/Walter_Odington/sounds/32373/ (CC0)
+       ESC-50 1-35687-A-38.wav: http://www.freesound.org/people/Bansemer/sounds/35687/ (CC0)
+       ESC-50 1-36164-A-26.wav: http://www.freesound.org/people/sagetyrtle/sounds/36164/ (CC0)
+       ESC-50 1-42139-A-38.wav: http://www.freesound.org/people/fauxpress/sounds/42139/ (CC0)
+       ESC-50 1-48413-A-38.wav: http://www.freesound.org/people/cynical/sounds/48413/ (CC0)
+       ESC-50 1-56270-A-29.wav: http://www.freesound.org/people/Q.K./sounds/56270/ (CC0)
+       ESC-50 1-62594-A-32.wav: http://www.freesound.org/people/bsumusictech/sounds/62594/ (CC0)
+       ESC-50 1-62849-A-38.wav: http://www.freesound.org/people/life_interconnected/sounds/62849/ (CC0)
+       ESC-50 1-62850-A-38.wav: http://www.freesound.org/people/life_interconnected/sounds/62850/ (CC0)
+       ESC-50 1-63679-A-24.wav: http://www.freesound.org/people/sagetyrtle/sounds/63679/ (CC0)
+       ESC-50 1-72695-A-26.wav: http://www.freesound.org/people/sagetyrtle/sounds/72695/ (CC0)
+       ESC-50 1-79711-A-32.wav: http://www.freesound.org/people/beckmen/sounds/79711/ (CC0)
+       ESC-50 2-109316-A-32.wav: http://www.freesound.org/people/Ryding/sounds/109316/ (CC0)
+       ESC-50 2-118817-A-32.wav: http://www.freesound.org/people/lmbubec/sounds/118817/ (CC0)
+       ESC-50 2-122763-A-29.wav: http://www.freesound.org/people/alienistcog/sounds/122763/ (CC0)
+       ESC-50 2-131943-A-38.wav: http://www.freesound.org/people/AngryAdam/sounds/131943/ (CC0)
+       ESC-50 2-141681-A-36.wav: http://www.freesound.org/people/DJ%20Burnham/sounds/141681/ (CC0)
+       ESC-50 2-141681-B-36.wav: http://www.freesound.org/people/DJ%20Burnham/sounds/141681/ (CC0)
+       ESC-50 2-141682-A-36.wav: http://www.freesound.org/people/DJ%20Burnham/sounds/141682/ (CC0)
+       ESC-50 2-141682-B-36.wav: http://www.freesound.org/people/DJ%20Burnham/sounds/141682/ (CC0)
+       ESC-50 2-51173-A-35.wav: http://www.freesound.org/people/RutgerMuller/sounds/51173/ (CC0)
+       ESC-50 2-54961-A-23.wav: http://www.freesound.org/people/cidchili/sounds/54961/ (CC0)
+       ESC-50 2-87412-A-24.wav: http://www.freesound.org/people/bowlingballout/sounds/87412/ (CC0)
+       ESC-50 2-87795-A-24.wav: http://www.freesound.org/people/aneolus/sounds/87795/ (CC0)
+       ESC-50 3-125548-A-32.wav: http://www.freesound.org/people/krissyeliot/sounds/125548/ (CC0)
+       ESC-50 3-132830-A-32.wav: http://www.freesound.org/people/yiannoui/sounds/132830/ (CC0)
+       ESC-50 3-133977-A-29.wav: http://www.freesound.org/people/Alvinwhatup2/sounds/133977/ (CC0)
+       ESC-50 3-135469-A-35.wav: http://www.freesound.org/people/Erdie/sounds/135469/ (CC0)
+       ESC-50 3-151269-A-35.wav: http://www.freesound.org/people/timgormly/sounds/151269/ (CC0)
+       ESC-50 3-151273-A-35.wav: http://www.freesound.org/people/timgormly/sounds/151273/ (CC0)
+       ESC-50 3-152020-A-36.wav: http://www.freesound.org/people/winsx87/sounds/152020/ (CC0)
+       ESC-50 3-152020-B-36.wav: http://www.freesound.org/people/winsx87/sounds/152020/ (CC0)
+15     "Choice" (drum+bass) - Admiral Bob, ccMixter, CC BY 3.0. librosa/data.
+18     "Dance of the Sugar Plum Fairy" (Çaykovski) - Kevin MacLeod, CC BY. librosa/data.
+19     "Pistachio Ice Cream Ragtime" - The Piano Lady (lena-orsa, Freesound 442789), CC BY. librosa/data.
+Uygulamaya ya da mağaza görsellerine koyarsan FLEURS ve müzik sahiplerinin adını anmak yeterli.
+
+Not: Bu ortamdan Common Voice, Wikimedia Commons, OpenSLR, Hugging Face ve Freesound kapalıydı;
+FLEURS'un Google sunucusundaki asıl dosyası ve GitHub kullanıldı.
+
+--- 5.14.3 için eklenenler (2026-11-12) ---
+23-muzik-piyano-8khz.wav      : 19'un 8 kHz kopyası. Akorlar ve bölümler (ilk akor dahil) 19 ile aynı çıkmalı.
+24-muzik-piyano-96khz.wav     : 19'un 96 kHz / 24-bit kopyası. Akorlar 19 ile aynı çıkmalı.
+25-tr-basta-3sn-tam-sessizlik.wav : başta 3 sn dijital sessizlik + 01. "Gürültüyü buradan öğren"de ilk 3 sn seçilince "tamamen sessiz" uyarısı çıkmalı.
+26-Call Me Voice (sarki adi testi).mp3 : adında "Call" ve "Voice" geçen dosya. Telefonun Music klasörüne koy: Müzik sekmesinde görünmeli, Kayıtlar'da değil.
