@@ -42,16 +42,16 @@ public final class Biquad {
         return norm(1 + al / A, 1 + al * A, -2 * c, 1 - al * A, -2 * c, 1 - al / A);
     }
 
-    /** RBJ high shelf (same formulas pyloudnorm uses for its K-weighting stage) */
+    /** RBJ high shelf (same formulas pyloudnorm uses for its K-weighting stage); 5.14.2: the corner stays below Nyquist (11/12 kHz files) */
     public Biquad setHighShelf(double fs, double f, double q, double db) {
-        double A = Math.pow(10, db / 40), w = 2 * Math.PI * f / fs, c = Math.cos(w), al = Math.sin(w) / (2 * q), sA = Math.sqrt(A);
+        double A = Math.pow(10, db / 40), w = 2 * Math.PI * Math.min(f, fs * 0.49) / fs, c = Math.cos(w), al = Math.sin(w) / (2 * q), sA = Math.sqrt(A);
         return norm((A + 1) - (A - 1) * c + 2 * sA * al,
                 A * ((A + 1) + (A - 1) * c + 2 * sA * al), -2 * A * ((A - 1) + (A + 1) * c), A * ((A + 1) + (A - 1) * c - 2 * sA * al),
                 2 * ((A - 1) - (A + 1) * c), (A + 1) - (A - 1) * c - 2 * sA * al);
     }
 
     public Biquad setLowShelf(double fs, double f, double q, double db) {
-        double A = Math.pow(10, db / 40), w = 2 * Math.PI * f / fs, c = Math.cos(w), al = Math.sin(w) / (2 * q), sA = Math.sqrt(A);
+        double A = Math.pow(10, db / 40), w = 2 * Math.PI * Math.min(f, fs * 0.49) / fs, c = Math.cos(w), al = Math.sin(w) / (2 * q), sA = Math.sqrt(A);
         return norm((A + 1) + (A - 1) * c + 2 * sA * al,
                 A * ((A + 1) - (A - 1) * c + 2 * sA * al), 2 * A * ((A - 1) - (A + 1) * c), A * ((A + 1) - (A - 1) * c - 2 * sA * al),
                 -2 * ((A - 1) + (A + 1) * c), (A + 1) + (A - 1) * c - 2 * sA * al);

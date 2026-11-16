@@ -1,0 +1,30 @@
+# 5.16: the seda Turkish streaming speech models (live text), mirrored from Hugging Face to a GitHub pre-release,
+# because some phones cannot reach Hugging Face (see 3.4.6). Runs when this file changes.
+# seda-v0.1: Apache-2.0. seda-v0.2: CC BY-SA 4.0 (credit: atasoglu/seda). Files are unchanged copies.
+name: seda models mirror
+on:
+  push:
+    paths: ['.github/workflows/seda-models.yml']
+permissions:
+  contents: write
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download from Hugging Face
+        run: |
+          mkdir out
+          for m in seda-v0.1 seda-v0.2; do
+            for f in encoder.int8.onnx decoder.onnx joiner.int8.onnx tokens.txt README.md; do
+              curl -fsSL -o "out/$m-$f" "https://huggingface.co/atasoglu/$m/resolve/main/$f"
+            done
+          done
+          ls -la out; sha256sum out/*
+      - name: Publish as a pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete seda-models --repo ${{ github.repository }} --yes --cleanup-tag || true
+          gh release create seda-models out/* --repo ${{ github.repository }} --target ${{ github.sha }} --prerelease \
+            --title "seda Turkish streaming speech models (model mirror, not an app release)" \
+            --notes "Unchanged copies of atasoglu/seda-v0.1 (Apache-2.0) and atasoglu/seda-v0.2 (CC BY-SA 4.0) from Hugging Face, for the live text feature. Model by atasoglu: https://github.com/atasoglu/seda"

@@ -35,10 +35,14 @@ public class PlayerService extends Service {
                 c.startService(i);
             }
         } catch (Exception e) {
-            try {
-                NotificationManager nm = (NotificationManager) c.getSystemService(NOTIFICATION_SERVICE);
-                if (nm != null && running) nm.notify(ID, build(c));
-            } catch (Exception ignored) { }
+            // 5.14.3: Android 12+ refuses a new foreground start from the background: a running service still takes a plain start
+            MainActivity.saveNote(c, "player service: " + e);
+            try { if (running) c.startService(i); } catch (Exception x) {
+                try {
+                    NotificationManager nm = (NotificationManager) c.getSystemService(NOTIFICATION_SERVICE);
+                    if (nm != null) nm.notify(ID, build(c));
+                } catch (Exception ignored) { }
+            }
         }
     }
 
@@ -60,7 +64,7 @@ public class PlayerService extends Service {
             // a service started with startForegroundService must always enter the foreground first
             if (Build.VERSION.SDK_INT >= 29) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
             else startForeground(ID, n);
-        } catch (Exception ignored) { }
+        } catch (Exception e) { MainActivity.saveNote(this, "player foreground: " + e); }
         if (A_STOP.equals(a)) {
             p.stop();
             try {
