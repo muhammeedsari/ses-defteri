@@ -13,9 +13,16 @@ Ses Defteri, **internetsiz çalışan bir Android uygulaması**: ses kaydı, mü
 - **Sürüm:** şu an **5.21.1** (versionCode 96). minSdk 24, targetSdk 34. Paket adı `app.sesdefteri`.
 
 ## Kullanıcıyla çalışma kuralları (önemli)
-- Kullanıcıyla **Türkçe** konuş. Teknik olmayan, kısa ve net anlat.
-- Kullanıcının tercihi: **"kodu en optimize ve en hafif şekilde yaz; test etmene gerek yok, ben test ederim ya da 'test et' derim."** Cihazda test yok; yeni DSP algoritmalarında masaüstünde hızlı ölçüm yapmak serbest ve faydalı (bkz. `tests/desktop`).
-- Her sürüm şöyle teslim edilir: kod değişikliği → sürüm numarası artır (AndroidManifest `versionCode` +1 ve `versionName`, `web/body.html` içindeki `const VERSION = '…'`) → imzalı APK derle → git commit + push → APK'yı kullanıcıya gönder → Türkçe kısa özet (ne değişti, neyi test etmeli). GitHub Release'i kullanıcı kendisi yayımlar.
+- Kullanıcıyla **Türkçe** konuş. Kısa ve net anlat; teknik dil kullanılabilir (terimler, dosya/fonksiyon adları, ölçüm sonuçları).
+- Kod **en optimize ve en hafif** şekilde yazılır.
+- **Önce test, sonra sürüm (kesin kural):** Eklenen her kod, özellik ya da değişiklik planlandıktan sonra **önce Claude tarafından test edilir**; testi geçmeyen sürüme eklenmez. Akış: plan → kod → test → (geçtiyse) sürüm. Ayrıca bkz. `docs/TEST-LISTESI.md`.
+  - Java/DSP: masaüstünde derle, `tests/desktop` harness'i ile `ses-test/` seslerinde çalıştır, sonucu ölç (SDR, LUFS, tepe, süre, hız vb.).
+  - JS/arayüz: `page.html` üret → `<script>` bloklarını `node --check` ile denetle → eksik `$('#id')` kontrolü → gerekirse sayfayı tarayıcıda açıp ilgili ekranı dene.
+  - Çeviriler: yeni anahtarlar 9 dilin hepsinde var mı.
+  - Derleme: APK hatasız derlenmeli.
+  - Sonucu kullanıcıya kısaca bildir (ne denendi, sonuç ne). Başarısızsa düzelt, yeniden test et. Burada yapılamayan test varsa (araç eksik, cihaz gerekir) açıkça söyle, sessizce atlama. Cihaza özgü şeyleri (mikrofon, bildirim, gerçek hız) kullanıcı telefonda dener.
+- **Dal ve etiket düzeni:** `main` her zaman çalışan son sürümü gösterir. Her iş kısa ömürlü bir dalda yapılır; test geçince `main`'e birleştirilir ve yayımlanan sürüme `main` üzerinde `vX.Y.Z` etiketi konur (ör. `v5.21.1`), böylece her APK'nın hangi koddan çıktığı bulunur.
+- Her sürüm şöyle teslim edilir: kod değişikliği (dalda) → test → sürüm numarası artır (AndroidManifest `versionCode` +1 ve `versionName`, `web/body.html` içindeki `const VERSION = '…'`) → imzalı APK derle → git commit + push → `main`'e birleştir → APK'yı kullanıcıya gönder → Türkçe kısa özet (ne değişti, nasıl test edildi, telefonda neyi denemeli). GitHub Release'i kullanıcı `main`'deki `vX.Y.Z` etiketinden kendisi yayımlar.
 - Commit mesajları İngilizce, kısa; sürüm numarasıyla başlar ("2.6: …").
 - Ara sürüm (5.x → 5.y) değişince açılan "Yenilikler" kartı `body.html` içindeki `NEWS` listesinden gelir (`news_<anahtar>`): her ara sürümde güncelle.
 
@@ -31,6 +38,8 @@ bash android/fetch_vendor.sh            # bir kez: ../vendor içine sherpa-onnx 
 # araçlar (Ubuntu): apt install aapt zipalign apksigner dalvik-exchange openjdk-21-jdk python3-pil
 SD_KS=/yol/ses-defteri-imza.p12 SD_KS_PASS=… python3 android/build_apk.py   # → android/SesDefteri.apk
 ```
+- **Windows bilgisayar:** `git`, `java` ve derleme araçları PATH'te yok (git yalnızca GitHub Desktop içinde). Derleme/test gerekiyorsa WSL/Linux kullan ya da kullanıcıya sor.
+- `tests/run.sh` ve `tests/run2.sh` eski `/home/claude/...` yollarına bağlı; kullanmadan önce yolları uyarla.
 - `build_apk.py`, `web/head.html + web/extra.css + "</style>" + web/body.html` birleştirerek `web/page.html` üretir, i18n*.js dosyalarını sayfaya gömer, fontları yerelleştirir.
 - **Yeni i18n dosyası eklersen** iki yere yaz: `web/body.html` içindeki `<script src="i18nN.js">` satırları ve `build_apk.py` içindeki `for js in [...]` listesi.
 - JS kontrolü (derlemeden önce): `page.html`'deki `<script>` bloklarını çıkarıp `node --check`; ayrıca `$('#id')` ile kullanılan ama HTML'de olmayan id var mı bak (bilinen zararsız: `wsTime`).
