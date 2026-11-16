@@ -1237,6 +1237,7 @@ html:not(.tech) .pu-card small{display:none}
 <script src="i18n67.js"></script>
 <script src="i18n68.js"></script>
 <script src="i18n69.js"></script>
+<script src="i18n70.js"></script>
 <script src="fx-presets.js"></script>
 <script>
 (() => {
@@ -1248,7 +1249,7 @@ const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) {
 const AND = (() => { try { return window.SesDefteriAndroid || null; } catch (e) { return null; } })();
 const CAPS = (() => { try { return AND && AND.caps ? JSON.parse(AND.caps()) : {}; } catch (e) { return {}; } })();
 const NATIVE = !!(AND && CAPS.native);
-const VERSION = '5.21.1';
+const VERSION = '5.21.2';
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('sd:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   // 5.14.2: a project that cannot be stored (storage full) says so once instead of silently losing edits
@@ -3498,6 +3499,8 @@ async function studioJob(kind, it, args) {
 }
 function errText(e) {
   const m = String((e && e.message) || '');
+  if (m.includes('recovery-pending')) return t('recoveryPending');
+  if (m.includes('archive-limit') || m.includes('archive-space')) return t('archiveLimit');
   if (m.includes('cancel')) return t('saveCancelled');
   if (m.includes('learn-silent')) return t('lnSilent');
   if (m.includes('asr-missing')) return t('asrNeed');
@@ -3548,7 +3551,8 @@ async function transcribeItem(it, auto) {
   await txApply(it, res, auto);
 }
 async function txApply(it, res, auto) {
-  const rec = { id: it.id, segments: res.segments || [], srt: res.srt || '', lang: res.lang || '', live: !!res.live };
+  const rec = { id: it.id, segments: res.segments || [], srt: res.srt || '', lang: res.lang || '', live: !!res.live,
+    partial: !!(res.partial || res.short), missingRanges: res.missingRanges || [], processedUntil: res.processedUntil || 0 };
   await db.put('texts', rec).catch(() => {});
   S.texts.set(it.id, rec);
   it.tags = res.tags || []; it.ttext = res.text || '';
@@ -3573,7 +3577,7 @@ function renderText(r) {
   if (bz && bz.kind === 'transcribe') {
     h = `<p class="st-desc"><b>${esc(busyLabel(bz))}</b></p><div class="prog"><i style="width:${Math.round(bz.p * 100)}%"></i></div>`;
   } else if (tx && tx.segments && tx.segments.length) {
-    if (tx.live) h += `<p class="hint">${esc(t('liveDraft'))}</p>`;
+    if (tx.live) h += `<p class="hint">${esc(t(tx.partial ? 'livePartial' : 'liveDraft'))}${tx.partial ? ' ' + (tx.missingRanges || []).map(([a, b]) => `${fmt(a)}–${fmt(b)}`).join(', ') : ''}</p>`;
     if (r.tags && r.tags.length) h += `<div class="tags">${r.tags.map(x => `<button class="tag" type="button" data-tag="${esc(x)}">#${esc(x)}</button>`).join('')}</div>`;
     // 5.15: marks, notes and photos sit in the text at their moment
     const bms = (r.bookmarks || []).filter(b => !b.chapter && !b.topic); let k = 0;
@@ -3591,7 +3595,7 @@ function renderText(r) {
       <button class="btn sm" type="button" data-tx="spk" ${bz ? 'disabled' : ''}>${ic('people')}${esc(t('tlSpk'))}</button></div>`;
   } else {
     if (!CAPS.asr) h = `<p class="hint">${esc(t('textNoAsr'))}</p>`;
-    else h = `<p class="hint">${esc(tx ? t('textEmpty') : t('textHint'))}</p><div class="st-acts"><button class="btn sm primary" type="button" data-tx="run" ${bz ? 'disabled' : ''}>${ic('textic')}${esc(t('textRun'))}</button></div>`;
+    else h = `<p class="hint">${esc(tx && tx.partial ? t('livePartial') : tx ? t('textEmpty') : t('textHint'))}</p><div class="st-acts"><button class="btn sm primary" type="button" data-tx="run" ${bz ? 'disabled' : ''}>${ic('textic')}${esc(t('textRun'))}</button></div>`;
   }
   $('#textBody').innerHTML = h;
   segNow = -2;
@@ -3674,6 +3678,17 @@ function nameBox(title, value, sugg) {
 /* ---------- 5.18: cloud-free backup: one .zip with the recordings, their notes and texts, photos and the project ---------- */
 const AUD_EXT = { 'audio/mp4': '.m4a', 'audio/m4a': '.m4a', 'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/x-wav': '.wav', 'audio/flac': '.flac', 'audio/ogg': '.ogg', 'audio/opus': '.opus', 'audio/webm': '.webm', 'audio/aac': '.aac', 'audio/3gpp': '.3gp', 'audio/amr': '.amr' };
 const fileKey = r => (r.name || '') + '|' + (r.size || 0);
+// Visit file references in clips, computed caches and nested history snapshots.
+function projectFiles(value, map) {
+  if (!value || typeof value !== 'object') return;
+  if (Array.isArray(value)) { value.forEach(x => projectFiles(x, map)); return; }
+  for (const k of Object.keys(value)) {
+    if (['path', 'src', 'prev', 'hcOut'].includes(k) && typeof value[k] === 'string' && value[k]) value[k] = map(value[k]);
+    else if (k === 'key' && typeof value[k] === 'string' && value[k].includes('|')) {
+      const i = value[k].indexOf('|'); value[k] = map(value[k].slice(0, i)) + value[k].slice(i);
+    } else projectFiles(value[k], map);
+  }
+}
 function archivePick(save) {
   if (!NATIVE || !AND.pickArchive) return;
   try { AND.pickArchive(save, `Ses Defteri ${new Date().toISOString().slice(0, 10)}.zip`); } catch (e) {}
@@ -3681,7 +3696,7 @@ function archivePick(save) {
 window.__sdArchive = (save, uri) => { if (uri) (save ? doBackup : doRestore)(uri); };
 const arProg = key => { let last = -1; return f => { const p = Math.round(f * 100); if (p !== last) { last = p; toast(t(key, { p }), 0); } }; };
 async function doBackup(uri) {
-  const recs = [], files = [], used = new Set();
+  const recs = [], files = [];
   toast(t('bkBusy', { p: 0 }), 0);
   for (const r of recItems()) {
     if (!r.src) continue;
@@ -3693,23 +3708,35 @@ async function doBackup(uri) {
     files.push([e, r.src]);
   }
   let proj = null;
+  const templates = JSON.parse(JSON.stringify(ls.get('pcTpl', {}))), paths = new Map();
+  const archivePath = path => {
+    if (!paths.has(path)) { const entry = `proj/p${paths.size}.wav`; paths.set(path, entry); files.push([entry, { path }]); }
+    return paths.get(path);
+  };
   if (TL.p && TL.p.clips.length) {
-    proj = TL.p;
-    for (const p of new Set(TL.p.clips.map(c => c.path))) { const b = p.split('/').pop(); if (!used.has(b)) { used.add(b); files.push(['proj/' + b, { path: p }]); } }
+    proj = JSON.parse(JSON.stringify(TL.p));
+    projectFiles(proj, archivePath);
   }
-  const json = JSON.stringify({ app: 'sesdefteri', v: 1, ver: VERSION, at: Date.now(), recs, cats: S.cats, proj, spkKnown: ls.get('spkKnown', []) });
+  projectFiles(templates, archivePath);
+  const json = JSON.stringify({ app: 'sesdefteri', v: 2, ver: VERSION, at: Date.now(), recs, cats: S.cats, proj, templates, spkKnown: ls.get('spkKnown', []) });
   try {
     const res = await runJob('backup', { uri, json, files }, arProg('bkBusy'));
     hideToast(); toast(t(res.missing ? 'bkDoneMiss' : 'bkDone', { n: recs.length - res.missing, m: res.missing }), 6000);
   } catch (e) { hideToast(); toast(errText(e), 5000); }
 }
 async function doRestore(uri) {
-  const have = [...S.items.values()].filter(r => r.src).map(fileKey);
+  // Legacy name/size matches do not prove equal content. Restore separate copies.
+  const have = [];
   toast(t('rsBusy', { p: 0 }), 0);
-  let res, j = null;
-  try { res = await runJob('restore', { uri, have }, arProg('rsBusy')); j = JSON.parse(res.json); } catch (e) { hideToast(); toast(String(e && e.message).includes('cancel') ? errText(e) : t('rsBad'), 6000); return; }
+  try { await applyRestoreResult(await runJob('restore', { uri, have }, arProg('rsBusy'))); }
+  catch (e) { hideToast(); toast(String(e && e.message).includes('cancel') ? errText(e) : t('rsBad'), 6000); }
+}
+async function applyRestoreResult(res) {
+  const j = JSON.parse(res.json);
   if (!j || j.app !== 'sesdefteri') { hideToast(); toast(t('rsBad'), 6000); return; }
-  for (const c of j.cats || []) if (c && c.id && !catById(c.id)) { S.cats.push(c); await db.put('categories', c).catch(() => {}); }
+  const photos = res.photos || {};
+  for (const o of j.recs || []) for (const b of o.m && o.m.bookmarks || []) if (b.photo && photos[b.photo]) b.photo = photos[b.photo];
+  for (const c of j.cats || []) if (c && c.id && !catById(c.id)) { await db.put('categories', c); S.cats.push(c); }
   const byKey = new Map([...S.items.values()].filter(r => r.src).map(r => [fileKey(r), r]));
   let added = 0, merged = 0;
   for (const o of j.recs || []) {
@@ -3721,18 +3748,32 @@ async function doRestore(uri) {
       merged++;
     }
     if (!it) continue;
-    await saveRec(it);
-    if (o.x && !(await db.get('texts', it.id).catch(() => null))) { const x = Object.assign({}, o.x, { id: it.id }); await db.put('texts', x).catch(() => {}); S.texts.set(it.id, x); }
+    await db.put('recordings', metaOf(it));
+    if (o.x && !(await db.get('texts', it.id))) { const x = Object.assign({}, o.x, { id: it.id }); await db.put('texts', x); S.texts.set(it.id, x); }
   }
-  let proj = false;
+  let proj = false, legacy = false;
   if (j.proj && Array.isArray(j.proj.clips) && j.proj.clips.length && TL.p && !TL.p.clips.length) {
     const p = JSON.parse(JSON.stringify(j.proj));
-    for (const c of p.clips) c.path = res.projDir + '/' + String(c.path).split('/').pop();
-    ls.set('proj', p); tlLoad(); proj = true;
+    if (j.v < 2) for (const c of p.clips) {
+      let incomplete = false;
+      projectFiles(c, path => { if (!(res.paths || {})['proj/' + path.split('/').pop()]) incomplete = true; return path; });
+      if (incomplete) {
+        // A legacy backup cannot provide audio it never included. Keep its rendered sound and live effects.
+        for (const key of ['src', 'hc', 'hcOut', 'prev', 'fx']) delete c[key];
+        c.rk = (c.rk || []).filter(f => !HEAVY.includes(f.k)); legacy = true;
+      }
+    }
+    projectFiles(p, path => (res.paths || {})[j.v >= 2 ? path : 'proj/' + path.split('/').pop()] || path);
+    ls.set('proj', p);
+    if (JSON.stringify(ls.get('proj', null)) !== JSON.stringify(p)) throw new Error('saveFail');
+    tlLoad(); proj = true;
   }
+  if (j.templates) { projectFiles(j.templates, path => (res.paths || {})[path] || path); ls.set('pcTpl', Object.assign({}, j.templates, ls.get('pcTpl', {}))); }
   if (Array.isArray(j.spkKnown)) ls.set('spkKnown', [...new Set(ls.get('spkKnown', []).concat(j.spkKnown))].slice(0, 20));
+  if (res.restoreToken && !AND.acknowledgeRestore(res.restoreToken)) throw new Error('saveFail');
   hideToast(); render();
   toast(t('rsDone', { n: added, m: merged }) + (proj ? ' ' + t('rsProj') : ''), 7000);
+  if (legacy) toast(t('rsLegacy'), 10000);
 }
 
 /* ---------- 2.2: text-based editing, retakes, hesitation sounds, topic chapters ---------- */
@@ -4206,13 +4247,13 @@ function openWorkspace(r) {
   tlAddFrom(r);
 }
 async function tlRunJob(label, kind, args) {
-  TL.busy = { label, p: 0 }; tlBusyUi(); renderTlBar();
+  const busy = TL.busy = { label, p: 0 }; tlBusyUi(); renderTlBar();
   try {
-    const call = runJob(kind, args, f => { if (TL.busy) { TL.busy.p = f; tlBusyUi(); } });
-    TL.busy.job = call.jobId;
+    const call = runJob(kind, args, f => { if (TL.busy === busy) { busy.p = f; tlBusyUi(); } });
+    busy.job = call.jobId;
     return await call;
   }
-  finally { TL.busy = null; tlBusyUi(); renderTlBar(); }
+  finally { if (TL.busy === busy) { TL.busy = null; tlBusyUi(); renderTlBar(); } }
 }
 async function tlAddFrom(r, atSec, skip) {
   if (TL.busy) return;
@@ -4984,7 +5025,7 @@ function hvBake(c) {
 }
 const hvStale = c => c.hcOut && c.path !== c.hcOut;
 /** works the computed effects out in order; steps already done (same sound, same settings) are reused */
-async function tlHeavyRun(c) {
+async function tlHeavyRun(c, preview = false) {
   if (hvStale(c)) hvBake(c);
   if (!c.src) c.src = c.path;
   const hs = (c.rk || []).filter(f => HEAVY.includes(f.k) && f.on !== false), hc = c.hc || [], used = [];
@@ -5002,7 +5043,7 @@ async function tlHeavyRun(c) {
   c.hc = used.concat(hc.filter(x => !used.includes(x))).slice(0, used.length + 6);   // a few spare steps make switching back quick
   Object.assign(c, { path: cur, ch, hcOut: cur });
   if (!hvHas(c)) { c.path = c.src; delete c.src; delete c.hc; delete c.hcOut; }
-  if (old !== c.path) tlDiff(c.id, old, c.path);
+  if (!preview && old !== c.path) tlDiff(c.id, old, c.path);
 }
 const HV_FOLLOW = ['cut', 'pauses', 'aipauses', 'trim', 'speed', 'insert'];
 /** the computed steps as they stand (null when one is missing or the sound was changed elsewhere) */
@@ -5051,11 +5092,12 @@ function tlRackAdd(c, k) {
   tlRack(c, before);
 }
 function tlRack(c, before0) {
-  const before = before0 || tlSnap(); let ok = false;
+  const before = before0 || tlSnap(); let ok = false, closed = false, generation = 0;
   if (hvStale(c)) hvBake(c);
   const card = openModal(`<h3>${esc(t('sh_rack'))}</h3><p class="mtext">${esc(t('rkD'))}</p><div class="modal-body" id="rkBody"></div>
     <div class="modal-actions"><button class="icon-btn" type="button" data-rp aria-label="${esc(t('hListen'))}">${ic('play')}</button><span class="spacer"></span><button class="btn" type="button" data-x>${esc(t('cancel'))}</button><button class="btn primary" type="button" data-ok>${esc(t('ok'))}</button></div>`,
-    () => { if (!ok) { TL.p = JSON.parse(before); tlChanged(); } });
+    () => { closed = true; generation++; if (!ok) { TL.p = JSON.parse(before); tlChanged(); } });
+  let committed = JSON.parse(JSON.stringify(c));
   const live = () => { ls.set('proj', TL.p); if (TL.play) try { AND.tlUpdate(JSON.stringify(tlMix())); } catch (e) {} drawTl(); };
   const row = (f, i, fx) => {
     const hv = HEAVY.includes(f.k), same = j => fx[j] && HEAVY.includes(fx[j].k) === hv;
@@ -5072,17 +5114,25 @@ function tlRack(c, before0) {
   };
   // a computed effect changed: worked out again (the dialog waits, showing how far it is)
   const heavy = async () => {
+    const token = ++generation, candidate = JSON.parse(JSON.stringify(c));
     const st = card.querySelector('#rkSt'); card.classList.add('busy'); st.hidden = false;
     const tick = setInterval(() => { if (TL.busy) st.textContent = t('hvWorking', { p: Math.round((TL.busy.p || 0) * 100) }); }, 250);
-    try { await tlHeavyRun(c); } catch (e) { toast(errText(e), 5000); }
-    clearInterval(tick); card.classList.remove('busy'); draw(); live();
+    try {
+      await tlHeavyRun(candidate, true);
+      if (!closed && token === generation) { const old = c.path; for (const k of Object.keys(c)) delete c[k]; Object.assign(c, candidate); committed = JSON.parse(JSON.stringify(c)); if (old !== c.path) tlDiff(c.id, old, c.path); }
+    } catch (e) {
+      if (!closed && token === generation) { for (const k of Object.keys(c)) delete c[k]; Object.assign(c, JSON.parse(JSON.stringify(committed))); toast(errText(e), 5000); }
+    } finally { clearInterval(tick); }
+    if (closed || token !== generation) return;
+    card.classList.remove('busy'); draw(); live();
   };
   draw();
   card.addEventListener('input', e => {
+    if (TL.busy) return;
     const r = e.target.dataset.rv; if (!r) return;
     const [i, p] = r.split(':'), f = c.rk[+i], u = RKDEF(f.k).find(x => x[0] === p)[5];
     f.v[p] = +e.target.value; e.target.nextElementSibling.textContent = rkVal(u, f.v[p]);
-    if (!HEAVY.includes(f.k)) live();
+    if (!HEAVY.includes(f.k)) { committed = JSON.parse(JSON.stringify(c)); live(); }
   });
   card.addEventListener('change', e => {
     if (TL.busy) return;
@@ -5579,7 +5629,7 @@ async function tlPunch() {
     if (!(await askPerm('mic'))) { toast(t('micPerm'), 4500); return; }
     try { res = JSON.parse(AND.recStart('voice', name, recOpts())); } catch (e) { res = {}; }
   }
-  if (!res.ok) { toast(t('recFail'), 4200); return; }
+  if (!res.ok) { toast(res.error === 'recovery-pending' ? t('recoveryPending') : t('recFail'), 7000); return; }
   TL.rec = { at: T - pre, t0: performance.now(), started: Date.now(), punch: { id: c.id, t: T, pre } };
   // the cue: everything as it is, except the selected clip stops where the new take starts
   const tr = TL.p.tracks, mix = [];
@@ -5768,7 +5818,7 @@ async function tlRec() {
     if (!(await askPerm('mic'))) { toast(t('micPerm'), 4500); return; }
     try { res = JSON.parse(AND.recStart('voice', name, recOpts())); } catch (e) { res = {}; }
   }
-  if (!res.ok) { toast(t('recFail'), 4200); return; }
+  if (!res.ok) { toast(res.error === 'recovery-pending' ? t('recoveryPending') : t('recFail'), 7000); return; }
   // hear the other tracks (and the metronome, with one bar to count in) while recording
   const ck = tlClickCfg(), pre = ck.on && ck.count ? ck.bar * 60 / ck.bpm : 0, cue = ck.on || (ls.get('recCue', true) && TL.pos < tlEnd() - 0.1);
   TL.rec = { at: TL.pos - pre, pre, cue, t0: performance.now(), started: Date.now() };
@@ -5791,7 +5841,7 @@ async function tlRecStop() {
   let res = {};
   try { res = JSON.parse(AND.recStop()); } catch (e) { res = {}; }
   renderTlBar(); drawTl();
-  if (!res.ok || !res.item) { toast(t(res.error === 'empty' ? 'recShort' : 'recSaveFail'), 4000); return; }
+  if (!res.ok || !res.item) { toast(t(res.error === 'recovery-pending' ? 'recoveryPending' : res.error === 'empty' ? 'recShort' : 'recSaveFail'), 7000); return; }
   if (res.cut) toast(t('recCut'), 6000);
   const it = fromNative(res.item, null);
   Object.assign(it, { title: defaultTitle('voice', r.started), userTitle: true, created: r.started, categoryId: defaultCat(), notes: '', bookmarks: [], source: 'mic', mode: 'voice', fav: false, kind: 'rec' });
@@ -5830,7 +5880,7 @@ async function tlLatency() {
   const start = () => { try { return JSON.parse(AND.recStart('voice', 'latency.m4a', JSON.stringify(o))); } catch (e) { return {}; } };
   let res = start();
   if (!res.ok && res.error === 'perm') { if (!(await askPerm('mic'))) { toast(t('micPerm'), 4500); return; } res = start(); }
-  if (!res.ok) { toast(t('recFail'), 4200); return; }
+  if (!res.ok) { toast(res.error === 'recovery-pending' ? t('recoveryPending') : t('recFail'), 7000); return; }
   TL.busy = { label: t('latTitle'), p: 0 }; tlBusyUi(); renderTlBar();
   try { AND.tlCalib(); } catch (e) {}
   const t0 = performance.now();
@@ -6453,15 +6503,18 @@ function clStopPlay() {
   try { const p = AND.tlPos(); if (p >= 0) CL.pos = p; AND.tlStop(); } catch (e) {}
   CL.play = false; cancelAnimationFrame(CL.raf);
 }
-function clClose() { $('#modalCard').onchange = null; clStopPlay(); if (CL.job) { try { AND.cancelJob(CL.job); } catch (e) {} } CL.r = null; CL.job = null; }
+function clClose() { CL.session = (CL.session || 0) + 1; $('#modalCard').onchange = null; clStopPlay(); if (CL.job) { try { AND.cancelJob(CL.job); } catch (e) {} } CL.r = null; CL.job = null; }
 async function openClean(r, auto) {
   if (!NATIVE || !r || !r.src) return;
   tlStop(); if (!audio.paused) audio.pause();
   Object.assign(CL, { r, diag: null, res: null, fixes: null, cmp: 'after', pos: 0, play: false, purpose: r.purpose || (r.mode === 'music' ? 'music' : ls.get('purpose', 'youtube')) });
   clCard(`<h3>${esc(t('clClean'))}</h3><p class="mtext">${esc(t('clScan'))}</p><div class="prog"><i id="clBar"></i></div>
     <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-cl="x">${esc(t('cancel'))}</button></div>`, true);
-  try { CL.diag = await clJob('diagnose', Object.assign({ src: r.src }, pauseArgs())); } catch (e) { if (CL.r) { toast(errText(e), 5000); closeModal(); } return; }
-  if (CL.r !== r) return;
+  const session = CL.session = (CL.session || 0) + 1;
+  let diag;
+  try { diag = await clJob('diagnose', Object.assign({ src: r.src }, pauseArgs())); } catch (e) { if (CL.session === session && CL.r === r) { toast(errText(e), 5000); closeModal(); } return; }
+  if (CL.session !== session || CL.r !== r) return;
+  CL.diag = diag;
   roomLearn(CL.diag);
   // 3.4.6: music cleaned as speech lost the music (denoise/gate keep only voice): songs start from "Music"
   if (kindOf(r) === 'music' || r.mode === 'music') CL.purpose = 'music';   // 4.0.1: also when the song had another purpose saved
@@ -6474,9 +6527,10 @@ function clCard(html, fresh) {
   return card;
 }
 function clJob(kind, args) {
-  const p = runJob(kind, args, f => { const b = $('#clBar'); if (b) b.style.width = Math.round(f * 100) + '%'; });
+  const session = CL.session;
+  const p = runJob(kind, args, f => { if (CL.session !== session || CL.job !== p.jobId) return; const b = $('#clBar'); if (b) b.style.width = Math.round(f * 100) + '%'; });
   CL.job = p.jobId;
-  return p.finally(() => { CL.job = null; });
+  return p.finally(() => { if (CL.session === session && CL.job === p.jobId) CL.job = null; });
 }
 /** what the diagnosis found, as a list of fixes (each with a one-line reason) */
 function clIssues(d, purpose) {
@@ -6524,14 +6578,18 @@ function clPlan() {
   };
 }
 async function clRun() {
-  const r = CL.r, fixes = CL_ORDER.filter(k => CL.fixes.has(k));
+  const r = CL.r, session = CL.session, fixes = CL_ORDER.filter(k => CL.fixes.has(k));
+  const diag = CL.diag, strength = CL.strength, purpose = CL.purpose;
+  let result;
   clCard(`<h3>${esc(t('clClean'))}</h3><p class="mtext">${esc(t('clWorking'))}</p><div class="prog"><i id="clBar"></i></div>
     <div class="modal-actions"><span class="spacer"></span><button class="btn" type="button" data-cl="x">${esc(t('cancel'))}</button></div>`);
   try {
-    CL.res = await clJob('clean', Object.assign(pauseArgs(), { path: CL.diag.path, fixes, strength: CL.strength, target: purposeTarget(CL.purpose), ai: !!CAPS.sep && CL.strength >= 1 && CL.purpose !== 'music' }, roomArgs(CL.diag),
-      fixes.includes('eq') && S.learnVoice ? { learned: await learnedProfile() } : {}));
-  } catch (e) { if (CL.r) { toast(errText(e), 5000); clPlan(); } return; }
-  if (CL.r !== r) return;
+    const learned = fixes.includes('eq') && S.learnVoice ? { learned: await learnedProfile() } : {};
+    if (CL.session !== session || CL.r !== r) return;
+    result = await clJob('clean', Object.assign(pauseArgs(), { path: diag.path, fixes, strength, target: purposeTarget(purpose), ai: !!CAPS.sep && strength >= 1 && purpose !== 'music' }, roomArgs(diag), learned));
+  } catch (e) { if (CL.session === session && CL.r === r) { toast(errText(e), 5000); clPlan(); } return; }
+  if (CL.session !== session || CL.r !== r) return;
+  CL.res = result;
   CL.res.fixes = fixes; CL.cmp = 'after'; CL.pos = 0;
   clDone();
 }
@@ -6591,7 +6649,7 @@ function clPlay() {
 }
 function clPlayIcon() { const b = $('#clPlay'); if (b) b.innerHTML = ic(CL.play ? 'pause' : 'play'); }
 async function clSave() {
-  const r = CL.r, res = CL.res; if (!r || !res) return;
+  const r = CL.r, res = CL.res, session = CL.session, purpose = CL.purpose; if (!r || !res) return;
   clStopPlay();
   const name = t('clName', { t: r.title });
   clCard(`<h3>${esc(t('clClean'))}</h3><p class="mtext">${esc(t('op_save'))}</p><div class="prog"><i id="clBar"></i></div>`);
@@ -6599,11 +6657,12 @@ async function clSave() {
     const sv = await clJob('wsSave', Object.assign({ path: res.path, name: fileName(r.title, 'clean') }, fmtArgs(), metaArgs(name)));
     const it = fromNative(sv.item, null);
     Object.assign(it, { title: name, userTitle: true, created: Date.now(), notes: r.notes || '', categoryId: r.categoryId || null, kind: 'rec', source: 'edit',
-      fav: false, bookmarks: [], cleaned: true, cleanOf: r.id, purpose: CL.purpose });
+      fav: false, bookmarks: [], cleaned: true, cleanOf: r.id, purpose });
     S.items.set(it.id, it); await saveRec(it);
+    if (CL.session !== session || CL.r !== r) { render(); return; }
     closeModal(); render();
     toast(t('clSaved'), 3000);
-  } catch (e) { toast(errText(e), 5000); clDone(); }
+  } catch (e) { if (CL.session === session && CL.r === r) { toast(errText(e), 5000); clDone(); } }
 }
 $('#modalCard').addEventListener('click', e => {
   if (!CL.r) return;
@@ -6734,7 +6793,7 @@ async function startRecNative() {
     if (!ok) { R.state = 'idle'; updateRecUI(); toast(t('micPerm'), 4500); return; }
     try { res = JSON.parse(AND.recStart(R.mode, name, recOpts(true))); } catch (e) { res = { ok: false }; }
   }
-  if (!res.ok) { R.state = 'idle'; updateRecUI(); toast(t('recFail'), 4200); return; }
+  if (!res.ok) { R.state = 'idle'; updateRecUI(); toast(res.error === 'recovery-pending' ? t('recoveryPending') : t('recFail'), 7000); return; }
   R.native = true; R.levels = []; R.marks = []; R.acc = 0; R.curMax = 0; R.cancel = false; R.mon = false; R.mv = null;
   R.live = liveOn() ? { n: 0, lines: [], part: '' } : null; $('#recLive').innerHTML = ''; $('#recLive').hidden = !R.live;
   R.state = 'rec'; R.t0 = performance.now(); R.started = Date.now();
@@ -6814,7 +6873,7 @@ async function finishNative() {
   let res = {};
   try { res = JSON.parse(AND.recStop()); } catch (e) { res = { ok: false }; }
   R.native = false;
-  if (!res.ok || !res.item) { R.live = null; $('#recLive').hidden = true; R.state = 'idle'; updateRecUI(); closeOverlay('rec'); toast(t(res.error === 'empty' ? 'recShort' : 'recSaveFail'), 4000); return; }
+  if (!res.ok || !res.item) { R.live = null; $('#recLive').hidden = true; R.state = 'idle'; updateRecUI(); closeOverlay('rec'); toast(t(res.error === 'recovery-pending' ? 'recoveryPending' : res.error === 'empty' ? 'recShort' : 'recSaveFail'), 7000); return; }
   const it = fromNative(res.item, null);
   it.title = defaultTitle(R.mode, R.started); it.userTitle = true; it.created = R.started;
   if (!it.duration) it.duration = R.endEl;
@@ -6823,7 +6882,7 @@ async function finishNative() {
   it.autoTitle = true;
   S.items.set(it.id, it); await saveRec(it);
   // 5.16: the live text becomes the recording's text (a draft: "Transcribe again" gives the accurate one)
-  if (R.live && res.live && res.live.segments && res.live.segments.length) await txApply(it, res.live, true).catch(() => {});
+  if (R.live && res.live && res.live.segments) await txApply(it, res.live, true).catch(() => {});
   R.live = null; $('#recLive').hidden = true;
   if (res.cut) toast(t('recCut'), 6000);
   await storePeaks(it.id, toBytes(R.levels), LR); storedPeakIds.add(it.id);
@@ -7621,8 +7680,10 @@ async function silenceCut(it) {
     const meta = Object.assign({}, it); delete meta.peaks; delete meta.size;
     const nit = fromNative(sv.item, meta);
     nit.bookmarks = (it.bookmarks || []).map(b => Object.assign({}, b, { t: shift(b.t) }));
-    await forgetItem(it.id);
-    S.items.set(nit.id, nit); await saveRec(nit);
+    // Keep the old recording until the replacement's notes and marks are safely stored.
+    await db.put('recordings', metaOf(nit)); S.items.set(nit.id, nit);
+    const removed = await nativeCall(() => AND.deleteMedia(JSON.stringify(it.src))).catch(() => null);
+    if (removed && removed.deleted) await forgetItem(it.id);
     render();
     toast(t('silCutDone', { s: nf1.format((res.report && res.report.saved) || 0) }), 3500);
     return nit;
@@ -7834,6 +7895,18 @@ async function selAct(e) {
 $('#selBar').addEventListener('click', selAct);
 /* 4.14: one tool on several recordings: each gets a new copy "<title> (<tool>)", the originals stay */
 const BATCH_OPS = () => ['denoise'].concat(CAPS.sep ? ['aidenoise'] : [], ['clarify', 'level', 'loud', 'eq', 'deess', 'dereverb', 'hum', 'trim', 'pauses', 'widen', 'lofi', 'eightd'], CAPS.hd ? ['hd'] : []);
+function remapMarks(marks, keep) {
+  if (!Array.isArray(keep)) throw new Error('missing time map');
+  return marks.flatMap(mark => {
+    let at = 0;
+    for (const [startMs, endMs] of keep) {
+      const start = startMs / 1000, end = endMs / 1000;
+      if (mark.t >= start && mark.t < end) return [Object.assign({}, mark, { t: at + mark.t - start })];
+      at += end - start;
+    }
+    return []; // Marks inside removed audio have no corresponding event in the new recording.
+  });
+}
 async function batchOp(list) {
   const op = await chooseBox(t('selApply'), t('selApplyQ', { n: list.length }), BATCH_OPS().map(x => ({ value: x, label: t('op_' + x), desc: t('fxd_' + x) })));
   if (!op) return;
@@ -7847,9 +7920,11 @@ async function batchOp(list) {
       const w = await runJob('wsInit', { src: r.src });
       const res = await runJob('wsOp', Object.assign({ path: w.path, op }, args));
       if (res.same) continue;
+      const marks = op === 'trim' || op === 'pauses' ? remapMarks(r.bookmarks || [], res.report && res.report.keep) : null;
       const name = `${r.title} (${t('op_' + op)})`;
       const sv = await runJob('wsSave', Object.assign({ path: res.path, name: safeName(name) }, fmtArgs()));
       const meta = metaOf(r); ['id', 'peaks', 'size', 'src', 'trashed', 'origId', 'origSrc', 'pos', 'lufs'].forEach(k => delete meta[k]);
+      if (marks) meta.bookmarks = marks;
       Object.assign(meta, { title: name, userTitle: true, created: Date.now(), kind: kindOf(r) });
       const it = fromNative(sv.item, meta); S.items.set(it.id, it); await saveRec(it);
       ok++;
@@ -8550,11 +8625,13 @@ async function boot() {
     if (!seeded && !metas.length) await seed();
     if (!NATIVE) await recoverDraft();
     if (NATIVE) await loadLibrary();
+    if (NATIVE && AND.pendingRestore) { const pending = AND.pendingRestore(); if (pending) await applyRestoreResult(JSON.parse(pending)); }
   } catch (e) { toast(t('loadFail')); }
   render();
   booted = true;
   if (NATIVE) {
     await migrateLegacy(); render();
+    if (AND.takeInterruptedJobs && AND.takeInterruptedJobs()) toast(t('jobsInterrupted'), 9000);
     window.__sdImported();
     audio.refresh();
     if (audio.src && S.items.has(audio.src)) { S.cur = audio.src; S.miniOn = true; updateMini(); }

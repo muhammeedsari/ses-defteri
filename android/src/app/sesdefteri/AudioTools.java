@@ -485,6 +485,7 @@ final class AudioTools {
 
         void finish() throws Exception {
             if (!started) throw new IllegalStateException("no audio");
+            try {
             boolean queued = false;
             for (int tries = 0; tries < 1000 && !queued; tries++) {
                 int ii = codec.dequeueInputBuffer(10000);
@@ -499,7 +500,7 @@ final class AudioTools {
             drain(true);
             if (raw != null) { raw.close(); raw = null; }
             if (muxing) muxer.stop();
-            release();
+            } finally { release(); }
         }
 
         void drain(boolean untilEos) throws Exception {
@@ -508,7 +509,8 @@ final class AudioTools {
                 int oi = codec.dequeueOutputBuffer(info, 10000);
                 if (oi == MediaCodec.INFO_TRY_AGAIN_LATER) {
                     // 5.14.3: wait up to ~5 s of silence from the encoder after the end flag, not 3 s in total
-                    if (!untilEos || ++idle > 500) return;
+                    if (!untilEos) return;
+                    if (++idle > 500) throw new java.io.IOException("encoder-timeout");
                 } else if (oi == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     MediaFormat of = codec.getOutputFormat();
                     if (raw != null) {
@@ -546,7 +548,8 @@ final class AudioTools {
         void release() {
             try { if (raw != null) raw.close(); } catch (Exception ignored) { }
             raw = null;
-            try { if (codec != null) { codec.stop(); codec.release(); } } catch (Exception ignored) { }
+            try { if (codec != null) codec.stop(); } catch (Exception ignored) { }
+            try { if (codec != null) codec.release(); } catch (Exception ignored) { }
             try { if (muxer != null) muxer.release(); } catch (Exception ignored) { }
             codec = null;
             muxer = null;

@@ -313,9 +313,10 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
                 JSONObject it = current();
                 if (xfadeMs > 0 && !sleepEnd && dur > 0) {
                     long left = dur - cur;
-                    if (nmp == null && left <= xfadeMs + 1500) prepareNext();
-                    if (nmp != null && !fading && left <= xfadeMs) {
-                        fading = true; fadeStart = System.currentTimeMillis(); fadeLen = Math.max(200, left);
+                    if (nmp == null && left / rate <= xfadeMs + 1500) prepareNext();
+                    if (nmp != null && !fading && left / rate <= xfadeMs) {
+                        fading = true; fadeStart = System.currentTimeMillis(); fadeLen = Math.max(200, Math.round(left / rate));
+                        applyRate(nmp);
                         try { nmp.start(); } catch (Exception e) { dropNext(); }
                     }
                     if (fading && nmp != null) {
@@ -736,12 +737,17 @@ final class Player implements MediaPlayer.OnPreparedListener, MediaPlayer.OnComp
     }
 
     private void applyRate() {
-        if (mp == null || !prepared || Build.VERSION.SDK_INT < 23) return;
+        if (prepared) applyRate(mp);
+        if (fading) applyRate(nmp);
+    }
+
+    private void applyRate(MediaPlayer player) {
+        if (player == null || Build.VERSION.SDK_INT < 23) return;
         try {
-            PlaybackParams p = mp.getPlaybackParams();
+            PlaybackParams p = player.getPlaybackParams();
             p.setSpeed(rate);
             p.setPitch(pitch);
-            mp.setPlaybackParams(p);
+            player.setPlaybackParams(p);
         } catch (Exception ignored) { }
     }
 

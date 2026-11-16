@@ -62,6 +62,11 @@ final class Recorder {
 
     /** opts: {q: std|high|stereo, src: auto|builtin|wired|usb, call: pause during calls, fmt: m4a|wav|flac} */
     static synchronized String start(Context c, String mode, String displayName, String optsJson) {
+        if (!"idle".equals(state)) return "{\"ok\":false,\"error\":\"busy\"}";
+        if (new File(c.getFilesDir(), "rec-active.json").exists()) {
+            recover(c);
+            if (new File(c.getFilesDir(), "rec-active.json").exists()) return "{\"ok\":false,\"error\":\"recovery-pending\"}";
+        }
         JSONObject o;
         try { o = new JSONObject(optsJson == null ? "{}" : optsJson); } catch (Exception e) { o = new JSONObject(); }
         callPause = o.optBoolean("call", true);
@@ -124,7 +129,10 @@ final class Recorder {
             if (temp) { target = new MediaLib.Target(); target.file = new File(c.getCacheDir(), "latency.m4a"); target.name = target.file.getName(); }
             else target = MediaLib.create(c, displayName, mime, dir);
             sink = openSink(c);
-            if (!temp) journal(c, true);
+            if (!temp) {
+                journal(c, true);
+                if (!new File(c.getFilesDir(), "rec-active.json").isFile()) throw new java.io.IOException("journal");
+            }
             meter = new Timeline.Meter(rate);
             fail = null;
             peak = 0;
@@ -343,24 +351,26 @@ final class Recorder {
             sink = null;
             // 5.14.2: a recording cut short by an error (full storage, mic taken) keeps what was written
             boolean ok = s != null && s.frames() > rate / 10;
-            try { if (ok) s.finish(); else if (s != null) s.abort(); } catch (Exception e) { ok = false; }
+            boolean recoverable = ok;
+            try { if (ok) s.finish(); else if (s != null) s.abort(); } catch (Exception e) { ok = false; if (s != null) s.preserve(); }
             try { if (pfd != null) pfd.close(); } catch (Exception ignored) { }
             pfd = null;
-            journal(c, false);
             startService(c, false);
             state = "idle";
             meter = null;
             if (!ok) {
-                MediaLib.discard(c, target);
+                if (!recoverable) { MediaLib.discard(c, target); journal(c, false); }
                 target = null;
                 if (lt != null) lt.end(0);
                 res.put("ok", false);
-                res.put("error", "empty");
+                res.put("error", recoverable ? "recovery-pending" : "empty");
                 return res.toString();
             }
             JSONObject item = MediaLib.publish(c, target);
             target = null;
             if (item == null) { if (lt != null) lt.end(0); res.put("ok", false); res.put("error", "publish"); return res.toString(); }
+            journal(c, false);
+            rawFile(c).delete();
             res.put("ok", true);
             res.put("item", item);
             if (cut) res.put("cut", true);
@@ -375,7 +385,10 @@ final class Recorder {
     /** stops the thread and the microphone; true when something was recorded without errors */
     private static boolean halt() {
         running = false;
+        // Unblock AudioRecord.read before joining; never finalize a sink its writer still owns.
+        if (ar != null) try { ar.stop(); } catch (Exception ignored) { }
         if (th != null) { try { th.join(2000); } catch (InterruptedException ignored) { } }
+        if (th != null && th.isAlive()) throw new IllegalStateException("recorder-stopping");
         th = null;
         monitor(false);
         fxRelease();
@@ -425,9 +438,11 @@ final class Recorder {
             o.put("uri", target.uri != null ? target.uri.toString() : "");
             o.put("file", target.file != null ? target.file.getAbsolutePath() : "");
             o.put("name", target.name); o.put("fmt", fmt); o.put("rate", rate); o.put("ch", chans);
-            FileOutputStream w = new FileOutputStream(j);
-            w.write(o.toString().getBytes("UTF-8"));
-            w.close();
+            File part = new File(c.getFilesDir(), "rec-active.json.part");
+            try (FileOutputStream w = new FileOutputStream(part)) {
+                w.write(o.toString().getBytes("UTF-8")); w.getFD().sync();
+            }
+            if (!part.renameTo(j)) throw new java.io.IOException("journal");
         } catch (Exception ignored) { }
     }
 
@@ -465,10 +480,10 @@ final class Recorder {
                 }
             } finally { if (p != null) p.close(); }
         } catch (Exception e) { ok = false; }
-        rf.delete();
-        j.delete();
-        if (!ok) { if (t.uri != null || t.file != null) MediaLib.discard(c, t); return null; }
-        return MediaLib.publish(c, t);
+        if (!ok) return null;
+        JSONObject item = MediaLib.publish(c, t);
+        if (item != null) { rf.delete(); j.delete(); }
+        return item;
     }
 
     /* ---------- where the samples go ---------- */
@@ -478,6 +493,7 @@ final class Recorder {
         long frames();
         void finish() throws Exception;
         void abort();
+        default void preserve() { abort(); }
     }
 
     private static Sink openSink(Context c) throws Exception {
@@ -502,12 +518,12 @@ final class Recorder {
                 @Override public void write(short[] s, int n) throws Exception { enc.feed(s, n); fr += n / chans; }
                 @Override public long frames() { return fr; }
                 @Override public void finish() throws Exception {
-                    enc.finish();
+                    try { enc.finish(); } finally { enc.release(); }
                     int n = AudioTools.remux(rf, ofd, of);
-                    rf.delete();
                     if (n == 0) throw new IllegalStateException("empty");
                 }
                 @Override public void abort() { enc.release(); rf.delete(); }
+                @Override public void preserve() { enc.release(); }
             };
         }
         fc = fd != null ? new FileOutputStream(fd).getChannel() : new RandomAccessFile(target.file, "rw").getChannel();
@@ -585,7 +601,11 @@ final class Recorder {
             int idle = 0;
             while (true) {
                 int oi = codec.dequeueOutputBuffer(info, 10000);
-                if (oi == MediaCodec.INFO_TRY_AGAIN_LATER) { if (!eos || ++idle > 300) return; continue; }
+                if (oi == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    if (!eos) return;
+                    if (++idle > 300) throw new java.io.IOException("encoder-timeout");
+                    continue;
+                }
                 if (oi < 0) continue;
                 ByteBuffer ob = codec.getOutputBuffer(oi);
                 if (ob != null && info.size > 0) {
@@ -601,14 +621,15 @@ final class Recorder {
         @Override public long frames() { return fr; }
 
         @Override public void finish() throws Exception {
+            boolean queued = false;
+            try {
             for (int tries = 0; tries < 500; tries++) {
                 int ii = codec.dequeueInputBuffer(10000);
-                if (ii >= 0) { codec.queueInputBuffer(ii, 0, 0, in * 1000000L / rate, MediaCodec.BUFFER_FLAG_END_OF_STREAM); break; }
+                if (ii >= 0) { codec.queueInputBuffer(ii, 0, 0, in * 1000000L / rate, MediaCodec.BUFFER_FLAG_END_OF_STREAM); queued = true; break; }
                 drain(false);
             }
+            if (!queued) throw new java.io.IOException("encoder-timeout");
             drain(true);
-            try { codec.stop(); } catch (Exception ignored) { }
-            codec.release();
             // STREAMINFO: the 36-bit total samples fill the low nibble of byte 21 and bytes 22–25
             if (hn == 42 && head[0] == 'f' && head[1] == 'L' && head[2] == 'a' && head[3] == 'C') {
                 long t = fr & 0xFFFFFFFFFL;
@@ -617,7 +638,7 @@ final class Recorder {
                 b[1] = (byte) (t >> 24); b[2] = (byte) (t >> 16); b[3] = (byte) (t >> 8); b[4] = (byte) t;
                 fc.write(ByteBuffer.wrap(b), 21);
             }
-            fc.close();
+            } finally { abort(); }
         }
 
         @Override public void abort() {

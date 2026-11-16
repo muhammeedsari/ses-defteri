@@ -68,6 +68,7 @@ final class Timeline {
 
     /** deletes project files not in keep; files written at or after `since` (when keep was made) are spared: a job queued before this one may have just made them */
     static void clean(Context c, JSONArray keep, long since) {
+        if (Archive.pendingExists(c)) return; // The new page has not yet stored the restored project metadata.
         java.util.HashSet<String> k = new java.util.HashSet<>();
         if (keep != null) for (int i = 0; i < keep.length(); i++) k.add(keep.optString(i));
         File[] fs = dir(c).listFiles();

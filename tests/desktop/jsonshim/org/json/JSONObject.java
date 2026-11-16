@@ -58,6 +58,15 @@ public class JSONObject {
   public boolean getBoolean(String k) { return (Boolean) m.get(k); }
   public Iterator<String> keys() { return m.keySet().iterator(); }
   public int length() { return m.size(); }
-  public static String quote(String s) { return "\"" + s + "\""; }
-  public String toString() { StringBuilder b = new StringBuilder("{"); for (Map.Entry<String,Object> e : m.entrySet()) { if (b.length() > 1) b.append(','); b.append('"').append(e.getKey()).append("\":").append(e.getValue() instanceof String ? "\"" + e.getValue() + "\"" : String.valueOf(e.getValue())); } return b.append('}').toString(); }
+  public static String quote(String s) {
+    StringBuilder b = new StringBuilder("\"");
+    for (int i = 0; i < s.length(); i++) {
+      char c = s.charAt(i);
+      if (c == '"' || c == '\\') b.append('\\').append(c);
+      else if (c < 32) b.append(String.format(java.util.Locale.ROOT, "\\u%04x", (int) c));
+      else b.append(c);
+    }
+    return b.append('"').toString();
+  }
+  public String toString() { StringBuilder b = new StringBuilder("{"); for (Map.Entry<String,Object> e : m.entrySet()) { if (b.length() > 1) b.append(','); b.append(quote(e.getKey())).append(':').append(e.getValue() instanceof String ? quote((String) e.getValue()) : String.valueOf(e.getValue())); } return b.append('}').toString(); }
 }

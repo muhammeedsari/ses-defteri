@@ -1,9 +1,10 @@
 #!/bin/bash
 # compile the app's pure-Java DSP + tests and run one test class
-set -e
-SRC=/home/claude/ses-defteri-android/src/app/sesdefteri/dsp
-OUT=/home/claude/sd-tests/classes
-rm -rf $OUT; mkdir -p $OUT
-javac -nowarn -source 8 -target 8 -Xlint:-options -d $OUT $SRC/*.java /home/claude/sd-tests/java/*.java 2>&1 | grep -v "JAVA_TOOL_OPTIONS" || true
+set -euo pipefail
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+SRC="$ROOT/android/src/app/sesdefteri/dsp"
+OUT="$(mktemp -d)"
+trap 'rm -rf -- "$OUT"' EXIT
+javac -nowarn -source 8 -target 8 -Xlint:-options -encoding UTF-8 -d "$OUT" "$SRC"/*.java "$ROOT"/tests/java/*.java
 cls=$1; shift
-java -Xmx3g -cp $OUT $cls "$@" 2>&1 | grep -v JAVA_TOOL_OPTIONS
+java -Xmx3g -cp "$OUT" "$cls" "$@"

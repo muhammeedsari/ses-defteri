@@ -293,7 +293,7 @@ final class MediaLib {
             if (t.uri != null) {
                 ContentValues v = new ContentValues();
                 v.put(MediaStore.MediaColumns.IS_PENDING, 0);
-                c.getContentResolver().update(t.uri, v, null, null);
+                if (c.getContentResolver().update(t.uri, v, null, null) <= 0) return null;
                 long id = ContentUris.parseId(t.uri);
                 JSONObject o = one(c, id);
                 if (o != null) return o;
@@ -362,6 +362,10 @@ final class MediaLib {
 
     /** Fills a target created with {@link #create} from a finished temp file, then publishes it. */
     static JSONObject copyInTarget(Context c, Target t, File from) throws IOException {
+        return copyInTarget(c, t, from, null);
+    }
+
+    static JSONObject copyInTarget(Context c, Target t, File from, java.util.concurrent.atomic.AtomicBoolean cancel) throws IOException {
         InputStream in = null;
         OutputStream out = null;
         boolean done = false;
@@ -370,8 +374,12 @@ final class MediaLib {
             out = open(c, t);
             byte[] buf = new byte[128 * 1024];
             int n;
-            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            while ((n = in.read(buf)) > 0) {
+                if (cancel != null && cancel.get()) throw new IOException("cancel");
+                out.write(buf, 0, n);
+            }
             out.close(); out = null;
+            if (cancel != null && cancel.get()) throw new IOException("cancel");
             JSONObject item = publish(c, t);
             done = item != null;
             return item;

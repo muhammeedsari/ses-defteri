@@ -121,6 +121,9 @@ final class LiveText {
     private final List<Transcriber.Segment> segs = new ArrayList<Transcriber.Segment>();
     private volatile String part = "";
     private volatile boolean stop, failed;
+    private volatile boolean abandoned;
+    private static final Object ENGINE_LOCK = new Object();
+    private final List<double[]> missing = new ArrayList<double[]>();
     private final Thread th;
 
     /** model: v1 / v2 (seda, Turkish) or "w" (5.17: Whisper, any language; wmodel = base / small, lang "" = detect) */
@@ -130,20 +133,32 @@ final class LiveText {
         final boolean w = "w".equals(model);
         this.lang = w ? (lang == null ? "" : lang) : "tr";
         final File d = w ? null : dir(c, model);
-        th = new Thread(new Runnable() { @Override public void run() { if (w) whisper(c, lang, wmodel); else work(c, d); } }, "livetext");
+        th = new Thread(new Runnable() { @Override public void run() {
+            // A previous inference may still be returning. Do not load a second live model on top of it.
+            synchronized (ENGINE_LOCK) { if (!abandoned) { if (w) whisper(c, lang, wmodel); else work(c, d); } }
+        } }, "livetext");
         th.start();
     }
 
     /** recorder thread: never blocks, never throws */
     void feed(float[] l, float[] r, int n, int ch) {
-        if (stop || failed) return;
+        if (stop) return;
         long at = fed;
         fed += n;
-        if (queued.get() > maxLag) return;   // too far behind: this piece is left out of the text only
+        if (failed || queued.get() > maxLag) { missing(at, at + n); return; }
         float[] x = new float[n];
         if (ch > 1) for (int i = 0; i < n; i++) x[i] = (l[i] + r[i]) * 0.5f;
         else System.arraycopy(l, 0, x, 0, n);
-        if (q.offer(new Chunk(x, at))) queued.addAndGet(n);
+        queued.addAndGet(n);
+        if (!q.offer(new Chunk(x, at))) { queued.addAndGet(-n); missing(at, at + n); }
+    }
+
+    private void missing(long from, long to) {
+        synchronized (missing) {
+            double s = from / (double) rate, e = to / (double) rate;
+            if (!missing.isEmpty() && missing.get(missing.size() - 1)[1] >= s) missing.get(missing.size() - 1)[1] = e;
+            else missing.add(new double[] { s, e });
+        }
     }
 
     private void work(Context c, File d) {
@@ -166,6 +181,7 @@ final class LiveText {
             st = rec.createStream();
             long seg0 = 0, pos = 0;
             while (true) {
+                if (abandoned) break;
                 Chunk k = q.poll(200, TimeUnit.MILLISECONDS);
                 if (k == null) { if (stop) break; continue; }
                 queued.addAndGet(-k.x.length);
@@ -212,6 +228,7 @@ final class LiveText {
             float[][] one = new float[1][];
             long pos = 0;
             while (true) {
+                if (abandoned) break;
                 Chunk k = q.poll(200, TimeUnit.MILLISECONDS);
                 if (k == null) { if (stop) break; continue; }
                 queued.addAndGet(-k.x.length);
@@ -274,7 +291,7 @@ final class LiveText {
     /** ends the engine; waits up to `ms` for what is left, then returns the text as the transcription result */
     JSONObject end(long ms) {
         stop = true;
-        if (ms <= 0) return null;
+        if (ms <= 0) { abandoned = true; q.clear(); return null; }
         try { th.join(ms); } catch (InterruptedException ignored) { }
         List<Transcriber.Segment> l;
         synchronized (segs) { l = new ArrayList<Transcriber.Segment>(segs); }
@@ -296,7 +313,18 @@ final class LiveText {
             res.put("title", Keywords.title(l));
             res.put("lang", lang);
             res.put("live", true);
-            if (th.isAlive()) res.put("short", true);   // the phone was still behind: the end of the text is missing
+            boolean unfinished = th.isAlive();
+            double processed = 0;
+            for (Transcriber.Segment s : l) processed = Math.max(processed, s.end);
+            JSONArray gaps = new JSONArray();
+            synchronized (missing) { for (double[] gap : missing) gaps.put(new JSONArray().put(gap[0]).put(gap[1])); }
+            if (unfinished || failed) {
+                gaps.put(new JSONArray().put(Math.min(processed, fed / (double) rate)).put(fed / (double) rate));
+                abandoned = true; q.clear();
+            }
+            boolean partial = unfinished || failed || gaps.length() > 0;
+            res.put("short", partial); res.put("partial", partial);
+            res.put("missingRanges", gaps); res.put("processedUntil", Math.min(processed, fed / (double) rate));
             return res;
         } catch (Exception e) {
             return null;
