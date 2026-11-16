@@ -28,5 +28,5 @@ public class JSONArray {
   public int getInt(int i) { return ((Number) l.get(i)).intValue(); }
   public JSONObject optJSONObject(int i) { Object v = i < l.size() ? l.get(i) : null; return v instanceof JSONObject ? (JSONObject) v : null; }
   public JSONArray optJSONArray(int i) { Object v = i < l.size() ? l.get(i) : null; return v instanceof JSONArray ? (JSONArray) v : null; }
-  public String toString() { return l.toString(); }
+  public String toString() { StringBuilder b = new StringBuilder("["); for (Object v : l) { if (b.length() > 1) b.append(','); b.append(v instanceof String ? JSONObject.quote((String) v) : String.valueOf(v)); } return b.append(']').toString(); }
 }

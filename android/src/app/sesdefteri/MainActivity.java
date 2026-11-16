@@ -76,14 +76,15 @@ public class MainActivity extends Activity implements Player.Listener {
     private String pendingDeleteJob;
     private org.json.JSONArray pendingDeleteDone, pendingDeleteAsk;
 
-    private final ExecutorService pool = Executors.newSingleThreadExecutor();
+    private static final ExecutorService pool = Executors.newSingleThreadExecutor();
     /* enhancement, speech-to-text, mixing: one at a time, apart from waveform work */
-    private final ExecutorService studioPool = Executors.newSingleThreadExecutor();
+    private static final ExecutorService studioPool = Executors.newSingleThreadExecutor();
     /* background waveform work runs on its own low-priority thread so it never holds up what is on screen */
-    private final ExecutorService bgPool = Executors.newSingleThreadExecutor(new java.util.concurrent.ThreadFactory() {
+    private static final ExecutorService bgPool = Executors.newSingleThreadExecutor(new java.util.concurrent.ThreadFactory() {
         @Override public Thread newThread(Runnable r) { Thread t = new Thread(r, "sd-bg"); t.setPriority(Thread.MIN_PRIORITY); return t; }
     });
     private final Map<String, AtomicBoolean> jobs = new ConcurrentHashMap<>();
+    private volatile boolean destroyed;
     private final List<String> importedQueue = Collections.synchronizedList(new ArrayList<String>());
     private final Map<String, OutputStream> openFiles = new ConcurrentHashMap<>();
     private final Map<String, File> openFilePaths = new ConcurrentHashMap<>();
@@ -231,9 +232,21 @@ public class MainActivity extends Activity implements Player.Listener {
         js("window.__sdPlayer && window.__sdPlayer(" + json + ")");
     }
 
-    private void jobDone(String id, boolean ok, String resultJson) {
-        jobs.remove(id);
-        js("window.__sdJob && window.__sdJob(" + q(id) + "," + ok + "," + (resultJson == null ? "null" : resultJson) + ")");
+    private void jobDone(final String id, boolean ok, String resultJson) {
+        final String code = "window.__sdJob && window.__sdJob(" + q(id) + "," + ok + "," + (resultJson == null ? "null" : resultJson) + ")";
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                if (destroyed || web == null || !pageReady) {
+                    if (jobs.containsKey(id)) Str.prefs(MainActivity.this).edit().putBoolean("jobs-interrupted", true).apply();
+                    jobs.remove(id);
+                    return;
+                }
+                // Keep ownership until the callback actually reaches JavaScript; onDestroy can then report an interruption.
+                web.evaluateJavascript(code, new ValueCallback<String>() {
+                    @Override public void onReceiveValue(String value) { jobs.remove(id); }
+                });
+            }
+        });
     }
 
     private void jobChunk(String id, int from, byte[] data) {
@@ -650,6 +663,11 @@ public class MainActivity extends Activity implements Player.Listener {
 
     @Override
     protected void onDestroy() {
+        destroyed = true;
+        if (!jobs.isEmpty()) {
+            Str.prefs(this).edit().putBoolean("jobs-interrupted", true).apply();
+            for (AtomicBoolean cancel : jobs.values()) cancel.set(true);
+        }
         Player.I.init(this, null);
         Timeline.stop();
         Tuner.stop();
@@ -658,7 +676,7 @@ public class MainActivity extends Activity implements Player.Listener {
             web.destroy();
             web = null;
         }
-        if (!Recorder.active()) { pool.shutdown(); bgPool.shutdownNow(); studioPool.shutdown(); }
+        // Pools belong to the process. New Activities share their queues, including while recording.
         super.onDestroy();
     }
 
@@ -926,8 +944,10 @@ public class MainActivity extends Activity implements Player.Listener {
 
         /** photos no recording points to; ones from the last hour stay (a camera may still be busy) */
         @JavascriptInterface public void photoClean(final String keepJson) {
+            if (Archive.pendingExists(MainActivity.this)) return;
             bgPool.execute(new Runnable() {
                 @Override public void run() {
+                    if (destroyed || Archive.pendingExists(MainActivity.this)) return;
                     try {
                         java.util.HashSet<String> keep = new java.util.HashSet<>();
                         org.json.JSONArray a = new org.json.JSONArray(keepJson);
@@ -993,13 +1013,15 @@ public class MainActivity extends Activity implements Player.Listener {
             if (f == null) return null;
             File dir = new File(getCacheDir(), "share");
             dir.mkdirs();
-            File copy = new File(dir, f.getName());
-            java.io.FileInputStream in = new java.io.FileInputStream(f);
-            FileOutputStream out = new FileOutputStream(copy);
-            byte[] b = new byte[65536]; int n;
-            while ((n = in.read(b)) > 0) out.write(b, 0, n);
-            in.close(); out.close();
-            return new Uri.Builder().scheme("content").authority(ShareProvider.AUTHORITY).appendPath(copy.getName()).build();
+            String token = UUID.randomUUID().toString();
+            File copy = new File(dir, token + "-" + f.getName());
+            boolean copied = false;
+            try (java.io.FileInputStream in = new java.io.FileInputStream(f); FileOutputStream out = new FileOutputStream(copy)) {
+                byte[] b = new byte[65536]; int n;
+                while ((n = in.read(b)) > 0) out.write(b, 0, n);
+                copied = true;
+            } finally { if (!copied) copy.delete(); }
+            return new Uri.Builder().scheme("content").authority(ShareProvider.AUTHORITY).appendPath(copy.getName()).appendQueryParameter("name", f.getName()).build();
         }
 
         /** Shares a small text file (subtitles, transcript). */
@@ -1217,6 +1239,7 @@ public class MainActivity extends Activity implements Player.Listener {
 
         /* -- background jobs: waveform, editing, saving -- */
         @JavascriptInterface public String job(final String kind, final String argsJson) {
+            if (destroyed) throw new IllegalStateException("cancel");
             final String id = UUID.randomUUID().toString();
             final AtomicBoolean cancel = new AtomicBoolean(false);
             jobs.put(id, cancel);
@@ -1238,6 +1261,7 @@ public class MainActivity extends Activity implements Player.Listener {
                 public void run() {
                     String model = null;
                     try {
+                        if (cancel.get() || destroyed) throw new InterruptedException("cancel");
                         JSONObject a = new JSONObject(argsJson);
                         AudioTools.Progress p = new AudioTools.Progress() {
                             @Override public void on(double f) { jobProgress(id, f); }
@@ -1367,6 +1391,8 @@ public class MainActivity extends Activity implements Player.Listener {
                         } else {
                             throw new IllegalArgumentException("unknown job");
                         }
+                        // Restore has already committed its durable replay receipt at this point.
+                        if ((cancel.get() || destroyed) && !"restore".equals(kind)) throw new InterruptedException("cancel");
                         jobDone(id, true, res.toString());
                     } catch (Throwable e) {
                         String msg = e instanceof OutOfMemoryError ? "memory" : String.valueOf(e.getMessage());
@@ -1383,6 +1409,18 @@ public class MainActivity extends Activity implements Player.Listener {
         @JavascriptInterface public void cancelJob(String id) {
             AtomicBoolean c = jobs.get(id);
             if (c != null) c.set(true);
+        }
+
+        @JavascriptInterface public boolean takeInterruptedJobs() {
+            boolean v = Str.prefs(MainActivity.this).getBoolean("jobs-interrupted", false);
+            Str.prefs(MainActivity.this).edit().remove("jobs-interrupted").apply();
+            return v;
+        }
+        @JavascriptInterface public String pendingRestore() {
+            try { return Archive.pending(MainActivity.this); } catch (Exception e) { return ""; }
+        }
+        @JavascriptInterface public boolean acknowledgeRestore(String token) {
+            try { return Archive.acknowledge(MainActivity.this, token); } catch (Exception e) { return false; }
         }
 
         /* -- byte transfer from the page (moving v1 recordings out of the WebView) -- */

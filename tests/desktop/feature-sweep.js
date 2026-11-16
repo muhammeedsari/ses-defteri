@@ -1,14 +1,17 @@
 const { chromium, devices } = require('playwright'); const path = require('path');
+const bridgeSource = require('fs').readFileSync(path.join(__dirname, '../../android/src/app/sesdefteri/MainActivity.java'), 'utf8');
+const bridgeMethods = [...bridgeSource.matchAll(/@JavascriptInterface\s+public\s+\w+(?:<[^>]+>)?\s+(\w+)\s*\(/g)].map(m => m[1]);
+const jobKinds = [...bridgeSource.matchAll(/(?:if|else if)\s*\(\s*"(\w+)"\.equals\(kind\)\s*\)/g)].map(m => m[1]);
 const LANG = process.argv[2] || 'tr', FULL = process.argv[3] !== 'quick';
 (async () => {
   const b = await chromium.launch(); const ctx = await b.newContext({ ...devices['Pixel 7'] }); const pg = await ctx.newPage();
   let where = 'load'; const errs = []; pg.on('pageerror', e => errs.push(where + ' :: ' + e.message.split('\n')[0]));
   pg.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errs.push(where + ' :: console ' + m.text().slice(0, 200)); });
-  await pg.addInitScript(lang => {
-    window.__calls = []; let n = 0;
+  await pg.addInitScript(({ lang, bridgeMethods, jobKinds }) => {
+    window.__calls = []; window.__mockFailures = []; let n = 0; const pendingJobs = new Map();
     const b64 = len => btoa(String.fromCharCode(...Array.from({ length: len }, (_, i) => 60 + Math.round(50 * Math.abs(Math.sin(i / 7))))));
     const list = []; for (let i = 0; i < 30; i++) list.push({ id: 'm' + i, src: { uri: 'content://x/' + i }, mediaId: i, title: (i < 15 ? 'Kayıt ' : 'Şarkı ') + i, name: 'f' + i + '.m4a', dur: 60000 + i * 1000, music: i >= 15, rec: i < 15, own: i < 15, date: Date.now() - i * 1e7, artist: 'Sanatçı', album: 'Albüm ' + (i % 3), albumId: i % 3, folder: 'Music', mime: 'audio/mp4', size: 1e6 });
-    const R = k => ({
+    const R = k => { const responses = {
       peaks: { rate: 20, scale: 'sqrt', dur: 60000, data: b64(1200) }, wsInit: { path: '/f/w.wav', dur: 60000, ch: 1, rate: 48000 },
       wsOp: { path: '/f/o.wav', dur: 60000, ch: 1, report: { reduction: 10 } }, tlAdd: { path: '/f/c' + n + '.wav', dur: 30000, ch: 2 },
       diagnose: { path: '/f/d.wav', dur: 60000, ch: 1, lufs: -22, lra: 5, peak: -3, clipped: 0, snr: 12, noise: -40, hum: 10, humHz: 50, clicks: 3, plosive: 1, sib: 3, channel: '', head: 0.6, tail: 2, eq: 3, speech: true },
@@ -18,17 +21,36 @@ const LANG = process.argv[2] || 'tr', FULL = process.argv[3] !== 'quick';
       loudness: { lufs: -20, lra: 5, peak: -2 }, spectro: { img: b64(64 * 100), rows: 64, cols: 100, rate: 48000, fmax: 20000 },
       wsSave: { item: { id: 'new' + n, src: { uri: 'content://n/' + n }, name: 'yeni.m4a', title: 'Yeni', dur: 30000, rec: true, own: true } },
       tlSep: { voc: { path: '/f/v.wav', dur: 30000, ch: 2 }, acc: { path: '/f/a.wav', dur: 30000, ch: 2 } }, tlSpk: { segs: [[0, 5, 0], [5, 10, 1]], n: 2, db: [-20, -25] },
-      ttsStatus: {}, tlSfx: { path: '/f/s.wav', dur: 2000, ch: 2 }, tlRender: { path: '/f/m.wav', dur: 30000, ch: 2 }, ringtone: { name: 'zil' }, roomTest: { noise: -50, verdict: 'ok' },
-    })[k] || {};
-    const job = (kind, a) => { const id = 'j' + (++n); window.__calls.push(kind); (window.__args = window.__args || []).push([kind, JSON.parse(a)]); const ov = window.__R && window.__R[kind]; if (ov) { setTimeout(() => window.__sdJob(id, true, typeof ov === 'function' ? ov(JSON.parse(a)) : ov), 40); return id; } setTimeout(() => window.__sdJob(id, true, R(kind)), 40); return id; };
+      wsClean: {}, tlClean: {}, tlSfx: { path: '/f/s.wav', dur: 2000, ch: 2 }, tlRender: { path: '/f/m.wav', dur: 30000, ch: 2 }, ringtone: { name: 'zil' }, roomTest: { noise: -50, verdict: 'ok' },
+    }; if (!Object.prototype.hasOwnProperty.call(responses, k)) throw new Error('Unmocked job: ' + k); return responses[k]; };
+    // Tests may inject {error, delay} per kind; unknown jobs must never silently succeed.
+    const job = (kind, a) => {
+      if (!jobKinds.includes(kind)) { window.__mockFailures.push('Unknown native job: ' + kind); throw new Error('Unknown native job: ' + kind); }
+      const id = 'j' + (++n); window.__calls.push(kind); (window.__args = window.__args || []).push([kind, JSON.parse(a)]);
+      const fault = window.__faults && window.__faults[kind];
+      const timer = setTimeout(() => {
+        pendingJobs.delete(id);
+        try {
+          if (fault && fault.error) throw new Error(fault.error);
+          const ov = window.__R && window.__R[kind];
+          window.__sdJob(id, true, ov ? (typeof ov === 'function' ? ov(JSON.parse(a)) : ov) : R(kind));
+        } catch (e) { if (e.message.startsWith('Unmocked job:')) window.__mockFailures.push(e.message); window.__sdJob(id, false, { error: e.message }); }
+      }, fault && fault.delay || 40);
+      pendingJobs.set(id, timer);
+      return id;
+    };
     let st = { id: '', playing: false, want: false, pos: 0, dur: 0, rate: 1, count: 0, index: -1 };
     const fixed = { caps: () => JSON.stringify({ native: true, media: true, asr: true, sep: true, mp3: true, opus: true, spk: true }), getLang: () => lang, job, listMedia: () => JSON.stringify(list),
+      cancelJob: id => { if (pendingJobs.has(id)) { clearTimeout(pendingJobs.get(id)); pendingJobs.delete(id); setTimeout(() => window.__sdJob(id, false, { error: 'cancel' }), 0); } },
       themePref: () => '', plState: () => JSON.stringify(st), tlPos: () => -1, tlMeter: () => '', recStart: () => '{"ok":true}', recLevel: () => 0.2, recInfo: () => '{}', lastCrash: () => '',
       plQueue: (items, idx, ms, auto) => { const it = JSON.parse(items)[idx]; st = Object.assign({}, st, { id: it.id, dur: it.dur, pos: ms, playing: !!auto, count: 1, index: idx }); },
       plPlay: () => { st.playing = true; }, plPause: () => { st.playing = false; }, tlPlay: () => '', tlPlayFrom: () => '' };
-    window.SesDefteriAndroid = new Proxy({}, { get: (_, k) => fixed[k] || ((...a) => { window.__calls.push(String(k)); return ''; }) });
+    window.SesDefteriAndroid = new Proxy({}, { get: (_, k) => {
+      if (!bridgeMethods.includes(k)) { window.__mockFailures.push('Unknown Android method: ' + String(k)); throw new Error('Unknown Android method: ' + String(k)); }
+      return fixed[k] || ((...a) => { window.__calls.push(String(k)); return ''; });
+    } });
     localStorage.setItem('sd:lang', JSON.stringify(lang)); localStorage.setItem('sd:langChosen', 'true'); localStorage.setItem('sd:introDone', 'true'); localStorage.setItem('sd:coachOff', 'true'); localStorage.setItem('sd:lastVer', JSON.stringify('5.21')); localStorage.setItem('sd:news4101', 'true');
-  }, LANG);
+  }, { lang: LANG, bridgeMethods, jobKinds });
   await pg.addInitScript(() => {
     // 5.15–5.21 mocks: native recorder, live text, photo
     const fx = window.SesDefteriAndroid; let liveN = 0;
@@ -133,12 +155,12 @@ const LANG = process.argv[2] || 'tr', FULL = process.argv[3] !== 'quick';
   const rr = await ev('(() => { const r = S.items.get("m:777"); return r && { b: r.bookmarks.length, n: r.spkNames, title: r.title, created: r.created } })()');
   check('restore brings recording back with notes', !!rr && rr.b === 3 && rr.n[0] === 'Ayşe', rr);
   check('restore brings text back', await ev('!!(S.texts.get("m:777") && S.texts.get("m:777").spk)') || await evA('return !!(await db.get("texts", "m:777"))'));
-  // restore when the file is already there: skipped, notes filled in
+  // Name/size matches must not merge different files. Native restore now returns a separate item.
   await ev(`(() => { const r = S.items.get("m:777"); r.bookmarks = []; r.notes = ""; })()`);
-  await ev(`window.__R.restore = Object.assign({}, window.__R.restore, { items: {}, skip: { [${JSON.stringify(br.e)}]: true } })`);
+  await ev(`window.__R.restore = Object.assign({}, window.__R.restore, { items: { [${JSON.stringify(br.e)}]: Object.assign({}, window.__R.restore.items[${JSON.stringify(br.e)}], { id: 'm:778', src: { uri: 'content://r/778' } }) }, skip: {} })`);
   await ev('(() => { const r = S.items.get("m:777"); r.name = "Yeni kayıt.m4a"; r.size = 12345; })()');
   await evA('await doRestore("content://bk/1")'); await W(300);
-  check('restore over an existing file completes its marks', await ev('S.items.get("m:777").bookmarks.length') === 3);
+  check('same name/size restore preserves both files and their separate notes', await ev('S.items.get("m:777").bookmarks.length === 0 && S.items.get("m:778").bookmarks.length === 3'));
   await closeAll();
   where = 'settings backup'; console.log('-- ' + where);
   await pg.click('#setBtn'); await W(400);
@@ -215,5 +237,8 @@ const LANG = process.argv[2] || 'tr', FULL = process.argv[3] !== 'quick';
   await closeAll();
   console.log(fails.length ? `\n${fails.length} FAILED: ${fails.join(', ')}` : '\nall passed');
   console.log('ERRORS', errs.length ? '\n' + [...new Set(errs)].join('\n') : 'none');
+  const mockFailures = await pg.evaluate(() => window.__mockFailures || []);
+  if (mockFailures.length) console.error('MOCK FAILURES', mockFailures);
+  if (fails.length || errs.length || mockFailures.length) process.exitCode = 1;
   await b.close();
-})();
+})().catch(e => { console.error(e); process.exitCode = 1; });

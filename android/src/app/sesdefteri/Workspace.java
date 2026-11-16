@@ -945,32 +945,53 @@ final class Workspace {
         try {
             decodeTo(c, a.getJSONObject("src"), 1, 16000, p, new double[] { 0, 0.7 }, cancel, w);
             Info inf = info(w);
-            float[] x = new float[(int) inf.frames];
-            byte[] b = new byte[x.length * 2];
-            RandomAccessFile r = new RandomAccessFile(w, "r");
-            try { r.seek(44); r.readFully(b); } finally { r.close(); }
-            for (int i = 0; i < x.length; i++) x[i] = (short) ((b[2 * i] & 0xff) | (b[2 * i + 1] << 8)) / 32768f;
             JSONArray out = new JSONArray();
             String model = a.optBoolean("ai") ? AsrModels.pick(c, a.optString("model", "")) : null;
+            java.util.ArrayList<double[]> cand = new java.util.ArrayList<double[]>();
+            // Twelve-second windows overlap by two seconds; memory and cancellation latency stay bounded.
+            try (RandomAccessFile r = new RandomAccessFile(w, "r")) {
+                for (long from = 0; from < inf.frames; from += 10L * 16000) {
+                    if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
+                    float[] x = readRegion(r, inf, from, (int) Math.min(12L * 16000, inf.frames - from))[0];
+                    for (double[] q : Speech.fillers(x, 16000, model == null ? 38 : 24, model == null ? 0.035 : 0.06)) {
+                        q[0] += from / 16000.0; q[1] += from / 16000.0;
+                        cand.add(q);
+                    }
+                    if (from + x.length >= inf.frames) break;
+                }
+            }
+            java.util.Collections.sort(cand, new java.util.Comparator<double[]>() {
+                @Override public int compare(double[] a, double[] b) { return Double.compare(a[0], b[0]); }
+            });
+            java.util.ArrayList<double[]> merged = new java.util.ArrayList<double[]>();
+            for (double[] q : cand) {
+                if (!merged.isEmpty() && q[0] <= merged.get(merged.size() - 1)[1]) merged.get(merged.size() - 1)[1] = Math.max(q[1], merged.get(merged.size() - 1)[1]);
+                else merged.add(q);
+            }
+            cand = merged;
             if (model == null) {
-                for (double[] q : Speech.fillers(x, 16000)) out.put(new JSONArray().put(Math.round(q[0] * 100) / 100.0).put(Math.round(q[1] * 100) / 100.0));
+                for (double[] q : cand) out.put(new JSONArray().put(Math.round(q[0] * 100) / 100.0).put(Math.round(q[1] * 100) / 100.0));
                 p.on(1);
                 return new JSONObject().put("ranges", out);
             }
             // 4.7: smart: a looser search finds more candidates, then Whisper listens to each one: no words (or only
             // "ıı / eee / hmm / um…") = a hesitation; real words = speech, kept
-            java.util.ArrayList<double[]> cand = Speech.fillers(x, 16000, 24, 0.06);
             int threads = Device.threads(4);
             app.sesdefteri.asr.Transcriber tr = new app.sesdefteri.asr.Transcriber(null, AsrModels.dir(c, model).getAbsolutePath(), model, a.optString("lang", ""), threads);
             int kept = 0;
-            try {
+            try (RandomAccessFile r = new RandomAccessFile(w, "r")) {
                 for (int i = 0; i < cand.size(); i++) {
                     if (cancel.get()) throw new InterruptedException("cancel");
                     double[] q = cand.get(i);
-                    int s0 = Math.max(0, (int) ((q[0] - 0.12) * 16000)), s1 = Math.min(x.length, (int) ((q[1] + 0.12) * 16000));
+                    long s0 = Math.max(0, (long) ((q[0] - 0.12) * 16000)), s1 = Math.min(inf.frames, (long) ((q[1] + 0.12) * 16000));
                     if (s1 - s0 < 1600) continue;
-                    String t = tr.recognize(java.util.Arrays.copyOfRange(x, s0, s1));
-                    if (!hesitation(t)) continue;
+                    // An unusually long steady sound is checked in bounded chunks too.
+                    boolean filler = true;
+                    for (long s = s0; s < s1; s += 30L * 16000) {
+                        if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
+                        if (!hesitation(tr.recognize(readRegion(r, inf, s, (int) Math.min(30L * 16000, s1 - s))[0]))) { filler = false; break; }
+                    }
+                    if (!filler) continue;
                     out.put(new JSONArray().put(Math.round(q[0] * 100) / 100.0).put(Math.round(q[1] * 100) / 100.0));
                     kept++;
                     p.on(0.7 + 0.3 * (i + 1) / cand.size());
@@ -1852,7 +1873,13 @@ final class Workspace {
         } else if (wavFmt) {
             java.io.FileInputStream is = new java.io.FileInputStream(in);
             java.io.FileOutputStream os = new java.io.FileOutputStream(out);
-            try { byte[] b = new byte[1 << 16]; int n; while ((n = is.read(b)) > 0) os.write(b, 0, n); } finally { is.close(); os.close(); }
+            boolean complete = false;
+            try {
+                byte[] b = new byte[1 << 16]; int n;
+                while ((n = is.read(b)) > 0) { if (cancel != null && cancel.get()) throw new InterruptedException("cancel"); os.write(b, 0, n); }
+                if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
+                complete = true;
+            } finally { try { is.close(); } finally { os.close(); if (!complete) out.delete(); } }
         } else {
             encode(in, inf, out, fmt, p, new double[] { 0, 1 }, cancel, a.optInt("kbps", 0));
         }
@@ -1999,21 +2026,21 @@ final class Workspace {
             try {
                 mp3(in, inf, out, a.optInt("kbps", 192), p, cancel, a);
                 MediaLib.Target tg = MediaLib.create(c, name + ".mp3", "audio/mpeg");
-                item = MediaLib.copyInTarget(c, tg, out);
+                item = MediaLib.copyInTarget(c, tg, out, cancel);
                 if (item == null) { MediaLib.discard(c, tg); throw new IllegalStateException("publish"); }
             } finally {
                 out.delete();
             }
         } else if (wavFmt) {
             MediaLib.Target tg = MediaLib.create(c, name + ".wav", "audio/x-wav");
-            item = MediaLib.copyInTarget(c, tg, in);
+            item = MediaLib.copyInTarget(c, tg, in, cancel);
             if (item == null) { MediaLib.discard(c, tg); throw new IllegalStateException("publish"); }
         } else {
             File out = new File(dir(c), "e" + System.nanoTime() + "." + fmt);
             try {
                 encode(in, inf, out, fmt, p, new double[] { 0, 0.95 }, cancel, a.optInt("kbps", 0));
                 MediaLib.Target tg = MediaLib.create(c, name + "." + fmt, mime(fmt));
-                item = MediaLib.copyInTarget(c, tg, out);
+                item = MediaLib.copyInTarget(c, tg, out, cancel);
                 if (item == null) { MediaLib.discard(c, tg); throw new IllegalStateException("publish"); }
             } finally {
                 out.delete();
@@ -2022,7 +2049,8 @@ final class Workspace {
         if (item != null && (a.has("title") || a.has("artist"))) MediaLib.tags(c, item, a.optString("title", ""), a.optString("artist", ""));
         JSONObject res = new JSONObject();
         res.put("item", item);
-        if (a.has("replace")) res.put("replaced", MediaLib.deleteOwn(c, a.getJSONObject("replace")));
+        // The page removes the old recording only after the new recording's metadata is durable.
+        if (a.has("replace")) res.put("replaced", false);
         return res;
     }
 }

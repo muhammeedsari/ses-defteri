@@ -1,5 +1,7 @@
 # Ses Defteri — Proje durumu (2.5 itibarıyla, 25 Ekim 2026)
 
+16 Kasım 2026: **5.21.2 kaynak adayı** (versionCode 97), `ea0qoe@d59ff36` üstünde kayıt/yedek/iş sahipliği/bellek düzeltmeleri. JavaScript regression, gerçek Android 36 sınıflarıyla Java 8 derleme kontrolü ve sınırları taklit edilmiş kayıt/yedek/EOS/40 MiB bellek testleri eklendi. İmzalı APK ve cihaz testleri yapılmadı. Ayrıntılar: [DUZELTMELER-5.21.2.md](DUZELTMELER-5.21.2.md).
+
 ## 1. Amaç ve teknik yığın
 Android için **internetsiz** ses kaydı + müzik çalar + ses stüdyosu. Hedef: YouTube/podcast yapanlar, toplantı ve sesli not kaydedenler, müzik dinleyenler. Kullanıcı kitlesi öncelikle Türkiye, ama arayüz 9 dilde.
 

@@ -79,6 +79,7 @@ final class Speakers {
         if (!ready(c)) throw new IllegalStateException("dia-model");
         JSONObject src = a.getJSONObject("src");
         Studio.Fmt f = Studio.probe(c, src);
+        if (a.optDouble("dur", 0) > MAX_SEC) throw new IllegalStateException("dia-long");
         final int cap = MAX_SEC * RATE;
         // sized from the recording's length when the page knows it, so the sound is held once, not grown and copied
         final float[][] x = { new float[(int) Math.min(cap, a.optDouble("dur", 0) > 1 ? a.getDouble("dur") * RATE + RATE : RATE * 60)] };
@@ -87,6 +88,7 @@ final class Speakers {
         Resampler rs = new Resampler(1, (double) f.rate, (double) RATE);
         rs.to(new app.sesdefteri.dsp.Node() {
             @Override public void push(float[][] b, int n) {
+                if (len[0] + n > cap) throw new IllegalStateException("dia-long");
                 if (len[0] + n > x[0].length) x[0] = java.util.Arrays.copyOf(x[0], Math.min(cap, Math.max(len[0] + n, x[0].length * 2)));
                 int k = Math.min(n, x[0].length - len[0]);
                 System.arraycopy(b[0], 0, x[0], len[0], k); len[0] += k;
@@ -97,7 +99,7 @@ final class Speakers {
         final int ch = f.ch;
         Studio.source(c, src, f, p, new double[][] { { 0, 0.3 } }, cancel).run(new app.sesdefteri.dsp.Node() {
             @Override public void push(float[][] b, int n) throws Exception {
-                if (len[0] >= cap) return;   // longer than 30 min: the first half hour
+                if (len[0] >= cap) throw new IllegalStateException("dia-long");
                 for (int i = 0; i < n; i++) { float s = 0; for (int k = 0; k < ch; k++) s += b[k][i]; m[0][i] = s / ch; }
                 head.push(m, n);
             }

@@ -75,14 +75,17 @@ final class Sounds {
         long f0 = Math.max(0, Math.round(a.optDouble("in", 0) * inf.rate));
         long f1 = Math.min(inf.frames, f0 + Math.round(a.optDouble("len", 1e9) * inf.rate));
         // the heard part, mono, 16 kHz
-        RandomAccessFile r = new RandomAccessFile(f, "r");
-        float[] x;
+        File pcm = File.createTempFile("sounds-", ".pcm", c == null ? null : c.getCacheDir());
         try {
+        try (RandomAccessFile r = new RandomAccessFile(f, "r");
+             final java.io.DataOutputStream out = new java.io.DataOutputStream(new java.io.BufferedOutputStream(new java.io.FileOutputStream(pcm), 65536))) {
             Resampler rs = new Resampler(1, (double) inf.rate, 16000.0);
-            Node.Collect col = new Node.Collect(1);
-            rs.to(col);
+            rs.to(new Node() {
+                @Override public void push(float[][] b, int n) throws Exception { for (int i = 0; i < n; i++) out.writeFloat(b[0][i]); }
+            });
             final int BL = 1 << 15;
             for (long s = f0; s < f1; s += BL) {
+                if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
                 int k = (int) Math.min(BL, f1 - s);
                 float[][] b = Workspace.readRegion(r, inf, s, k);
                 float[][] m = new float[1][k];
@@ -90,25 +93,25 @@ final class Sounds {
                 rs.push(m, k);
             }
             rs.end();
-            x = col.result()[0];
-        } finally {
-            r.close();
         }
+        long length = pcm.length() / 4;
+        if (length < 160) return new JSONObject().put("events", new JSONArray());
+        if (length > Integer.MAX_VALUE) throw new IllegalStateException("archive-limit");
+        try (RandomAccessFile samples = new RandomAccessFile(pcm, "r")) {
         File d = dir(c);
         AudioTagging at = new AudioTagging(AudioTaggingConfig.builder()
                 .setModel(AudioTaggingModelConfig.builder().setCED(new File(d, FILES[0]).getAbsolutePath()).setNumThreads(Device.threads(2)).setDebug(false).build())
                 .setLabels(new File(d, FILES[1]).getAbsolutePath()).setTopK(527).build());
-        final int W = 16000, H = 8000, nw = Math.max(1, (x.length - W) / H + 1);
+        final int W = 16000, H = 8000, nw = Math.max(1, (int) ((length - W) / H + 1));
         float[][] sc = new float[nw][GROUPS.length];
         try {
             for (int w = 0; w < nw; w++) {
-                if (cancel.get()) throw new InterruptedException("cancel");
+                if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
                 int s = w * H;
-                float[] seg = java.util.Arrays.copyOfRange(x, s, Math.min(x.length, s + W));
+                float[] seg = readSamples(samples, s, (int) Math.min(W, length - s));
                 OfflineStream st = at.createStream();
-                st.acceptWaveform(seg, 16000);
-                AudioEvent[] ev = at.compute(st, 527);
-                st.release();
+                AudioEvent[] ev;
+                try { st.acceptWaveform(seg, 16000); ev = at.compute(st, 527); } finally { st.release(); }
                 for (AudioEvent e : ev) for (int g = 0; g < GROUPS.length; g++) for (int i : GROUPS[g]) if (e.getIndex() == i) sc[w][g] = Math.max(sc[w][g], e.getProb());
                 if ((w & 7) == 0) p.on(0.1 + 0.85 * w / nw);
             }
@@ -116,9 +119,16 @@ final class Sounds {
             at.release();
         }
         // 10 ms loudness, to narrow every find to its loud core
-        int nf = x.length / 160;
+        int nf = (int) (length / 160);
         float[] db = new float[nf];
-        for (int i = 0; i < nf; i++) { double e = 0; for (int j = 0; j < 160; j++) { float v = x[i * 160 + j]; e += v * v; } db[i] = (float) (10 * Math.log10(e / 160 + 1e-12)); }
+        samples.seek(0);
+        byte[] energy = new byte[160 * 4];
+        for (int i = 0; i < nf; i++) {
+            if ((i & 255) == 0 && cancel != null && cancel.get()) throw new InterruptedException("cancel");
+            samples.readFully(energy); java.nio.ByteBuffer b = java.nio.ByteBuffer.wrap(energy);
+            double e = 0; for (int j = 0; j < 160; j++) { float v = b.getFloat(); e += v * v; }
+            db[i] = (float) (10 * Math.log10(e / 160 + 1e-12));
+        }
         JSONArray out = new JSONArray();
         double off = f0 / (double) inf.rate;
         for (int w = 0; w < nw; ) {
@@ -140,12 +150,20 @@ final class Sounds {
                 while (s0 > a0 && db[s0 - 1] > lim) s0--;
                 while (s1 < a1 - 1 && db[s1 + 1] > lim) s1++;
             }
-            double t0 = Math.max(0, s0 * 0.01 - 0.06), t1 = Math.min(x.length / 16000.0, (s1 + 1) * 0.01 + 0.08);
+            double t0 = Math.max(0, s0 * 0.01 - 0.06), t1 = Math.min(length / 16000.0, (s1 + 1) * 0.01 + 0.08);
             out.put(new JSONArray().put(Math.round((off + t0) * 100) / 100.0).put(Math.round((off + t1) * 100) / 100.0).put(KIND[g]).put(Math.round(pk * 100) / 100.0));
             w = e + 1;
         }
         p.on(1);
         return new JSONObject().put("events", out);
+        }
+        } finally { pcm.delete(); }
+    }
+
+    private static float[] readSamples(RandomAccessFile f, long from, int n) throws Exception {
+        byte[] bytes = new byte[n * 4]; f.seek(from * 4); f.readFully(bytes);
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.wrap(bytes);
+        float[] x = new float[n]; for (int i = 0; i < n; i++) x[i] = b.getFloat(); return x;
     }
 
     private static int best(float[] s) {

@@ -7,7 +7,8 @@ public class MediaCodec {
   final ByteBuffer[] in = new ByteBuffer[4]; final ArrayDeque<int[]> ready = new ArrayDeque<>(); final ArrayDeque<Integer> freeIn = new ArrayDeque<>();
   final long[] ts = new long[4]; MediaFormat fmt; boolean sentFormat;
   public static MediaCodec createDecoderByType(String mime) { if (!"audio/raw".equals(mime)) throw new IllegalArgumentException("desktop stub decodes only wav"); return new MediaCodec(); }
-  public static MediaCodec createEncoderByType(String mime) { throw new IllegalStateException("no encoders on desktop"); }
+  public static MediaCodec TEST_ENCODER;
+  public static MediaCodec createEncoderByType(String mime) { if (TEST_ENCODER != null) return TEST_ENCODER; throw new IllegalStateException("no encoders on desktop"); }
   public void configure(MediaFormat f, android.view.Surface s, MediaCrypto c, int flags) { fmt = f; for (int i = 0; i < 4; i++) { in[i] = ByteBuffer.allocate(1 << 16); freeIn.add(i); } }
   public void start() { } public void stop() { } public void release() { } public void flush() { freeIn.clear(); ready.clear(); for (int i = 0; i < 4; i++) freeIn.add(i); }
   public int dequeueInputBuffer(long t) { Integer i = freeIn.poll(); return i == null ? -1 : i; }

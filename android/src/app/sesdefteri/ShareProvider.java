@@ -63,7 +63,7 @@ public class ShareProvider extends ContentProvider {
         MatrixCursor c = new MatrixCursor(cols, 1);
         Object[] row = new Object[cols.length];
         for (int i = 0; i < cols.length; i++) {
-            if (OpenableColumns.DISPLAY_NAME.equals(cols[i])) row[i] = f.getName();
+            if (OpenableColumns.DISPLAY_NAME.equals(cols[i])) row[i] = uri.getQueryParameter("name") != null ? MediaLib.safeName(uri.getQueryParameter("name")) : f.getName();
             else if (OpenableColumns.SIZE.equals(cols[i])) row[i] = f.length();
             else row[i] = null;
         }

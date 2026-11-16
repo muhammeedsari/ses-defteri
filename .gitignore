@@ -9,3 +9,4 @@ vendor/
 android/*.idsig
 __pycache__/
 web/page_t.html
+.review-tools/

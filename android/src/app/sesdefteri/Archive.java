@@ -27,6 +27,51 @@ final class Archive {
     private Archive() { }
 
     static final String META = "sesdefteri.json";
+    // Metadata is bounded independently of audio. Audio is streamed and also bounded by free disk space.
+    static final long MAX_META = 16L << 20, MAX_ENTRY = 16L << 30, MAX_TOTAL = 64L << 30;
+    static final int MAX_ENTRIES = 100000;
+    private static File receipt(Context c) { return new File(c.getFilesDir(), "restore-result.json"); }
+    static boolean pendingExists(Context c) { return receipt(c).isFile(); }
+    static synchronized String pending(Context c) throws Exception {
+        File f = receipt(c);
+        if (!f.isFile()) return "";
+        if (f.length() > (64L << 20)) throw new java.io.IOException("archive-limit");
+        byte[] b = new byte[(int) f.length()];
+        try (java.io.DataInputStream in = new java.io.DataInputStream(new FileInputStream(f))) { in.readFully(b); }
+        return new String(b, "UTF-8");
+    }
+    static synchronized boolean acknowledge(Context c, String token) throws Exception {
+        String data = pending(c);
+        return data.isEmpty() || (new JSONObject(data).getString("restoreToken").equals(token) && receipt(c).delete());
+    }
+
+    private static void check(AtomicBoolean cancel) throws InterruptedException {
+        if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
+    }
+
+    private static String hex(byte[] b) {
+        StringBuilder s = new StringBuilder();
+        for (byte v : b) s.append(String.format(java.util.Locale.ROOT, "%02x", v & 255));
+        return s.toString();
+    }
+
+    private static JSONObject write(InputStream in, OutputStream out, long limit, AtomicBoolean cancel) throws Exception {
+        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+        byte[] b = new byte[65536]; long size = 0; int n;
+        while ((n = in.read(b)) != -1) {
+            check(cancel); size += n;
+            if (size > limit) throw new java.io.IOException("archive-limit");
+            out.write(b, 0, n); md.update(b, 0, n);
+        }
+        check(cancel);
+        return new JSONObject().put("size", size).put("sha256", hex(md.digest()));
+    }
+
+    private static void removeTree(File f) {
+        File[] files = f.listFiles();
+        if (files != null) for (File child : files) removeTree(child);
+        f.delete();
+    }
 
     private static InputStream openSrc(Context c, JSONObject src) throws Exception {
         Uri u = MediaLib.srcUri(src);
@@ -48,34 +93,44 @@ final class Archive {
         ZipOutputStream z = new ZipOutputStream(new java.io.BufferedOutputStream(os, 1 << 16));
         byte[] b = new byte[1 << 16];
         boolean ok = false;
+        JSONObject manifest = new JSONObject();
+        long totalBytes = 0;
         try {
+            if (total >= MAX_ENTRIES) throw new java.io.IOException("archive-limit");
             z.setLevel(6);
-            z.putNextEntry(new ZipEntry(META));
-            z.write(a.getString("json").getBytes("UTF-8"));
-            z.closeEntry();
             z.setLevel(Deflater.NO_COMPRESSION);   // audio and photos are compressed already
             for (int i = 0; i < files.length(); i++) {
                 if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
                 JSONArray f = files.getJSONArray(i);
                 InputStream in;
-                try { in = openSrc(c, f.getJSONObject(1)); } catch (Exception e) { missing++; continue; }
-                if (in == null) { missing++; continue; }
+                in = openSrc(c, f.getJSONObject(1));
+                if (in == null) throw new java.io.IOException("backup-missing");
                 try {
                     z.putNextEntry(new ZipEntry(f.getString(0)));
-                    int n;
-                    while ((n = in.read(b)) > 0) z.write(b, 0, n);
+                    JSONObject sum = write(in, z, Math.min(MAX_ENTRY, MAX_TOTAL - totalBytes), cancel);
+                    manifest.put(f.getString(0), sum); totalBytes += sum.getLong("size");
                     z.closeEntry();
                 } finally { in.close(); }
                 p.on(++done / (double) Math.max(1, total));
             }
             if (photos != null) for (File f : photos) {
+                check(cancel);
                 if (!f.getName().endsWith(".jpg")) continue;
                 z.putNextEntry(new ZipEntry("photos/" + f.getName()));
                 InputStream in = new FileInputStream(f);
-                try { int n; while ((n = in.read(b)) > 0) z.write(b, 0, n); } finally { in.close(); }
+                try {
+                    JSONObject sum = write(in, z, Math.min(MAX_ENTRY, MAX_TOTAL - totalBytes), cancel);
+                    manifest.put("photos/" + f.getName(), sum); totalBytes += sum.getLong("size");
+                } finally { in.close(); }
                 z.closeEntry();
                 p.on(++done / (double) Math.max(1, total));
             }
+            JSONObject meta = new JSONObject(a.getString("json"));
+            meta.put("v", 2); meta.put("manifest", manifest);
+            byte[] metadata = meta.toString().getBytes("UTF-8");
+            if (metadata.length > MAX_META) throw new java.io.IOException("archive-limit");
+            check(cancel);
+            z.putNextEntry(new ZipEntry(META)); z.write(metadata); z.closeEntry();
             z.finish();
             ok = true;
         } finally {
@@ -85,78 +140,145 @@ final class Archive {
         return new JSONObject().put("n", files.length() - missing).put("missing", missing);
     }
 
-    /** a: {uri, have: ["name|size"…] files already on the phone}; result {json, items: {entry: item}, skip: {entry: true}, projDir} */
-    static JSONObject restore(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+    /** Validate the entire archive in staging before creating any library/project files. Never dedupe on name/size. */
+    static synchronized JSONObject restore(Context c, JSONObject a, AudioTools.Progress p, AtomicBoolean cancel) throws Exception {
+        if (pendingExists(c)) throw new java.io.IOException("restore-pending");
         Uri in = Uri.parse(a.getString("uri"));
-        HashSet<String> have = new HashSet<String>(), skipE = new HashSet<String>();
-        JSONArray h = a.optJSONArray("have");
-        if (h != null) for (int i = 0; i < h.length(); i++) have.add(h.getString(i));
-        long size = -1;
+        File stage = new File(c.getCacheDir(), "restore-" + java.util.UUID.randomUUID());
+        if (!stage.mkdirs()) throw new java.io.IOException("restore-open");
+        java.util.LinkedHashMap<String, File> files = new java.util.LinkedHashMap<String, File>();
+        java.util.HashMap<String, JSONObject> checks = new java.util.HashMap<String, JSONObject>();
+        java.util.ArrayList<File> created = new java.util.ArrayList<File>();
+        java.util.ArrayList<MediaLib.Target> targets = new java.util.ArrayList<MediaLib.Target>();
+        boolean committed = false;
         try {
-            android.content.res.AssetFileDescriptor fd = c.getContentResolver().openAssetFileDescriptor(in, "r");
-            if (fd != null) { size = fd.getLength(); fd.close(); }
-        } catch (Exception ignored) { }
-        final long[] read = { 0 };
-        InputStream raw = c.getContentResolver().openInputStream(in);
-        if (raw == null) throw new IllegalStateException("restore-open");
-        final InputStream counted = new java.io.FilterInputStream(new java.io.BufferedInputStream(raw, 1 << 16)) {
-            @Override public int read(byte[] x, int o, int n) throws java.io.IOException { int k = super.read(x, o, n); if (k > 0) read[0] += k; return k; }
-        };
-        ZipInputStream z = new ZipInputStream(counted);
-        JSONObject res = new JSONObject(), items = new JSONObject(), skip = new JSONObject();
-        String json = null;
-        byte[] b = new byte[1 << 16];
-        File photoDir = MainActivity.photoDir(c);
-        try {
-            ZipEntry e;
-            while ((e = z.getNextEntry()) != null) {
-                if (cancel != null && cancel.get()) throw new InterruptedException("cancel");
-                String name = e.getName();
-                if (e.isDirectory() || name.contains("../") || name.startsWith("/")) continue;
-                if (META.equals(name)) {
-                    java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
-                    int n;
-                    while ((n = z.read(b)) > 0) bo.write(b, 0, n);
-                    json = bo.toString("UTF-8");
-                    // recordings already on this phone (same file name and size) are not written twice
-                    try {
-                        JSONArray recs = new JSONObject(json).optJSONArray("recs");
-                        if (recs != null) for (int i = 0; i < recs.length(); i++) {
-                            JSONObject o = recs.getJSONObject(i);
-                            if (have.contains(o.optString("k"))) skipE.add(o.optString("e"));
-                        }
-                    } catch (Exception ignored) { }
-                } else if (name.startsWith("proj/")) {
-                    String pn = name.substring(5);
-                    if (!pn.matches("[A-Za-z0-9_.-]{1,96}\\.wav")) continue;
-                    File f = new File(Timeline.dir(c), pn);
-                    if (f.isFile()) continue;
-                    OutputStream o = new FileOutputStream(f);
-                    try { int n; while ((n = z.read(b)) > 0) o.write(b, 0, n); } finally { o.close(); }
-                } else if (name.startsWith("photos/")) {
-                    String pn = name.substring(7);
-                    if (!pn.matches("[A-Za-z0-9_-]{1,64}\\.jpg")) continue;
-                    File f = new File(photoDir, pn);
-                    if (f.isFile()) continue;
-                    OutputStream o = new FileOutputStream(f);
-                    try { int n; while ((n = z.read(b)) > 0) o.write(b, 0, n); } finally { o.close(); }
-                } else if (name.startsWith("audio/")) {
-                    // "audio/<n>/<file name>": the file keeps its own name
-                    String fn = name.substring(name.lastIndexOf('/') + 1);
-                    if (skipE.contains(name)) { skip.put(name, true); continue; }
-                    MediaLib.Target t = MediaLib.create(c, fn, MediaLib.mimeForName(fn), "");
-                    OutputStream o = MediaLib.open(c, t);
-                    boolean ok = false;
-                    try { int n; while ((n = z.read(b)) > 0) o.write(b, 0, n); ok = true; } finally { o.close(); if (!ok) MediaLib.discard(c, t); }
-                    JSONObject it = MediaLib.publish(c, t);
-                    if (it != null) items.put(name, it);
-                }
-                if (size > 0) p.on(Math.min(0.99, read[0] / (double) size));
+            long total = 0;
+            HashSet<String> names = new HashSet<String>();
+            String json = null;
+            InputStream raw = c.getContentResolver().openInputStream(in);
+            if (raw == null) throw new java.io.IOException("restore-open");
+            // A forward-only ZIP reader accepts a missing central directory. Keep a bounded local copy so
+            // ZipFile can reject a truncated archive before the commit phase, including footer-only truncation.
+            File archive = new File(stage, "input.zip");
+            try (InputStream source = raw; OutputStream out = new FileOutputStream(archive)) {
+                write(source, out, Math.min(MAX_TOTAL, Math.max(0, stage.getUsableSpace() - (32L << 20))), cancel);
             }
+            int entries;
+            try (java.util.zip.ZipFile central = new java.util.zip.ZipFile(archive)) {
+                entries = central.size();
+                if (entries > MAX_ENTRIES) throw new java.io.IOException("archive-limit");
+            }
+            long budget = Math.min(MAX_TOTAL, Math.max(0, stage.getUsableSpace() - (32L << 20)));
+            try (ZipInputStream z = new ZipInputStream(new java.io.BufferedInputStream(new FileInputStream(archive), 65536))) {
+                ZipEntry e;
+                while ((e = z.getNextEntry()) != null) {
+                    check(cancel);
+                    if (names.size() >= MAX_ENTRIES) throw new java.io.IOException("archive-limit");
+                    String name = e.getName();
+                    if (!names.add(name)) throw new java.io.IOException("restore-bad");
+                    if (name.startsWith("/") || name.contains("\\") || name.contains("../")) throw new java.io.IOException("restore-bad");
+                    if (e.isDirectory()) continue;
+                    if (META.equals(name)) {
+                        java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                        write(z, bo, Math.min(MAX_META, budget - total), cancel);
+                        json = bo.toString("UTF-8"); total += bo.size();
+                    } else {
+                        if (!name.matches("proj/[A-Za-z0-9_.-]{1,96}\\.wav") && !name.matches("photos/[A-Za-z0-9_-]{1,64}\\.jpg")
+                                && !name.matches("audio/[0-9]+/[^/\\x00-\\x1f]+")) throw new java.io.IOException("restore-bad");
+                        File part = new File(stage, "f" + files.size() + ".part");
+                        JSONObject sum;
+                        try (FileOutputStream out = new FileOutputStream(part)) { sum = write(z, out, Math.min(MAX_ENTRY, budget - total), cancel); out.getFD().sync(); }
+                        files.put(name, part); checks.put(name, sum); total += sum.getLong("size");
+                    }
+                }
+            }
+            if (names.size() != entries) throw new java.io.IOException("restore-bad");
+            if (json == null) throw new java.io.IOException("restore-bad");
+            JSONObject meta = new JSONObject(json);
+            int v = meta.optInt("v", 0);
+            if (!"sesdefteri".equals(meta.optString("app")) || (v != 1 && v != 2) || meta.optJSONArray("recs") == null) throw new java.io.IOException("restore-bad");
+            if (v == 2) {
+                JSONObject manifest = meta.getJSONObject("manifest");
+                if (manifest.length() != files.size()) throw new java.io.IOException("restore-bad");
+                for (String name : files.keySet()) {
+                    JSONObject expected = manifest.getJSONObject(name), actual = checks.get(name);
+                    if (expected.getLong("size") != actual.getLong("size") || !expected.getString("sha256").equals(actual.getString("sha256"))) throw new java.io.IOException("restore-bad");
+                }
+            }
+            JSONArray recs = meta.getJSONArray("recs");
+            HashSet<String> audio = new HashSet<String>();
+            for (int i = 0; i < recs.length(); i++) {
+                JSONObject rec = recs.getJSONObject(i); String entry = rec.getString("e"); rec.getJSONObject("m");
+                if (!entry.startsWith("audio/") || !files.containsKey(entry) || !audio.add(entry)) throw new java.io.IOException("restore-bad");
+            }
+            JSONObject project = meta.optJSONObject("proj");
+            if (v == 1 && project != null) {
+                JSONArray clips = project.getJSONArray("clips");
+                for (int n = 0; n < clips.length(); n++) {
+                    String path = clips.getJSONObject(n).getString("path");
+                    if (!files.containsKey("proj/" + path.substring(path.lastIndexOf('/') + 1))) throw new java.io.IOException("backup-missing");
+                }
+            } else validateProject(project, files, v);
+            validateProject(meta.optJSONObject("templates"), files, v);
+            if (stage.getUsableSpace() < total + (16L << 20)) throw new java.io.IOException("archive-space");
+            JSONObject items = new JSONObject(), paths = new JSONObject(), photos = new JSONObject();
+            int done = 0;
+            for (java.util.Map.Entry<String, File> entry : files.entrySet()) {
+                check(cancel); String name = entry.getKey(); File f = entry.getValue();
+                if (name.startsWith("audio/")) {
+                    if (!audio.contains(name)) throw new java.io.IOException("restore-bad");
+                    String fn = name.substring(name.lastIndexOf('/') + 1);
+                    MediaLib.Target t = MediaLib.create(c, fn, MediaLib.mimeForName(fn), ""); targets.add(t);
+                    try (InputStream source = new FileInputStream(f); OutputStream out = MediaLib.open(c, t)) { write(source, out, MAX_ENTRY, cancel); }
+                } else {
+                    boolean photo = name.startsWith("photos/");
+                    File dest = new File(photo ? MainActivity.photoDir(c) : Timeline.dir(c), java.util.UUID.randomUUID().toString() + (photo ? ".jpg" : ".wav"));
+                    if (dest.exists()) throw new java.io.IOException("restore-collision");
+                    if (!f.renameTo(dest)) throw new java.io.IOException("restore-move");
+                    created.add(dest);
+                    if (photo) photos.put(name.substring(7), dest.getName()); else paths.put(name, dest.getAbsolutePath());
+                }
+                p.on(0.5 * ++done / Math.max(1, files.size()));
+            }
+            int i = 0;
+            for (String name : files.keySet()) if (name.startsWith("audio/")) {
+                check(cancel); JSONObject item = MediaLib.publish(c, targets.get(i++));
+                if (item == null) throw new java.io.IOException("publish");
+                items.put(name, item);
+            }
+            check(cancel);
+            JSONObject res = new JSONObject().put("json", json).put("items", items).put("skip", new JSONObject()).put("paths", paths).put("photos", photos).put("projDir", Timeline.dir(c).getAbsolutePath()).put("restoreToken", java.util.UUID.randomUUID().toString());
+            File part = new File(c.getFilesDir(), "restore-result.json.part");
+            byte[] result = res.toString().getBytes("UTF-8");
+            if (result.length > (64L << 20)) throw new java.io.IOException("archive-limit");
+            try (FileOutputStream out = new FileOutputStream(part)) { out.write(result); out.getFD().sync(); }
+            if (!part.renameTo(receipt(c))) throw new java.io.IOException("restore-move");
+            committed = true; p.on(1); return res;
         } finally {
-            z.close();
+            if (!committed) { for (MediaLib.Target t : targets) MediaLib.discard(c, t); for (File f : created) f.delete(); }
+            if (!committed) new File(c.getFilesDir(), "restore-result.json.part").delete();
+            removeTree(stage);
         }
-        if (json == null) throw new IllegalStateException("restore-bad");
-        return res.put("json", json).put("items", items).put("skip", skip).put("projDir", Timeline.dir(c).getAbsolutePath());
+    }
+
+    private static void validateProject(Object value, java.util.Map<String, File> files, int v) throws Exception {
+        if (value instanceof JSONArray) {
+            JSONArray a = (JSONArray) value;
+            for (int i = 0; i < a.length(); i++) validateProject(a.get(i), files, v);
+        } else if (value instanceof JSONObject) {
+            JSONObject o = (JSONObject) value;
+            java.util.Iterator<String> keys = o.keys();
+            while (keys.hasNext()) {
+                String k = keys.next(); Object x = o.get(k);
+                if (("path".equals(k) || "src".equals(k) || "prev".equals(k) || "hcOut".equals(k)) && x instanceof String && !((String) x).isEmpty()) {
+                    String path = (String) x;
+                    // Old archives did not include all history. Their current clip still must be present.
+                    if (v == 2 || "path".equals(k)) {
+                        String entry = v == 2 ? path : "proj/" + path.substring(path.lastIndexOf('/') + 1);
+                        if (!files.containsKey(entry)) throw new java.io.IOException("backup-missing");
+                    }
+                } else validateProject(x, files, v);
+            }
+        }
     }
 }
